@@ -4,7 +4,7 @@ ROOT=Path(r"D:/LAN-Share/lora/_work/comfy_panel")
 BUILDER=(ROOT/"build_unified_three_styles.py").read_text(encoding="utf8")
 HTML=(ROOT/"static"/"promptgen.html").read_text(encoding="utf8")
 checks={
- "compact title":'<h1>三画风生图</h1>' in HTML,
+ "compact title":'<h1>创作设置</h1>' in HTML and 'JT 灵感工作台' in HTML,
  "no top intro":'选择画风与原创/角色模式，再按分类抽屉调整身体、服装、姿势和背景' not in HTML,
  "no style technical note":'固定使用已训练触发词与已上传 LoRA' not in HTML,
  "no batch technical note":'普通出图：1个云任务，批量节点一次出N张' not in HTML,
