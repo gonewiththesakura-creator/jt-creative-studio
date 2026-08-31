@@ -1,0 +1,210 @@
+{
+ "1": {
+  "class_type": "UNETLoader",
+  "inputs": {
+   "unet_name": "qwen_image_edit_2509_fp8_e4m3fn.safetensors",
+   "weight_dtype": "default"
+  }
+ },
+ "23": {
+  "class_type": "LoraLoaderModelOnly",
+  "inputs": {
+   "model": [
+    "1",
+    0
+   ],
+   "lora_name": "Qwen-Image-Edit-2509-Lightning-8steps-V1.0-bf16.safetensors",
+   "strength_model": 1.0
+  }
+ },
+ "2": {
+  "class_type": "ModelSamplingAuraFlow",
+  "inputs": {
+   "model": [
+    "23",
+    0
+   ],
+   "shift": 3.0
+  }
+ },
+ "3": {
+  "class_type": "CLIPLoader",
+  "inputs": {
+   "clip_name": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+   "type": "qwen_image",
+   "device": "default"
+  }
+ },
+ "4": {
+  "class_type": "VAELoader",
+  "inputs": {
+   "vae_name": "qwen_image_vae.safetensors"
+  }
+ },
+ "5": {
+  "class_type": "LoadImage",
+  "inputs": {
+   "image": "char3_best_ref_NEW02.png"
+  }
+ },
+ "7": {
+  "class_type": "TextEncodeQwenImageEditPlusAdvance_lrzjason",
+  "inputs": {
+   "clip": [
+    "3",
+    0
+   ],
+   "vae": [
+    "4",
+    0
+   ],
+   "vl_resize_image1": [
+    "5",
+    0
+   ],
+   "target_size": 1024,
+   "target_vl_size": 384,
+   "upscale_method": "lanczos",
+   "crop_method": "disabled",
+   "instruction": "Preserve the exact input character identity and face while changing only the clothing, pose, camera framing, and background requested by the connected English editing instruction. Do not redesign the face shape, eye geometry, hairstyle, under-eye mole, or flower accessory.",
+   "prompt": "{{PROMPT}}"
+  }
+ },
+ "8": {
+  "class_type": "ConditioningZeroOut",
+  "inputs": {
+   "conditioning": [
+    "7",
+    0
+   ]
+  }
+ },
+ "9": {
+  "class_type": "KSampler",
+  "inputs": {
+   "model": [
+    "2",
+    0
+   ],
+   "positive": [
+    "7",
+    0
+   ],
+   "negative": [
+    "8",
+    0
+   ],
+   "latent_image": [
+    "7",
+    1
+   ],
+   "seed": "{{SEED}}",
+   "steps": 8,
+   "cfg": 1.0,
+   "sampler_name": "euler",
+   "scheduler": "beta57",
+   "denoise": 1.0
+  }
+ },
+ "10": {
+  "class_type": "VAEDecode",
+  "inputs": {
+   "samples": [
+    "9",
+    0
+   ],
+   "vae": [
+    "4",
+    0
+   ]
+  }
+ },
+ "19": {
+  "class_type": "easy imageIndexSwitch",
+  "inputs": {
+   "index": "{{HD}}",
+   "image0": [
+    "10",
+    0
+   ],
+   "image1": [
+    "15",
+    0
+   ],
+   "image2": [
+    "18",
+    0
+   ]
+  }
+ },
+ "11": {
+  "class_type": "SaveImage",
+  "inputs": {
+   "images": [
+    "19",
+    0
+   ],
+   "filename_prefix": "{{PREFIX}}"
+  }
+ },
+ "13": {
+  "class_type": "UpscaleModelLoader",
+  "inputs": {
+   "model_name": "4x-ClearRealityV1.pth"
+  }
+ },
+ "14": {
+  "class_type": "ImageUpscaleWithModel",
+  "inputs": {
+   "upscale_model": [
+    "13",
+    0
+   ],
+   "image": [
+    "10",
+    0
+   ]
+  }
+ },
+ "15": {
+  "class_type": "ImageScaleBy",
+  "inputs": {
+   "image": [
+    "14",
+    0
+   ],
+   "upscale_method": "lanczos",
+   "scale_by": 0.5
+  }
+ },
+ "16": {
+  "class_type": "UpscaleModelLoader",
+  "inputs": {
+   "model_name": "4x-UltraSharp.pth"
+  }
+ },
+ "17": {
+  "class_type": "ImageUpscaleWithModel",
+  "inputs": {
+   "upscale_model": [
+    "16",
+    0
+   ],
+   "image": [
+    "10",
+    0
+   ]
+  }
+ },
+ "18": {
+  "class_type": "ImageScaleBy",
+  "inputs": {
+   "image": [
+    "17",
+    0
+   ],
+   "upscale_method": "lanczos",
+   "scale_by": 0.5
+  }
+ }
+}

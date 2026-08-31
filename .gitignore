@@ -1,0 +1,43 @@
+# Secrets and machine-specific access
+PANEL_TOKEN.txt
+tools/creds.json
+tools/id_ed25519
+tools/id_ed25519.pub
+*.pem
+*.key
+
+# Runtime state and generated/user media
+panel_data/
+evidence/
+reports/
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.gif
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.zip
+
+# Local caches, environments, temp snapshots
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+tools/sshev/
+*.tmp
+*.part
+*.remote.*
+*.bak*
+
+# Large downloaded/provider workflow archives (regenerable)
+video_wf/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

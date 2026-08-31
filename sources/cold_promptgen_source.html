@@ -1,0 +1,1812 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Anima 随机灵感生成器</title>
+  <style>
+    :root{
+      --bg:#f4f7f8;
+      --card:#ffffff;
+      --ink:#2c3940;
+      --muted:#7d9099;
+      --line:#e2eaed;
+      --accent:#7eaabe;
+      --accent2:#e9f3f7;
+      --shadow:0 12px 34px rgba(67,89,99,.08);
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      background:
+        radial-gradient(circle at 15% 0%, rgba(190,222,233,.30), transparent 34%),
+        linear-gradient(180deg,#f8fafb 0%,var(--bg) 100%);
+      color:var(--ink);
+      font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+      min-height:100vh;
+    }
+    .wrap{
+      width:min(1080px, calc(100% - 32px));
+      margin:0 auto;
+      padding:44px 0 70px;
+    }
+    .hero{
+      display:flex;
+      justify-content:space-between;
+      gap:24px;
+      align-items:flex-end;
+      margin-bottom:26px;
+    }
+    .eyebrow{
+      color:#89a1ac;
+      letter-spacing:.16em;
+      font-size:12px;
+      font-weight:800;
+      margin-bottom:10px;
+    }
+    h1{
+      margin:0;
+      font-size:clamp(30px,4vw,52px);
+      letter-spacing:-.04em;
+      line-height:1.04;
+    }
+    .hero p{
+      margin:14px 0 0;
+      color:var(--muted);
+      line-height:1.8;
+      max-width:720px;
+      font-size:15px;
+    }
+    .top-actions{
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      justify-content:flex-end;
+    }
+    button{
+      border:0;
+      cursor:pointer;
+      font:inherit;
+    }
+    .btn{
+      border-radius:16px;
+      padding:12px 16px;
+      font-weight:750;
+      transition:.18s ease;
+    }
+    .btn:hover{transform:translateY(-1px)}
+    .btn.secondary{
+      background:#fff;
+      color:#607985;
+      border:1px solid var(--line);
+    }
+    .panel{
+      background:rgba(255,255,255,.92);
+      border:1px solid var(--line);
+      border-radius:24px;
+      box-shadow:var(--shadow);
+    }
+    .soul{
+      padding:18px 20px;
+      margin-bottom:18px;
+    }
+    .label-title{
+      font-size:12px;
+      color:#8fa0a8;
+      font-weight:800;
+      letter-spacing:.08em;
+      margin-bottom:12px;
+    }
+    .chips{
+      display:flex;
+      flex-wrap:wrap;
+      gap:9px;
+    }
+    .chip{
+      background:var(--accent2);
+      color:#5d7d8b;
+      border-radius:999px;
+      padding:8px 12px;
+      font-size:13px;
+      font-weight:700;
+    }
+    .grid{
+      display:grid;
+      grid-template-columns:repeat(2,minmax(0,1fr));
+      gap:14px;
+    }
+    .item{
+      background:rgba(255,255,255,.94);
+      border:1px solid var(--line);
+      border-radius:20px;
+      box-shadow:0 8px 24px rgba(67,89,99,.05);
+      padding:17px 17px 16px;
+      min-height:118px;
+      position:relative;
+      transition:.18s ease;
+    }
+    .item.locked{
+      border-color:#9fc1cf;
+      background:#f8fcfd;
+    }
+    .item.wide{grid-column:1/-1}
+    .item-head{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      margin-bottom:10px;
+    }
+    .item-actions{
+      display:flex;
+      gap:7px;
+      align-items:center;
+    }
+    .item-name{
+      color:#96a6ad;
+      font-size:12px;
+      font-weight:800;
+    }
+    .lock,
+    .reroll{
+      width:34px;height:34px;
+      border-radius:11px;
+      background:#f0f4f5;
+      color:#8da0a8;
+      display:grid;
+      place-items:center;
+      font-size:15px;
+      transition:.18s ease;
+    }
+    .reroll{
+      background:#edf5f8;
+      color:#668b9b;
+    }
+    .lock:hover,
+    .reroll:hover{
+      transform:translateY(-1px);
+      filter:brightness(.98);
+    }
+    .locked .lock{
+      background:#dfeff5;
+      color:#567b8b;
+    }
+    .value{
+      font-size:16px;
+      line-height:1.65;
+      font-weight:750;
+    }
+    .picker-wrap{display:none;margin-top:12px}
+    .item.expanded .picker-wrap{display:block}
+    .expand-picker{width:34px;height:34px;border-radius:11px;background:#f5f0f4;color:#947789;font-size:15px}
+    .picker{
+      width:100%;
+      border:1px solid var(--line);
+      background:#fbfdfe;
+      color:#5d6f77;
+      border-radius:12px;
+      padding:10px 12px;
+      font:inherit;
+      font-size:13px;
+      outline:none;
+    }
+    .picker:focus{
+      border-color:#9fc1cf;
+      box-shadow:0 0 0 3px rgba(126,170,190,.12);
+    }
+    .picker-note{
+      margin-top:7px;
+      color:#9aabb2;
+      font-size:12px;
+      line-height:1.5;
+    }
+    .random{
+      width:100%;
+      margin:18px 0;
+      border-radius:22px;
+      padding:20px 24px;
+      color:#fff;
+      background:linear-gradient(135deg,#86b3c6,#6f9eb2);
+      font-size:18px;
+      font-weight:850;
+      letter-spacing:.02em;
+      box-shadow:0 16px 32px rgba(73,129,154,.22);
+    }
+    .random:active{transform:scale(.995)}
+    .prompt{
+      margin-top:4px;
+      overflow:hidden;
+    }
+    .prompt-head{
+      padding:18px 20px;
+      border-bottom:1px solid var(--line);
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:16px;
+    }
+    .prompt-head h2{
+      margin:0;
+      font-size:18px;
+    }
+    .prompt-head p{
+      margin:6px 0 0;
+      color:var(--muted);
+      font-size:13px;
+    }
+    .prompt-actions{
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+    }
+    .prompt-actions button{
+      padding:10px 13px;
+      border-radius:12px;
+      font-weight:750;
+      background:#edf4f7;
+      color:#5f8290;
+    }
+    .prompt-toggle{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      width:100%;
+      padding:14px 20px;
+      border:0;
+      border-bottom:1px solid var(--line);
+      background:#fbfdfe;
+      color:#5f8290;
+      font-weight:800;
+      text-align:left;
+      cursor:pointer;
+    }
+    .prompt-toggle .chevron{transition:transform .18s ease}
+    .prompt.is-open .prompt-toggle .chevron{transform:rotate(180deg)}
+    .prompt-body{display:none}
+    .prompt.is-open .prompt-body{display:block}
+    textarea{
+      display:block;
+      width:100%;
+      min-height:420px;
+      border:0;
+      resize:vertical;
+      outline:0;
+      padding:20px;
+      background:#fff;
+      color:#4c5a60;
+      font:13px/1.72 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    }
+    .toast{
+      position:fixed;
+      left:50%;
+      bottom:30px;
+      transform:translateX(-50%) translateY(20px);
+      background:#26343a;
+      color:#fff;
+      padding:11px 16px;
+      border-radius:12px;
+      opacity:0;
+      pointer-events:none;
+      transition:.22s;
+      font-weight:700;
+      font-size:13px;
+      box-shadow:0 12px 30px rgba(0,0,0,.16);
+    }
+    .toast.show{
+      opacity:1;
+      transform:translateX(-50%) translateY(0);
+    }
+    .hint{
+      text-align:center;
+      color:#98a7ad;
+      font-size:12px;
+      margin-top:18px;
+      line-height:1.7;
+    }
+    #genBtn.random{
+      background:linear-gradient(135deg,#9a86c6,#7f6eb2);
+      box-shadow:0 16px 32px rgba(111,86,166,.24);
+    }
+    #genBtn.random:disabled{opacity:.55;cursor:not-allowed;transform:none}
+    #genResult img{
+      width:100%;
+      border-radius:16px;
+      border:1px solid var(--line);
+      display:block;
+      box-shadow:0 8px 24px rgba(67,89,99,.08);
+    }
+    #genResult .dl{
+      display:block;
+      text-align:center;
+      margin-top:8px;
+      padding:10px;
+      border-radius:12px;
+      background:#edf4f7;
+      color:#5f8290;
+      font-weight:750;
+      font-size:13px;
+      text-decoration:none;
+    }
+    #genResult .dl:active{background:#dfe9ee}
+    .genset{margin:14px 0 2px;padding:15px;background:#f8fbfc;border:1px solid var(--line);border-radius:16px}
+    .genset-row{margin-bottom:12px}
+    .genset-row:last-child{margin-bottom:0}
+    .genset-row label{display:block;font-size:12px;color:var(--muted);font-weight:700;margin-bottom:5px}
+    .genset-row .picker,
+    .genset-row .geninput{
+      width:100%;border:1px solid var(--line);background:#fff;color:#5d6f77;
+      border-radius:10px;padding:9px 11px;font:inherit;font-size:13px;outline:none;
+    }
+    .genset-row .picker:focus,
+    .genset-row .geninput:focus{border-color:#9fc1cf;box-shadow:0 0 0 3px rgba(126,170,190,.12)}
+    .genset-3col{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+    @media(max-width:720px){
+      .wrap{width:min(100% - 20px,1080px);padding-top:26px}
+      .hero{display:block}
+      .top-actions{justify-content:flex-start;margin-top:18px}
+      .grid{grid-template-columns:1fr}
+      .item.wide{grid-column:auto}
+      .prompt-head{align-items:flex-start;flex-direction:column}
+      textarea{min-height:520px}
+    }
+    /* ============ 历史记录 ============ */
+    #histBtn{
+      display:block;width:min(1080px, calc(100% - 32px));margin:0 auto 20px;
+      background:#fff;border:1px solid var(--line);color:#5d7d8b;
+      border-radius:14px;padding:13px;font-size:14px;font-weight:750;cursor:pointer;
+    }
+    #histBtn:active{background:#eef4f7}
+    #historyOverlay{
+      position:fixed;inset:0;background:rgba(244,247,248,.98);z-index:90;
+      overflow-y:auto;padding:16px;padding-bottom:60px;
+    }
+    .hist-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;max-width:640px;margin-left:auto;margin-right:auto}
+    .hist-close{background:none;border:none;color:var(--muted);font-size:26px;cursor:pointer;padding:4px 10px;line-height:1}
+    #historyList{max-width:640px;margin:0 auto}
+    .job{border:1px solid var(--line);border-radius:16px;padding:14px;margin-bottom:14px;background:rgba(255,255,255,.95);box-shadow:var(--shadow)}
+    .job .top{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:8px;font-weight:600}
+    .tag{font-size:11px;padding:3px 10px;border-radius:20px;font-weight:700}
+    .tag.done{background:#e2f5ec;color:#2f9d6b}
+    .tag.err{background:#fbeaea;color:#c14b4b}
+    .tag.run{background:#e3eef4;color:#5a8ba1}
+    .job img{width:100%;border-radius:12px;border:1px solid var(--line);display:block;margin-top:8px}
+    .job .dl{
+      display:block;text-align:center;margin-top:8px;padding:10px;border-radius:12px;
+      background:#edf4f7;color:#5f8290;font-weight:750;font-size:13px;text-decoration:none;
+    }
+    .job .dl:active{background:#dfe9ee}
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="hero">
+      <div>
+        <div class="eyebrow">ANIMA-BASE · RANDOM INSPIRATION</div>
+        <h1>冷脸萌随机搭配器</h1>
+        <p>
+          固定「冷脸萌、半睁细长冷眼、美人痣、低饱和细线稿」的气质，
+          现在服装改成了更细的 SD 式词组：上装 / 外搭 / 下装 / 腿部 / 鞋子 / 额外配件，可分别随机。还加入了节日特供和故事情节选项。姿势和视角也大幅扩充，加入了夸张透视、广角、低机位、成人时尚感和偏性感但不露骨的动作与镜头；现在每一个选项都支持下拉选择。
+        </p>
+      </div>
+      <div class="top-actions">
+        <button class="btn secondary" id="unlockAll">全部解锁</button>
+        <button class="btn secondary" id="randomAll">重抽全部</button>
+      </div>
+    </section>
+
+    <section class="panel soul">
+      <div class="label-title">固定灵魂 / 不参与随机</div>
+      <div class="chips">
+        <span class="chip">半睁细长冷眼</span>
+        <span class="chip">冷脸萌 / kuudere</span>
+        <span class="chip">眼下美人痣</span>
+        <span class="chip">低饱和</span>
+        <span class="chip">细线稿</span>
+        <span class="chip">平涂</span>
+        <span class="chip">白色描边</span>
+        <span class="chip">留白构图</span>
+        <span class="chip">情绪可随机</span>
+        <span class="chip">互动可随机</span>
+        <span class="chip">成人时尚性感姿势</span>
+        <span class="chip">夸张透视视角</span>
+        <span class="chip">SD式服装词组</span>
+        <span class="chip">节日特供</span>
+        <span class="chip">故事情节</span>
+        <span class="chip">中长发 / 长发 / 双马尾 / 辫子</span>
+      </div>
+    </section>
+
+    <section class="grid" id="grid"></section>
+
+    <button class="random" id="randomBtn">✦ 随机搭配未锁定项目</button>
+
+    <section class="panel prompt" id="promptPanel">
+      <div class="prompt-head">
+        <div>
+          <h2>完整 Prompt</h2>
+          <p>已经自动组合成适合 Anima-Base 的英文提示词。</p>
+        </div>
+        <div class="prompt-actions">
+          <button id="copyPositive">复制正向</button>
+          <button id="copyAll">复制全部</button>
+        </div>
+      </div>
+      <button class="prompt-toggle" id="promptToggle" type="button" aria-expanded="false">
+        <span>展开查看详细提示词</span><span class="chevron">⌄</span>
+      </button>
+      <div class="prompt-body" id="promptBody">
+        <textarea id="promptText" spellcheck="false"></textarea>
+      </div>
+    </section>
+
+    <section class="panel gen" style="padding:18px 20px;margin-top:18px">
+      <div class="prompt-head" style="border-bottom:none;padding:0 0 12px">
+        <div>
+          <h2 style="margin:0;font-size:18px">一键生图</h2>
+          <p style="margin:6px 0 0;color:var(--muted);font-size:13px">用当前 Prompt 直接调用本机「02 人物加画风」工作流出图（Anima Base + 人物/画风 LoRA）。</p>
+        </div>
+        <span id="comfyGenBadge" style="font-size:12px;font-weight:750;color:#a0852c;white-space:nowrap">检测中…</span>
+      </div>
+      <div class="genset">
+        <div class="genset-row genset-3col">
+          <div><label>宽</label><input type="number" id="genW" class="geninput" value="768" min="256" max="2048" step="16"></div>
+          <div><label>高</label><input type="number" id="genH" class="geninput" value="1024" min="256" max="2048" step="16"></div>
+          <div><label>批量</label><input type="number" id="genBatch" class="geninput" value="1" min="1" max="4"></div>
+        </div>
+        <div class="genset-row">
+          <label>是否高清</label>
+          <select id="genHd" class="picker">
+            <option value="0">否（原图直出）</option>
+            <option value="1">是 · ClearReality 极速2×</option>
+            <option value="2">是 · UltraSharp 精细2×</option>
+          </select>
+        </div>
+
+      </div>
+      <button class="random" id="genBtn" style="margin:0">🎨 一键生图（02人物加画风）</button>
+      <div id="genStatus" style="margin-top:12px;color:#5d6f77;font-size:13px;font-weight:750"></div>
+      <div id="genResult" style="margin-top:6px"></div>
+    </section>
+
+    <div class="hint">
+      单文件 HTML，无需服务器。每个项目都可以单独随机 ↻，并且每个项目都支持下拉直选；服装已拆成多组可自由组合的 SD 式词组；现在也加入了节日特供、故事情节，以及更丰富的中长发和长发词库；锁定状态与最后一次随机结果会保存在浏览器本地。
+    </div>
+  </main>
+
+  <button id="histBtn" onclick="toggleHistory()">📁 历史记录</button>
+  <button id="favBtn" onclick="toggleFavorites()" style="position:fixed;right:18px;bottom:74px;z-index:80;border:1px solid var(--line);border-radius:18px;padding:11px 15px;background:#fff;color:#8c6b82;font-weight:800;box-shadow:var(--shadow)">♥ 收藏</button>
+
+  <div id="historyOverlay" style="display:none">
+    <div class="hist-head">
+      <h2 style="margin:0;font-size:18px">📁 历史记录</h2>
+      <button class="hist-close" onclick="toggleHistory()">✕</button>
+    </div>
+    <div id="historyList"></div>
+  </div>
+
+  <div id="favoritesOverlay" style="display:none;position:fixed;inset:0;background:rgba(244,247,248,.98);z-index:91;overflow-y:auto;padding:16px 16px 60px">
+    <div class="hist-head"><h2 style="margin:0;font-size:18px">♥ 我的收藏</h2><button class="hist-close" onclick="toggleFavorites()">✕</button></div>
+    <div id="favoritesList" style="max-width:640px;margin:0 auto"></div>
+  </div>
+
+  <div class="toast" id="toast">已复制</div>
+
+<script>
+const FIXED_HEAD = `masterpiece, best quality, score_7, newest, highres, safe,
+
+1girl, solo, clearly adult woman, age 20+,
+cool-cute vibe, kuudere, calm, aloof, cold-cute charm,
+half-lidded eyes, narrow eyes, cold eyes, non-round eyes, slightly droopy eyes,
+soft blush, subtle pink cheeks,
+small beauty mark under one eye,
+delicate face, refined features`;
+
+const FIXED_STYLE = `clean anime illustration,
+thin delicate lineart, fine gray outlines, slightly thicker outer contour,
+flat colors, soft cel shading, minimal gradients,
+graphic illustration, poster-like composition,
+limited color palette, low saturation,
+cool gray, off-white, muted pastel colors,
+large negative space, simple background,
+high-key lighting, soft diffuse light, low contrast,
+quiet melancholic atmosphere,
+white sticker-like outline around character`;
+
+const NEGATIVE = `worst quality, low quality, score_1, score_2, score_3,
+watermark, signature, text, logo,
+photorealistic, realistic skin, 3d, cgi,
+thick painting, painterly, oil painting,
+messy sketch, rough lineart,
+dramatic cinematic lighting, harsh shadows,
+high contrast, oversaturated colors,
+round eyes, wide open eyes, huge sparkling eyes,
+child, teen, teenage, underage, loli, elementary school student, middle school student,
+big smile, exaggerated cheerful expression,
+bad anatomy, bad hands, extra fingers, missing fingers, extra limbs`;
+
+const POOLS = {
+  character: [
+    ["无（不添加此部分）",""],
+    ["灰粉系清冷少女","slender young woman, soft angular face, dusty rose undertone"],
+    ["银灰系疏离少女","slender young woman, porcelain complexion, subtle cool undertone"],
+    ["雾紫系安静少女","petite young woman, delicate oval face, lavender-gray undertone"],
+    ["蓝黑系冷淡少女","slim young woman, refined small face, cool neutral complexion"],
+    ["米金系文艺少女","slender young woman, soft narrow face, pale warm-neutral complexion"],
+    ["茶灰系无表情少女","petite young woman, delicate tapered face, muted beige-gray undertone"],
+    ["墨绿色冷感少女","slim young woman, refined face, faint cool olive undertone"],
+    ["淡杏粉冬日少女","slender young woman, elegant small face, pale peach-beige undertone"]
+  ],
+  hair: [
+    ["无（不添加此部分）",""],
+    ["烟粉短狼尾 + 碎刘海","short dusty-pink wolf cut, wispy uneven bangs, soft face-framing strands"],
+    ["银灰齐肩直发 + 偏分刘海","shoulder-length silver-gray straight hair, side-swept bangs"],
+    ["蓝黑短鲍伯 + 空气刘海","short blue-black bob, see-through bangs, tucked hair behind one ear"],
+    ["雾紫耳下短发 + 不规则刘海","neck-length muted lavender hair, uneven bangs, subtle messy ends"],
+    ["灰茶短姬发 + 长鬓角","short ash-brown hime cut, blunt side locks, straight fringe"],
+    ["米金短碎发 + 侧边小辫","short ash-blonde layered hair, tiny side braid, wispy bangs"],
+    ["深青灰鲍伯 + 中分碎发","dark teal-gray bob cut, soft center-parted fringe"],
+    ["淡杏粉中短发 + 低双辫","medium-short pale peach hair, loose low twin braids, thin bangs"],
+    ["墨灰短发 + 外翻发尾","short charcoal-gray hair, flipped ends, narrow curtain bangs"],
+    ["雾蓝齐耳短发 + 斜碎刘海","ear-length mist-blue hair, angled wispy bangs, airy texture"],
+    ["冷棕短直发 + 单侧别耳","short cool-brown straight hair, one side tucked behind ear"],
+    ["浅灰绿中短发 + 层次尾端","medium-short pale sage-gray hair, softly layered ends"],
+
+    ["雾粉锁骨发 + 空气刘海","collarbone-length dusty-pink hair, see-through bangs, soft ends"],
+    ["银灰中长直发 + 偏分","medium-long silver-gray straight hair, side part"],
+    ["灰蓝中长发 + 内扣发尾","medium-long gray-blue hair, softly curved inward ends"],
+    ["淡紫中长发 + 低双马尾","medium-long muted lavender hair, low twin tails"],
+    ["冷棕中长卷发 + 碎刘海","medium-long cool-brown wavy hair, wispy bangs"],
+    ["雾米金中长层次发","medium-long ash-blonde layered hair, soft face-framing strands"],
+    ["蓝黑锁骨发 + 姬发边","collarbone-length blue-black hair, subtle hime side locks"],
+    ["灰粉中长发 + 半扎发","medium-long dusty-rose hair, half-up hairstyle"],
+    ["冷黑锁骨发 + 外翻层次","collarbone-length cool-black hair with flipped layered ends"],
+    ["银白中长卷发 + 中分","medium-long silver-white soft waves, center part"],
+
+    ["银白长直发 + 轻薄刘海","long silver-white straight hair, light airy bangs"],
+    ["灰蓝长发 + 高马尾","long gray-blue hair in a high ponytail"],
+    ["冷棕长发 + 低马尾","long cool-brown hair in a low ponytail"],
+    ["淡杏粉长发 + 双马尾","long pale peach hair in twin tails"],
+    ["灰紫长卷发 + 侧分","long gray-violet wavy hair, side-swept fringe"],
+    ["墨黑长发 + 公主切","long ink-black hair with hime cut framing"],
+    ["米金长发 + 编发发箍","long ash-blonde hair with braided crown"],
+    ["深青灰长发 + 麻花辫","long deep teal-gray hair in a loose side braid"],
+    ["雾蓝长发 + 半扎丸子头","long mist-blue hair with half-up mini buns"],
+    ["银灰长发 + 双低辫","long silver-gray hair in low twin braids"],
+    ["灰茶长发 + 大波浪","long ash-brown hair with soft large waves"],
+    ["冷黑长发 + 湿发感","long cool-black hair, sleek slightly wet look"],
+    ["灰蓝超长直发","very long gray-blue straight hair"],
+    ["银灰长卷双马尾","long silver-gray curly twin tails"],
+    ["雾粉长发 + 高双马尾","long dusty-pink hair in high twin tails"],
+    ["冷棕长发 + 鱼骨辫","long cool-brown hair in a fishtail braid"],
+
+    ["雾紫卷双马尾","curly muted-lavender twin tails"],
+    ["灰蓝麻花辫单马尾","gray-blue braided ponytail"],
+    ["浅米金丸子头 + 垂落鬓发","ash-blonde bun hairstyle with dangling side strands"],
+    ["冷棕高盘发 + 松散碎发","cool-brown updo with loose flyaway strands"],
+    ["银灰半扎公主头","silver-gray half-up princess hairstyle"],
+    ["灰粉狼尾长发","dusty-pink long wolf-cut hair"],
+    ["蓝黑高双马尾","blue-black high twin tails"],
+    ["灰紫长直发 + 发尾轻卷","long gray-violet straight hair with softly curled ends"]
+  ],
+  eyes: [
+    ["无（不添加此部分）",""],
+    ["灰蓝细长半睁眼","gray-blue irises, narrow half-lidded eyes, cool sleepy gaze"],
+    ["雾紫细长下垂眼","muted violet irises, narrow slightly droopy half-lidded eyes"],
+    ["浅茶灰冷眼","pale taupe-gray irises, thin half-closed eyes, detached gaze"],
+    ["冰青色懒倦眼","icy cyan irises, narrow sleepy eyes, subtle lower-lid emphasis"],
+    ["灰绿色低垂眼","desaturated sage-green irises, half-lidded narrow eyes, aloof gaze"],
+    ["暗红灰冷眼","muted wine-gray irises, narrow half-open eyes, quiet intimidating gaze"]
+  ],
+  emotion: [
+    ["无（不添加此部分）",""],
+    ["困倦冷淡","sleepy expression, emotionless but cute, faintly tired mood"],
+    ["轻微不耐烦","slightly annoyed expression, unimpressed gaze, restrained attitude"],
+    ["安静放空","blank quiet expression, absent-minded mood, detached calmness"],
+    ["若有所思","subtly thoughtful expression, introspective mood, distant gaze"],
+    ["轻微害羞","subtle shy expression, faint embarrassment, reserved mood"],
+    ["闷闷不乐","slightly gloomy expression, quiet downcast mood, subtle melancholy"],
+    ["嘴硬傲娇","mildly tsundere expression, trying to look indifferent, faint embarrassment"],
+    ["冷淡嫌弃","cold unimpressed expression, mildly disdainful gaze, restrained emotion"],
+    ["小小得意","faint smug expression, subtle self-satisfied mood, restrained coolness"],
+    ["淡淡开心","soft tiny smile, quiet pleased mood, understated warmth"],
+    ["发呆恍神","dazed expression, drifting thoughts, dreamy absent gaze"],
+    ["紧张但克制","slightly nervous expression, composed but tense mood, subtle unease"]
+  ],
+  interaction: [
+    ["无（不添加此部分）",""],
+    ["直视镜头","looking directly at viewer, direct eye contact"],
+    ["微微偷看镜头","glancing at viewer from the corner of the eyes, subtle side-eye contact"],
+    ["不看镜头","looking away from viewer, avoiding eye contact"],
+    ["低头看手边物品","looking down at something in hands, attention on nearby object"],
+    ["回头看镜头","looking back toward viewer over shoulder"],
+    ["抬眼看镜头","head slightly lowered, eyes lifting toward viewer"],
+    ["盯着远处发呆","staring into the distance, unfocused gaze"],
+    ["和手中物件互动","interacting with a held object, attention focused on the object"],
+    ["像被叫到一样转头","turning head as if someone just called her, reactive glance"],
+    ["轻轻靠近镜头","leaning subtly toward viewer, intimate conversational distance"],
+    ["用袖子半遮脸看镜头","partially hiding face with sleeve while looking at viewer"],
+    ["边走边回眸","glancing back while in motion, fleeting interaction"]
+  ],
+  holiday: [
+    ["无（不添加此部分）",""],
+    ["日常无节日","no specific holiday theme, everyday atmosphere"],
+    ["七夕特供","Qixi festival theme, romantic Chinese-Valentine atmosphere, subtle heart and ribbon motifs"],
+    ["情人节特供","Valentine's Day theme, romantic mood, gift-box and heart-accent atmosphere"],
+    ["白色情人节","White Day theme, clean sweet atmosphere, pastel confectionery accents"],
+    ["万圣节特供","Halloween theme, gothic-cute atmosphere, pumpkins, bats, candy accents"],
+    ["圣诞节特供","Christmas theme, winter holiday mood, ribbon, gift, snow and warm lights"],
+    ["新年特供","New Year festive theme, celebratory mood, elegant seasonal styling"],
+    ["春节特供","Chinese New Year theme, festive red-gold accents, lucky ornaments, seasonal celebration"],
+    ["元宵节特供","Lantern Festival theme, glowing lantern mood, warm night-festival atmosphere"],
+    ["樱花季特供","spring cherry-blossom season theme, drifting petals and soft romantic atmosphere"],
+    ["毕业季特供","graduation season theme, youth nostalgia, bouquet and memory atmosphere"],
+    ["夏日祭特供","summer festival theme, night-stall mood, fireworks and festival decorations"],
+    ["海边暑假特供","summer vacation beach theme, bright airy holiday mood"],
+    ["开学季特供","back-to-school season theme, fresh academic atmosphere"],
+    ["冬日限定","winter special theme, cold air, scarf, pale seasonal mood"]
+  ],
+
+  story: [
+    ["无（不添加此部分）",""],
+    ["无特别剧情","no special narrative, standalone portrait feeling"],
+    ["约会前等待","waiting before a date, subtle anticipation and romantic tension"],
+    ["偷偷准备礼物","secretly preparing a gift, shy and thoughtful narrative mood"],
+    ["刚收到情书","just received a love letter, surprised and reserved emotional beat"],
+    ["放学后的天台独处","alone on the rooftop after school, quiet introspective story moment"],
+    ["雨天便利店偶遇","chance encounter at a convenience store on a rainy day"],
+    ["深夜电话后发呆","drifting into thought after a late-night phone call"],
+    ["节日夜晚赴约途中","on the way to meet someone during a festival night"],
+    ["刚吵完架的沉默","silent aftermath of a recent argument, restrained unresolved tension"],
+    ["重逢后的回头一眼","a single glance back after an unexpected reunion"],
+    ["图书馆里偷看喜欢的人","secretly looking at someone they like in a library"],
+    ["窗边等消息","waiting by the window for a reply or message"],
+    ["旅行中的路边抓拍","travel snapshot on the roadside, in-between story feeling"],
+    ["参加派对前的准备时刻","getting ready just before a party or event"],
+    ["深夜房间独处","alone in a room late at night, intimate quiet storytelling"],
+    ["舞会后短暂休息","taking a short break after a dance or formal event"],
+    ["毕业前最后一次见面","one last meeting before graduation, bittersweet mood"],
+    ["节日礼物交换瞬间","the moment right before exchanging holiday gifts"],
+    ["被突然叫住的瞬间","caught in a sudden moment when someone calls her name"],
+    ["刚从梦里醒来","just waking from a dream, hazy emotionally distant feeling"]
+  ],
+  accessory: [
+    ["无（不添加此部分）",""],
+    ["银色一字发夹","minimal silver barrette"],
+    ["黑色细丝带","small thin black ribbon hair ornament"],
+    ["珍珠边夹","small pearl hair clip"],
+    ["单边细耳环","single delicate drop earring"],
+    ["磨砂金属发卡","matte metal hair clip"],
+    ["窄丝绒发箍","thin velvet headband"],
+    ["小月牙发饰","tiny crescent-moon hairpin"],
+    ["无发饰，仅细项链","no hair ornament, thin minimalist necklace"],
+    ["透明树脂发夹","small translucent resin hair clip"],
+    ["细框耳机挂在颈间","slim headphones resting around neck"]
+  ],
+  top: [
+    ["无（不添加此部分）",""],
+    ["细吊带背心","thin spaghetti-strap camisole"],
+    ["缎面吊带上衣","satin camisole top"],
+    ["短款挂脖上衣","cropped halter top"],
+    ["露肩针织上衣","soft off-shoulder knit top"],
+    ["短款贴身T恤","cropped fitted t-shirt"],
+    ["宽松落肩T恤","oversized drop-shoulder t-shirt"],
+    ["短款无袖高领针织","cropped sleeveless turtleneck knit"],
+    ["修身长袖打底衫","fitted long-sleeve inner top"],
+    ["宽松衬衫半敞开","oversized shirt worn slightly open"],
+    ["短款针织开衫内搭小背心","cropped knit cardigan over a small camisole"],
+    ["学院风衬衫","clean collared blouse"],
+    ["轻薄透感衬衫","light semi-sheer shirt"],
+    ["短款连帽卫衣","cropped hoodie"],
+    ["贴身针织背心","fitted knit tank top"],
+    ["高领修身针织","fitted turtleneck knit top"],
+    ["一字肩上衣","bardot off-shoulder top"],
+    ["斜肩上衣","one-shoulder top"],
+    ["短款毛衣","cropped soft sweater"],
+    ["宽松长袖卫衣","oversized sweatshirt"],
+    ["系带吊带上衣","lace-up camisole top"],
+    ["运动感短背心","sporty cropped tank top"],
+    ["绑带抹胸外搭衬衫","strapless tube top with open overshirt"],
+    ["V领针织上衣","soft V-neck knit top"],
+    ["紧身短针织","fitted cropped knit top"]
+  ],
+
+  outerwear: [
+    ["无（不添加此部分）",""],
+    ["无外套","no outerwear"],
+    ["宽松针织开衫","oversized knit cardigan"],
+    ["短款牛仔外套","cropped denim jacket"],
+    ["短款机能外套","cropped technical jacket"],
+    ["宽大飞行夹克","oversized bomber jacket"],
+    ["短风衣","cropped trench coat"],
+    ["长款羊毛外套","long wool coat"],
+    ["西装外套","tailored blazer"],
+    ["短款皮夹克","cropped leather jacket"],
+    ["软呢短外套","soft tweed jacket"],
+    ["连帽外套","hooded zip jacket"],
+    ["披肩式短斗篷","short cape-like outer layer"],
+    ["学院风针织背心","cable-knit sweater vest"],
+    ["开襟毛衣外搭","buttoned cardigan outer layer"],
+    ["宽松格纹衬衫外套","oversized plaid overshirt"],
+    ["薄纱披搭","sheer light cover-up"],
+    ["拉链运动外套","zip-up sporty jacket"],
+    ["毛绒短外套","cropped faux-fur jacket"]
+  ],
+
+  bottoms: [
+    ["无（不添加此部分）",""],
+    ["百褶短裙","pleated mini skirt"],
+    ["格纹百褶裙","muted plaid pleated skirt"],
+    ["包臀短裙","body-hugging mini skirt"],
+    ["直筒短裙","straight mini skirt"],
+    ["A字短裙","A-line mini skirt"],
+    ["不规则短裙","asymmetrical short skirt"],
+    ["牛仔短裙","denim mini skirt"],
+    ["高腰牛仔裤","high-waisted jeans"],
+    ["宽松牛仔裤","loose straight-leg jeans"],
+    ["低腰牛仔裤","low-rise jeans"],
+    ["紧身牛仔裤","skinny jeans"],
+    ["阔腿裤","wide-leg pants"],
+    ["工装裤","cargo pants"],
+    ["短裤","shorts"],
+    ["牛仔热裤","denim hot pants"],
+    ["高腰热裤","high-waisted hot pants"],
+    ["皮质短裤","leather shorts"],
+    ["针织短裤","soft knit shorts"],
+    ["吊带裙","pinafore dress"],
+    ["吊带连衣短裙","slip mini dress"],
+    ["修身连衣裙","fitted short dress"],
+    ["长开衩半裙","long skirt with side slit"],
+    ["铅笔裙","pencil skirt"],
+    ["褶皱短裙","ruched mini skirt"]
+  ],
+
+  legwear: [
+    ["无（不添加此部分）",""],
+    ["裸腿","bare legs"],
+    ["黑色丝袜","black pantyhose"],
+    ["薄黑连裤袜","sheer black tights"],
+    ["肉色丝袜","nude pantyhose"],
+    ["灰色连裤袜","gray tights"],
+    ["白色长袜","white knee socks"],
+    ["黑色长袜","black knee socks"],
+    ["白色过膝袜","white thighhigh socks"],
+    ["黑色过膝袜","black thighhigh socks"],
+    ["灰色过膝袜","gray thighhigh socks"],
+    ["白色堆堆袜","white slouch socks"],
+    ["黑色堆堆袜","black slouch socks"],
+    ["腿套","loose leg warmers"],
+    ["蕾丝边过膝袜","lace-trim thighhigh socks"],
+    ["半透明大腿袜","semi-sheer thighhigh stockings"],
+    ["网袜","fishnet tights"],
+    ["黑色吊带袜","black garter stockings"],
+    ["白色蕾丝丝袜","white lace stockings"],
+    ["短袜","ankle socks"],
+    ["花纹连裤袜","patterned tights"],
+    ["一边长袜一边短袜","mismatched socks"]
+  ],
+
+  footwear: [
+    ["无（不添加此部分）",""],
+    ["不穿鞋 · 赤脚","barefoot, no shoes, visible bare feet"],
+    ["脱鞋放在身边","barefoot, shoes taken off and placed beside her"],
+    ["只穿袜子不穿鞋","wearing socks without shoes"],
+    ["乐福鞋","loafers"],
+    ["玛丽珍鞋","mary jane shoes"],
+    ["低帮运动鞋","low-top sneakers"],
+    ["高帮运动鞋","high-top sneakers"],
+    ["短靴","ankle boots"],
+    ["长靴","knee-high boots"],
+    ["过膝长靴","over-the-knee boots"],
+    ["厚底鞋","chunky platform shoes"],
+    ["细跟高跟鞋","stiletto heels"],
+    ["粗跟短靴","block-heel ankle boots"],
+    ["绑带凉鞋","strappy sandals"],
+    ["穆勒鞋","mule heels"],
+    ["皮鞋","polished leather shoes"],
+    ["芭蕾平底鞋","ballet flats"]
+  ],
+
+  body_modifier: [
+    ["无（不添加此部分）",""],
+    ["娇小纤细","petite slender adult body, delicate narrow frame"],
+    ["高挑纤细","tall slender adult body, long elegant proportions"],
+    ["标准匀称","balanced adult body proportions, naturally proportioned figure"],
+    ["微肉柔软","soft slightly chubby adult body, gentle natural curves"],
+    ["丰满曲线","full curvy adult figure, defined waist and hips"],
+    ["健美紧致","toned athletic adult body, firm natural musculature"],
+    ["肌肉感明显","muscular adult woman, defined arms, abdomen and thighs"],
+    ["沙漏型身材","hourglass adult figure, defined waist, balanced bust and hips"],
+    ["梨形身材","pear-shaped adult figure, narrower shoulders and fuller hips"],
+    ["倒三角身材","inverted-triangle adult figure, broader shoulders and narrower hips"],
+    ["直筒型身材","straight rectangular adult body shape, subtle waist definition"],
+    ["小胸","small bust, adult woman, natural proportions"],
+    ["中等胸型","medium bust, adult woman, natural proportions"],
+    ["丰满胸型","full bust, adult woman, tasteful non-explicit proportions"],
+    ["自然下垂胸型","natural softly lowered bust shape through clothing, adult woman, non-explicit"],
+    ["窄肩","narrow delicate shoulders"],
+    ["宽肩","broad athletic shoulders"],
+    ["细腰","slim defined waist"],
+    ["自然腰线","soft natural waistline"],
+    ["宽胯","wide hips, adult woman, natural skeletal proportions"],
+    ["窄胯","narrow hips, adult woman"],
+    ["圆润臀型","rounded hips and glute silhouette through clothing, adult woman, non-explicit"],
+    ["小巧臀型","compact subtle hip and glute silhouette, adult woman"],
+    ["丰满臀型","full hip and glute silhouette through clothing, adult woman, tasteful non-explicit"],
+    ["修长腿型","long slender legs"],
+    ["匀称腿型","balanced naturally proportioned legs"],
+    ["健美腿型","toned athletic legs, defined thighs and calves"],
+    ["丰满大腿","full soft thighs, adult woman, natural proportions"],
+    ["纤细大腿","slender thighs, adult woman"],
+    ["小腿线条明显","defined calf muscles"],
+    ["微微隆起的小腹","subtly rounded soft lower belly, relaxed natural abdomen"],
+    ["平坦小腹","flat relaxed abdomen"],
+    ["柔软小腹褶皱","subtle natural belly folds from bending or sitting, adult woman"],
+    ["马甲线","subtle abdominal definition, light athletic ab lines"],
+    ["明显腹肌","defined athletic abdominal muscles"],
+    ["短躯干","short torso, adult body proportions"],
+    ["修长躯干","long elegant torso, adult body proportions"],
+    ["纤细手臂","slender delicate arms"],
+    ["健美手臂","toned athletic arms"],
+    ["骨感锁骨","prominent delicate collarbones"],
+    ["柔和锁骨","soft subtle collarbone definition"],
+    ["圆脸身材搭配","soft round adult face paired with a naturally curved body"],
+    ["小头身比例","small head with tall fashion-model body proportions, adult woman"],
+    ["七头身比例","seven-head-tall balanced anime adult proportions"],
+    ["八头身模特比例","eight-head-tall fashion model proportions, adult woman"]
+  ],
+
+  tattoo_color: [
+    ["无（不添加此部分）",""],
+    ["黑色淫纹","black ink succubus tattoo"],
+    ["深红色淫纹","deep crimson succubus tattoo"],
+    ["鲜红色淫纹","bright red succubus tattoo"],
+    ["暗紫色淫纹","dark violet succubus tattoo"],
+    ["亮紫色淫纹","luminous purple succubus tattoo"],
+    ["粉紫色淫纹","pink-violet succubus tattoo"],
+    ["玫红色淫纹","magenta succubus tattoo"],
+    ["蓝紫色淫纹","indigo-violet succubus tattoo"],
+    ["深蓝色淫纹","deep blue succubus tattoo"],
+    ["冰蓝色淫纹","icy cyan-blue succubus tattoo"],
+    ["青绿色淫纹","teal succubus tattoo"],
+    ["翠绿色淫纹","emerald green succubus tattoo"],
+    ["金色淫纹","metallic gold succubus tattoo"],
+    ["玫瑰金淫纹","rose-gold succubus tattoo"],
+    ["银白色淫纹","silver-white succubus tattoo"],
+    ["纯白色淫纹","pure white succubus tattoo"],
+    ["荧光粉淫纹","neon pink glowing succubus tattoo"],
+    ["荧光紫淫纹","neon purple glowing succubus tattoo"],
+    ["荧光蓝淫纹","neon blue glowing succubus tattoo"],
+    ["紫红渐变淫纹","purple-to-crimson gradient succubus tattoo"],
+    ["蓝紫渐变淫纹","blue-to-violet gradient succubus tattoo"],
+    ["黑红双色淫纹","black-and-red two-tone succubus tattoo"],
+    ["金红双色淫纹","gold-and-crimson two-tone succubus tattoo"],
+    ["微微发光的淫纹","softly glowing succubus tattoo, subtle magical light"],
+    ["强烈发光的淫纹","brightly glowing succubus tattoo, vivid magical light"]
+  ],
+
+  special_prompt: [
+    ["魅魔淫纹 · 小腹与后腰一组","matching succubus womb tattoo and symmetrical lower-back erotic fantasy crest, adult woman, non-explicit"],
+    ["无（不添加此部分）",""],
+    ["无特殊提示","no additional special body or expression detail"],
+    ["微微隆起的柔软小腹","subtly rounded soft lower belly, natural relaxed abdomen"],
+    ["自然放松的小腹线条","relaxed natural belly contour, soft realistic body line"],
+    ["轻轻张嘴","slightly open mouth, softly parted lips"],
+    ["欲言又止的微张嘴唇","lips slightly parted as if about to speak, restrained expression"],
+    ["轻咬下唇","gently biting lower lip, subtle restrained sensuality"],
+    ["舌尖轻触唇角","tip of tongue subtly touching the corner of lips, tasteful teasing expression"],
+    ["困倦湿润的眼神","sleepy dewy gaze, soft half-lidded eyes"],
+    ["脸颊与耳尖微红","subtle blush on cheeks and ear tips"],
+    ["锁骨线条清晰","delicate visible collarbone line"],
+    ["肩带自然滑落一侧","one shoulder strap resting loosely off one shoulder, tasteful non-explicit styling"],
+    ["衣摆微掀露出腰线","hem lifted slightly by motion, revealing a small section of waist, non-explicit"],
+    ["腰窝与侧腰线条明显","subtle waist dimples and defined side-waist contour"],
+    ["大腿被坐姿轻微挤压","natural soft thigh compression from seated pose"],
+    ["光脚脚尖轻轻绷直","bare toes softly pointed, elegant foot line"],
+    ["一只鞋半脱挂在脚尖","one shoe half slipped off and hanging from toes"],
+    ["头发微湿贴在脸侧","slightly damp hair strands clinging softly beside face"],
+    ["衣料贴合身体曲线","soft fabric following natural body curves, tasteful fashion emphasis"],
+    ["呼吸感胸肩起伏","subtle breathing motion in shoulders and upper torso, non-explicit"],
+    ["慵懒伸展后的微红脸颊","faintly flushed cheeks after a lazy stretch"],
+    ["指尖轻触嘴唇","fingertip lightly touching parted lips, quiet teasing mood"],
+    ["伸出舌头","tongue out, playful expression"],
+    ["舌尖轻舔上唇","tongue lightly touching upper lip, playful non-explicit expression"],
+    ["嘴角少量口水","small strand of drool at the corner of the mouth, dazed expression, non-explicit"],
+    ["轻微喘息般张嘴","softly parted lips as if catching breath, non-explicit"],
+    ["单眼黑色眼罩","black eyepatch over one eye"],
+    ["医疗白色眼罩","white medical eyepatch over one eye"],
+    ["红色心形眼罩","red heart-shaped eyepatch"],
+    ["蕾丝眼罩","lace-trimmed eyepatch over one eye"],
+    ["花朵装饰眼罩","flower-decorated eyepatch"],
+    ["机械金属眼罩","metal mechanical eyepatch"],
+    ["黑色蒙眼布","black blindfold covering both eyes, fashion editorial"],
+    ["半透明蕾丝蒙眼","semi-sheer lace blindfold, tasteful fashion accessory"],
+    ["魅魔淫纹 · 小腹","succubus womb tattoo, symmetrical erotic fantasy crest tattooed on the lower abdomen, adult woman, non-explicit"],
+    ["锁骨恶魔翅膀纹身","small demonic-wing tattoo near the collarbone"],
+    ["大腿外侧魔法纹章","ornamental fantasy magic sigil tattoo on outer thigh"],
+    ["魅魔淫纹 · 后腰","succubus lower-back tattoo, symmetrical erotic fantasy crest tattooed above the hips, adult woman, non-explicit"],
+    ["单手OK手势放在眼前","ok sign over eye, playful hand gesture"],
+    ["双手OK手势","double ok sign, playful hand gesture"],
+    ["手在嘴边做OK框","one hand making an ok-sign frame beside the mouth, playful non-explicit gesture"],
+    ["腋下附近比耶","v sign held near raised armpit, playful fashion pose"],
+    ["手指在眼旁比耶","v over eye, playful pose"],
+    ["双手在脸旁比耶","double v signs beside face"],
+    ["手指轻拉下眼睑","finger gently pulling down lower eyelid, teasing expression"],
+    ["一只手捂嘴轻笑","one hand covering mouth, restrained amused expression"],
+    ["手背贴额头","back of hand resting against forehead, dramatic pose"],
+    ["双手在头顶比爱心","arms forming a heart above head"],
+    ["单手托胸下方但保持遮挡","one hand supporting below the bust through clothing, fully covered, fashion pose"],
+    ["抬起手臂展示腋下线条","one arm raised, presenting armpit in a tasteful fashion pose"],
+    ["咬住手套指尖","gently biting the fingertip of a glove, theatrical non-explicit gesture"],
+    ["嘴里叼着发圈","holding a hair tie between lips while tying hair"]
+  ],
+
+  special_outfit: [
+    ["无（不添加此部分）",""],
+    ["无特殊服装","no additional special outfit layer"],
+    ["黑色蕾丝吊带睡裙","adult woman wearing a black lace-trim satin slip dress, tasteful fashion editorial"],
+    ["酒红色丝绒紧身连衣裙","adult woman wearing a fitted burgundy velvet dress, elegant body-contouring silhouette"],
+    ["黑色高领无袖紧身衣","adult woman wearing a sleek black sleeveless turtleneck bodysuit, non-explicit fashion styling"],
+    ["白衬衫 + 黑色蕾丝内搭","adult woman wearing an oversized white shirt over a black lace camisole"],
+    ["露背缎面长裙","adult woman wearing a backless satin evening dress, elegant non-explicit styling"],
+    ["单肩开衩礼服","adult woman wearing a one-shoulder dress with a tasteful side slit"],
+    ["短款皮夹克 + 修身吊带裙","adult woman wearing a cropped leather jacket over a fitted slip dress"],
+    ["宽松男友衬衫 + 短裤","adult woman wearing an oversized boyfriend shirt with fitted shorts"],
+    ["黑色束腰上衣 + 高腰长裙","adult woman wearing a structured black corset-style top over a high-waisted long skirt, fully covered"],
+    ["蕾丝边连体衣 + 西装外套","adult woman wearing a lace-trim fashion bodysuit under an oversized blazer, non-explicit"],
+    ["高开衩针织长裙","adult woman wearing a fitted ribbed knit maxi dress with a high side slit"],
+    ["露肩毛衣 + 过膝袜","adult woman wearing an off-shoulder oversized sweater with thigh-high socks"],
+    ["挂脖短上衣 + 低腰阔腿裤","adult woman wearing a halter crop top with low-rise wide-leg trousers"],
+    ["丝绸睡袍 + 吊带内搭","adult woman wearing a loosely wrapped silk robe over a satin camisole, tasteful boudoir fashion"],
+    ["透明薄纱罩衫 + 不透明内搭","adult woman wearing a sheer mesh cover-up over an opaque fitted inner outfit"],
+    ["漆皮短裙 + 长袖贴身上衣","adult woman wearing a glossy patent mini skirt with a fitted long-sleeve top"],
+    ["镂空针织上衣 + 高腰短裤","adult woman wearing an open-knit top layered over an opaque camisole with high-waisted shorts"],
+    ["抹胸礼服 + 长手套","adult woman wearing an elegant strapless evening dress with opera gloves"],
+    ["不对称绑带上衣 + 铅笔裙","adult woman wearing an asymmetrical strappy fashion top with a fitted pencil skirt"],
+    ["黑色连体泳装 + 轻薄衬衫","adult woman wearing a black one-piece swimsuit under a lightweight open shirt, resort editorial"],
+    ["经典黑白女仆装","adult woman, classic black-and-white maid dress, maid apron, maid headdress, puff sleeves, fully clothed"],
+    ["法式长裙女仆装","adult woman, elegant French maid-inspired ankle-length dress, lace apron, high collar, fully clothed"],
+    ["维多利亚长袖女仆装","adult woman, Victorian maid uniform, long sleeves, high neckline, long skirt, lace apron"],
+    ["和风女仆装","adult woman, wa maid outfit, kimono-inspired maid dress, obi belt, frilled apron"],
+    ["哥特女仆装","adult woman, gothic maid dress, black lace, high collar, dark frilled apron"],
+    ["咖啡厅短裙女仆装","adult woman, cafe maid uniform, knee-length skirt, frilled apron, ribbon necktie"],
+    ["机能风女仆装","adult woman, techwear-inspired maid outfit, utility straps, structured apron, fully clothed"],
+    ["旗袍女仆装","adult woman, qipao-inspired maid dress, high collar, side panels, frilled apron, tasteful"],
+    ["猫耳女仆装","adult woman, cat-ear maid cosplay, maid headdress, bell ribbon, fully clothed"],
+    ["兔耳女仆装","adult woman, bunny-ear maid cosplay, frilled maid dress, opaque tights, fully clothed"],
+    ["经典白色护士装","adult woman, classic white nurse cosplay uniform, nurse cap, opaque stockings, fully clothed"],
+    ["粉色护士装","adult woman, pink nurse cosplay dress, nurse cap, fitted but non-explicit"],
+    ["黑色哥特护士装","adult woman, gothic black nurse cosplay, medical eyepatch, dark stockings, fully clothed"],
+    ["未来机能护士装","adult woman, futuristic medical-uniform cosplay, white technical jacket, utility belt"],
+    ["日式保健室老师风","adult woman, Japanese school nurse-inspired outfit, white coat over fitted blouse and pencil skirt"],
+    ["成人水手服风穿搭","adult woman, adult sailor-inspired fashion outfit, sailor collar, pleated skirt, clearly adult cosplay"],
+    ["成人JC风制服穿搭","adult woman age 20+, adult cosplay inspired by Japanese middle-school uniform design, modest sailor collar and knee-length pleated skirt, non-sexual"],
+    ["成人JS风制服穿搭","adult woman age 20+, adult cosplay inspired by Japanese elementary uniform design, modest blazer and long skirt, non-sexual fashion recreation"],
+    ["成人JK风西装制服","adult woman age 20+, adult JK-fashion cosplay, blazer, collared shirt, necktie, pleated skirt"],
+    ["成人JK风针织背心制服","adult woman age 20+, adult JK-fashion cosplay, sweater vest, collared blouse, pleated skirt, knee socks"],
+    ["女学院风连衣裙","adult woman, Japanese academy-inspired one-piece uniform dress, sailor collar, calf-length skirt"],
+    ["旧式女学生袴装","adult woman, Taisho-era schoolgirl-inspired hakama outfit, kimono sleeves, boots"],
+    ["经典藏蓝死库水","adult woman age 20+, classic navy school swimsuit cosplay, one-piece swimsuit, non-sexual athletic presentation"],
+    ["新式竞赛死库水","adult woman age 20+, modern competition school swimsuit cosplay, streamlined one-piece, athletic presentation"],
+    ["白色连体泳装","adult woman, white one-piece swimsuit, resort fashion editorial"],
+    ["黑色高领连体泳装","adult woman, black high-neck one-piece swimsuit, sleek athletic styling"],
+    ["荷叶边连体泳装","adult woman, frilled one-piece swimsuit, tasteful resort styling"],
+    ["竞赛连体泳装","adult woman, competition swimsuit, athletic poolside presentation"],
+    ["运动型两件式泳装","adult woman, sporty two-piece swimsuit, athletic beachwear"],
+    ["挂脖比基尼","adult woman, halter bikini, tasteful resort fashion editorial"],
+    ["高腰复古比基尼","adult woman, high-waisted retro bikini, tasteful pin-up inspired resort fashion"],
+    ["荷叶边比基尼","adult woman, frilled bikini, tasteful beachwear styling"],
+    ["侧系带比基尼","adult woman, side-tie bikini, non-explicit resort editorial"],
+    ["长袖冲浪泳衣","adult woman, long-sleeve rash guard swimsuit, sporty surf styling"],
+    ["潜水服","adult woman, fitted diving wetsuit, athletic underwater styling"],
+    ["日式红白运动服","adult woman, Japanese red-and-white gym uniform, athletic t-shirt and bloomers-inspired sports shorts, non-sexual sports presentation"],
+    ["日式蓝白运动服","adult woman, Japanese blue-and-white gym uniform, athletic t-shirt and modest sports shorts"],
+    ["红色运动夹克套装","adult woman, red track suit, zip jacket and track pants, sporty styling"],
+    ["蓝色运动夹克套装","adult woman, blue track suit, zip jacket and track pants, sporty styling"],
+    ["排球运动服","adult woman, volleyball uniform, sleeveless jersey, athletic shorts, knee pads"],
+    ["网球运动服","adult woman, tennis dress, visor, wristbands, athletic shoes"],
+    ["羽毛球运动服","adult woman, badminton sportswear, polo shirt, pleated sport skirt, athletic shoes"],
+    ["篮球运动服","adult woman, basketball jersey and athletic shorts, high-top sneakers"],
+    ["足球运动服","adult woman, soccer jersey, athletic shorts, knee socks, cleats"],
+    ["体操训练服","adult woman, gymnastics training leotard with warm-up jacket, athletic presentation"],
+    ["啦啦队运动服","adult woman, cheerleader-inspired sports uniform, cropped athletic top and pleated sport skirt, adult performer"],
+    ["赛车女郎风运动装","adult woman, race-queen inspired motorsport fashion, fitted sponsor jacket and shorts, non-explicit"],
+    ["拳击训练服","adult woman, boxing training outfit, sports bra under open training jacket, boxing shorts and gloves"],
+    ["瑜伽运动套装","adult woman, fitted yoga sportswear, long-sleeve crop top and high-waisted leggings"],
+    ["芭蕾练功服","adult woman, ballet practice leotard, wrap skirt, tights, ballet shoes"],
+    ["巫女服","adult woman, traditional shrine maiden outfit, white kosode and red hakama"],
+    ["和服振袖","adult woman, elegant furisode kimono, obi, traditional hair ornament"],
+    ["浴衣","adult woman, summer yukata, obi sash, geta sandals"],
+    ["忍者装束","adult woman, stylized kunoichi-inspired ninja outfit, layered fabric, arm guards, non-explicit"],
+    ["魔法少女战斗服","adult woman, mature magical-girl inspired battle costume, layered skirt, boots, ornate accessories"],
+    ["修女服","adult woman, gothic nun-inspired fashion dress, veil, high collar, fully clothed"],
+    ["女骑士铠甲","adult woman, female knight armor, breastplate, armored skirt panels, gauntlets"],
+    ["精灵弓手装","adult woman, fantasy elf archer outfit, leather tunic, cloak, boots"],
+    ["女牛仔装","adult woman, western cowgirl outfit, cowboy hat, fitted shirt, denim shorts or jeans, cowboy boots"],
+    ["魅魔幻想礼服","adult woman, succubus-inspired fantasy dress, small horns, decorative wings, opaque bodice, non-explicit"],
+    ["赛博朋克紧身战斗服","adult woman, cyberpunk fitted combat suit, armored panels, neon accents, fully covered"],
+    ["机甲驾驶服","adult woman, futuristic pilot suit, technical seams, protective panels, fully covered"],
+    ["洛丽塔洋装 · 成年穿搭","adult woman age 20+, gothic lolita fashion dress, layered frills, bonnet, fully clothed"],
+    ["甜系洛丽塔洋装 · 成年穿搭","adult woman age 20+, sweet lolita fashion dress, pastel bows, layered petticoat, fully clothed"],
+    ["旗袍","adult woman, fitted qipao dress, high collar, tasteful side slit"],
+    ["肚皮舞舞台服","adult woman, belly-dance stage costume, embellished top with sheer layered skirt, tasteful performance styling"],
+    ["偶像舞台服","adult woman, Japanese idol stage costume, layered skirt, decorative jacket, boots"],
+    ["视觉系乐队服","adult woman, visual-kei stage outfit, gothic jacket, layered skirt, platform boots"],
+    ["军装风礼服","adult woman, military-inspired formal dress, epaulettes, decorative cords, knee-high boots"],
+    ["空姐风制服","adult woman, flight-attendant inspired uniform, fitted blazer, pencil skirt, neck scarf"]
+  ],
+
+  fashion_extra: [
+    ["无（不添加此部分）",""],
+    ["无额外配件","no extra fashion accessory"],
+    ["细项圈","thin choker"],
+    ["蕾丝项圈","lace choker"],
+    ["链条腰带","chain belt"],
+    ["细腰带","slim waist belt"],
+    ["臂套","detached arm warmers"],
+    ["指less手套","fingerless gloves"],
+    ["金属耳坠","metal drop earrings"],
+    ["细框眼镜","thin-frame glasses"],
+    ["大耳机挂脖","large headphones around neck"],
+    ["小挎包","compact shoulder bag"],
+    ["腋下包","underarm bag"],
+    ["锁骨链","delicate collarbone necklace"],
+    ["腿环","thigh strap accessory"],
+    ["丝巾","light neck scarf"],
+    ["发带","fabric headband"],
+    ["腰链","waist chain"],
+    ["披肩","soft shawl"],
+    ["胸针","small brooch"],
+    ["手链","stacked bracelets"]
+  ],
+  seductive_pose: [
+    ["无诱惑姿势",""],
+    ["咬唇俯身靠近镜头","adult woman leaning toward the camera, gently biting her lower lip, alluring eye contact, fully clothed, non-explicit fashion pose"],
+    ["回眸拉低一侧衣领","adult woman looking back over her shoulder while lightly tugging one side of her neckline, tasteful and fully covered"],
+    ["坐在床沿缓慢交叠双腿","adult woman sitting on the edge of a bed and slowly crossing her legs, poised alluring editorial pose"],
+    ["跪坐床面双手整理头发","adult woman kneeling on a bed with both arms raised to arrange her hair, elegant alluring posture"],
+    ["靠墙屈膝指尖碰唇","adult woman leaning against a wall with one knee bent, fingertip touching softly parted lips, teasing non-explicit pose"],
+    ["侧卧撑头直视镜头","adult woman lying on her side, head supported by one hand, direct half-lidded eye contact, alluring fashion composition"],
+    ["背对镜头手扶腰回眸","adult woman facing away from the camera, one hand resting on her waist, looking back over her shoulder"],
+    ["跪坐后仰露出锁骨线条","adult woman kneeling and leaning gently backward, collarbone line emphasized, tasteful fully clothed editorial pose"],
+    ["坐在椅背上前倾贴近镜头","adult woman straddling a chair backwards and leaning over the chair back toward the camera, fully clothed, non-explicit"],
+    ["单手扶墙身体形成S形","adult woman placing one hand against a wall, body forming a subtle S-curve, elegant alluring stance"],
+    ["仰躺抬手遮住一只眼睛","adult woman lying on her back with one arm raised to cover one eye, softly parted lips, fashion editorial pose"],
+    ["俯身手撑膝盖抬眼看镜头","adult woman bending forward with hands on knees, lifting her eyes toward the camera, alluring but non-explicit"],
+    ["坐地后撑双腿偏向一侧","adult woman sitting on the floor supported by her hands, both legs angled to one side, relaxed alluring pose"],
+    ["半跪拉起一侧过膝袜","adult woman half-kneeling while gently pulling up one thigh-high sock, fully clothed fashion pose"],
+    ["斜躺沙发一手轻触颈侧","adult woman reclining diagonally on a sofa, one hand lightly touching the side of her neck, dreamy alluring gaze"],
+    ["站立双手举高贴墙伸展","adult woman standing close to a wall with both arms raised overhead, elongated body line, fully clothed editorial pose"],
+    ["坐在高凳边缘轻轻前倾","adult woman perched on the edge of a high stool, leaning subtly forward with direct eye contact"],
+    ["低头拉住袖口再抬眼偷看","adult woman lowering her head while holding her sleeve cuff, then glancing upward with a shy teasing gaze"],
+    ["一只鞋半脱脚尖轻晃","adult woman seated with one shoe half slipped off, gently dangling it from her toes, elegant playful pose"],
+    ["侧身抬腿靠墙回头微张嘴","adult woman in profile with one leg bent against a wall, looking back with softly parted lips, tasteful non-explicit pose"]
+  ],
+
+  special_pose: [
+    ["趴地塌腰抬臀","adult woman lying prone on the floor, chest lowered, waist deeply arched, hips raised, fully clothed, suggestive fashion pose, non-explicit"],
+    ["无（不添加此部分）",""],
+    ["无特殊姿势叠加","no additional special pose modifier"],
+    ["侧卧蜷腿，回头看镜头","lying on one side with knees softly bent, looking back toward viewer"],
+    ["仰躺屈膝，双手放在头顶","lying on back with knees bent, both arms resting above head"],
+    ["跪坐后仰，双手撑在身后","kneeling seated and leaning backward, both hands supporting the body behind"],
+    ["伏在床沿，双腿自然后屈","lying prone near the edge of a bed, lower legs bent upward naturally"],
+    ["坐地后撑，一腿屈起一腿伸直","sitting on the floor supported by hands behind, one knee raised and one leg extended"],
+    ["背对镜头跪坐并回眸","kneeling with back toward camera, looking back over shoulder"],
+    ["侧坐交叠双腿，身体向镜头前倾","sitting sideways with legs crossed, torso leaning gently toward the camera"],
+    ["趴卧撑起上身，脚踝在后景交叠","lying prone while lifting upper body on forearms, ankles crossed in the background"],
+    ["单膝跪在沙发上，另一腿落地","one knee resting on a sofa while the other leg remains on the floor"],
+    ["斜躺沙发，腰背形成柔和曲线","reclining diagonally on a sofa, waist and back forming a soft curve"],
+    ["坐在椅缘，双膝并拢偏向一侧","sitting on the edge of a chair, knees together and angled to one side"],
+    ["双腿贴墙仰躺，俯视镜头","lying on back with legs resting upward against a wall, viewed from above"],
+    ["半跪整理过膝袜，抬眼看镜头","half-kneeling while adjusting thigh-high socks, eyes lifted toward viewer"],
+    ["俯身系鞋带，肩上回眸","bending forward to tie a shoe, looking back over shoulder"],
+    ["坐在高处垂下一腿，另一腿屈起","sitting on a high surface with one leg dangling and the other bent"],
+    ["四肢着地但保持时尚编辑构图","on hands and knees in a tasteful fashion-editorial pose, fully clothed, non-explicit"],
+    ["弓背伸展，头微微后仰","arching the back in a gentle stretch, head tilted slightly backward"],
+    ["双膝跪地，身体侧转，手扶大腿","kneeling on both knees, torso turned sideways, one hand resting on thigh"],
+    ["一腿抬高靠在椅背，身体侧倾","one leg raised against the back of a chair, torso leaning sideways in an editorial pose"],
+    ["盘腿坐下，身体前倾靠近镜头","sitting cross-legged and leaning forward toward the camera"],
+    ["鸭子坐 / W坐姿","wariza, w-sitting, knees bent inward with feet beside the hips"],
+    ["正座","seiza, formal kneeling posture, sitting on heels"],
+    ["侧坐鸭子腿","side-sitting with both folded legs angled to one side"],
+    ["女牛仔式坐姿 · 非性行为","cowgirl-inspired seated straddle pose on a chair, fully clothed, fashion editorial, non-sexual"],
+    ["反向女牛仔式椅子坐姿 · 非性行为","reverse straddle sitting on a chair facing the chair back, fully clothed, non-sexual editorial pose"],
+    ["跨坐椅背","straddling a chair backwards, arms resting on the chair back, fully clothed"],
+    ["Jack-O挑战式拉伸 · 穿着完整","jack-o challenge inspired deep forward stretch, hips raised, fully clothed athletic flexibility pose"],
+    ["猫伸懒腰姿势","cat-like stretching pose on hands and knees, arched back, fully clothed"],
+    ["跪趴前伸","kneeling with upper body stretched forward and arms extended, yoga-like pose"],
+    ["婴儿式瑜伽姿势","child's-pose yoga stretch, hips toward heels, arms extended, adult woman"],
+    ["眼镜蛇式抬起上身","cobra yoga pose, lying prone and lifting upper body with arms"],
+    ["桥式抬腰","bridge pose, lying on back with knees bent and hips raised, athletic yoga pose"],
+    ["单腿鸽子式","pigeon yoga pose with one leg folded forward and the other extended back"],
+    ["一字马侧面构图","side split, athletic flexibility pose, fully clothed"],
+    ["竖叉伸展","front split, athletic flexibility pose, fully clothed"],
+    ["抱膝蹲坐","squatting while hugging knees, compact pose"],
+    ["亚洲蹲回头","deep squat, heels down, looking back toward viewer"],
+    ["单膝跪地抬头","one-knee kneeling pose, looking upward"],
+    ["双膝跪地双手举高","kneeling on both knees with both arms raised overhead"],
+    ["仰躺双腿抬起交叉","lying on back with legs raised and crossed at the ankles, fully clothed"],
+    ["侧卧抬起一条腿","lying on one side with one leg raised, athletic editorial pose"],
+    ["趴卧双脚在身后交叉","lying on stomach with feet crossed behind, chin resting on hands"],
+    ["靠墙抬起一腿","leaning against a wall with one leg bent and raised"],
+    ["坐在地上双腿打开成V形","sitting on floor with legs extended in a wide V, athletic stretch, fully clothed"],
+    ["桌面边缘跨坐","sitting astride the edge of a bench, fully clothed, fashion editorial"],
+    ["跪在沙发上前倾","kneeling on a sofa and leaning forward on the backrest, fully clothed"],
+    ["背对镜头弯腰整理鞋子","back facing camera, bending forward to adjust footwear, fully clothed"],
+    ["一手扶墙身体扭转","one hand against a wall, torso twisting into an S-curve"],
+    ["双臂举起绑头发","both arms raised while tying hair, presenting armpits naturally"],
+    ["双手在背后交握前倾","hands clasped behind back while leaning forward toward viewer"],
+    ["蹲坐并用手指比OK遮一只眼","squatting with ok sign over one eye, playful pose"],
+    ["坐姿张嘴手在嘴边比OK","seated pose, softly open mouth, ok sign beside the mouth, playful non-explicit gesture"]
+  ],
+
+  pose: [
+    ["无（不添加此部分）",""],
+    ["特殊姿势 · 侧卧蜷腿回头看镜头","tasteful sensual side-lying pose, knees softly bent, looking back toward viewer"],
+    ["特殊姿势 · 仰躺屈膝，双手放在头顶","tasteful editorial pose lying on back with knees bent, both arms resting above head"],
+    ["特殊姿势 · 跪坐后仰，手撑在身后","kneeling seated pose leaning gently backward, hands supporting body behind, elegant non-explicit sensuality"],
+    ["特殊姿势 · 伏在床沿，双腿自然后屈","lying prone near the edge of a bed, lower legs bent upward naturally, tasteful fashion pose"],
+    ["特殊姿势 · 坐地后撑，一腿屈起一腿伸直","sitting on floor supported by hands behind, one knee raised and one leg extended"],
+    ["特殊姿势 · 背对镜头跪坐并回眸","kneeling with back toward camera, looking back over shoulder, tasteful rear three-quarter pose"],
+    ["特殊姿势 · 侧坐交叠双腿，身体向镜头前倾","sitting sideways with legs crossed, torso leaning slightly toward camera, elegant sensual editorial pose"],
+    ["特殊姿势 · 趴卧撑起上身，脚尖在后景交叠","lying prone while lifting upper body on forearms, feet crossed in the background"],
+    ["特殊姿势 · 单膝跪在沙发上，另一腿落地","one knee resting on a sofa while the other leg stays on the floor, stylish editorial pose"],
+    ["特殊姿势 · 斜躺沙发，腰背形成柔和曲线","reclining diagonally on a sofa, waist and back forming a soft elegant curve"],
+    ["特殊姿势 · 坐在椅缘，双膝并拢偏向一侧","sitting on the edge of a chair, knees together and angled to one side, refined sensual pose"],
+    ["特殊姿势 · 双腿贴墙仰躺，俯视镜头","lying on back with legs resting upward against a wall, top-down editorial composition"],
+    ["特殊姿势 · 半跪整理过膝袜，抬眼看镜头","half-kneeling while adjusting thigh-high socks, eyes lifted toward viewer"],
+    ["特殊姿势 · 俯身系鞋带，肩上回眸","bending forward to tie a shoe, looking back over shoulder, dynamic tasteful pose"],
+    ["特殊姿势 · 坐在高处垂下一腿，另一腿屈起","sitting on a high surface with one leg dangling and the other bent, elegant long body line"],
+    ["侧坐，一膝抬起，手指轻碰嘴唇","sitting sideways, one knee raised, index finger lightly touching lips, relaxed posture"],
+    ["蹲坐抱膝，视线从侧面看向镜头","crouching while hugging one knee, looking sideways toward viewer"],
+    ["坐在桌沿，一条腿自然垂下","sitting on the edge of a desk, one leg hanging naturally, one hand supporting body"],
+    ["站着微微前倾，双手藏进袖口","standing and leaning slightly forward, hands tucked into sleeves"],
+    ["背身站立，再回头看镜头","standing with body facing away, looking back over shoulder"],
+    ["盘腿坐地，双手松松搭在脚踝附近","sitting cross-legged on the floor, hands resting loosely near ankles"],
+    ["跪坐，一只手整理袜口","kneeling with legs folded underneath, one hand adjusting a slouch sock"],
+    ["靠墙站立，肩膀微垮，手里拿饮料","leaning against a wall, slightly slouched shoulders, casually holding a drink"],
+    ["坐在地上操作掌机，注意力稍微偏离镜头","sitting on the floor playing a handheld game console, gaze slightly away from viewer"],
+    ["弯腰靠近镜头，一只手撑膝","leaning forward toward viewer, one hand resting on knee, natural foreshortening"],
+    ["坐在窗台，把脸靠在膝盖上","sitting on a windowsill, resting cheek lightly on raised knee"],
+    ["双手捧着信封挡住半张脸","holding an envelope with both hands, partially hiding lower face"],
+    ["侧躺撑头，一条腿轻微蜷起","lying on one side, head supported by one hand, one leg loosely bent"],
+    ["坐在台阶上，手肘撑膝，托腮","sitting on steps, elbow on knee, cheek resting in palm"],
+    ["低头整理领带，视线不看镜头","looking down while adjusting loose necktie, gaze away from viewer"],
+    ["双手背在身后站立，身体微微前探","standing with hands behind back, torso leaning slightly forward"],
+    ["坐在椅子上反向趴靠椅背","sitting on a chair backwards, arms resting over chair back"],
+    ["单膝跪地，另一腿抬起，手搭在膝上","one knee on the floor, the other knee raised, hand resting on knee"],
+    ["侧身行走中回头，衣摆微微摆动","walking in profile while glancing back, slight motion in clothing"],
+    ["站姿交叉双腿，一手抓包带","standing with crossed legs, one hand holding bag strap"],
+    ["趴在桌面上，只微微抬头看镜头","resting on a desk with upper body lowered, slightly lifting head toward viewer"],
+    ["坐地伸直一条腿，另一腿屈起","sitting on the floor with one leg extended and the other bent"],
+    ["身体缩成一团抱着膝盖","curled up while hugging both knees, compact shy posture"],
+    ["双臂环胸，重心落在一条腿上","arms folded loosely across chest, weight shifted onto one leg"],
+    ["坐在床边，双手撑在身侧，脚尖点地","sitting on the edge of a bed, hands braced at sides, toes touching floor"],
+    ["倚着栏杆，身体后仰，头微侧","leaning back against a railing, head slightly tilted to the side"],
+    ["半蹲整理鞋带，抬眼看向镜头","half-squatting while adjusting shoelace, eyes lifted toward viewer"],
+    ["抬手拨头发，肩膀轻轻提起","raising one hand to brush hair aside, shoulders slightly lifted"],
+    ["俯身趴在窗台，双手叠放","leaning forward over a windowsill, hands folded together"],
+    ["坐姿双腿并拢偏向一侧，手放膝上","sitting with both legs together angled to one side, hands resting on knees"],
+    ["成人时尚感 · 侧坐翘腿，身体微微后仰","adult fashion editorial pose, sitting sideways with legs crossed, torso leaning slightly back, confident sensual body language"],
+    ["成人时尚感 · 单手撑桌，腰线轻微扭转","adult fashion editorial pose, one hand braced on a table, subtle waist twist, elegant sensual posture"],
+    ["成人时尚感 · 靠墙屈一腿，肩膀放松","adult fashion editorial pose, leaning against wall with one knee bent, relaxed shoulders, understated sensuality"],
+    ["成人时尚感 · 坐在高凳边缘，双腿错落","adult fashion editorial pose, sitting on edge of a high stool, legs staggered, long elegant lines"],
+    ["成人时尚感 · 回眸同时抬手整理头发","adult fashion editorial pose, looking back over shoulder while lifting one hand to adjust hair, poised sensual mood"],
+    ["成人时尚感 · 身体侧转，手扶腰侧","adult fashion editorial pose, torso turned sideways, one hand resting near waist, confident elegant silhouette"],
+    ["成人时尚感 · 半躺在沙发扶手，腿自然交叠","adult fashion editorial pose, reclining lightly against a sofa armrest, legs naturally crossed, refined sensual composition"],
+    ["成人时尚感 · 坐地后撑，双腿一屈一伸","adult fashion editorial pose, sitting on floor leaning back on both hands, one leg bent and one extended, relaxed sensual posture"],
+    ["成人时尚感 · 近距离前倾，锁骨与肩线突出","adult fashion editorial pose, leaning closer toward camera, collarbone and shoulder line emphasized, tasteful sensual mood"],
+    ["成人时尚感 · 单肩略抬，身体形成S形线条","adult fashion editorial pose, one shoulder slightly raised, subtle S-curve body line, elegant sensual stance"],
+    ["成人时尚感 · 侧躺屈膝，手臂撑头","adult fashion editorial pose, lying on side with knees softly bent, head supported by one arm, relaxed elegant sensuality"],
+    ["成人时尚感 · 背对镜头坐下，再侧脸回看","adult fashion editorial pose, seated with back toward camera, turning face back toward viewer, refined over-shoulder sensuality"],
+    ["夸张透视 · 坐姿一条腿朝镜头伸出","dramatic foreshortened seated pose, one leg thrust toward camera, strong perspective distortion"],
+    ["夸张透视 · 半躺后撑，鞋底接近镜头","dramatic perspective pose, leaning back on both hands with one shoe sole close to camera"],
+    ["夸张透视 · 蹲姿贴近镜头，膝盖形成前景","crouching close to camera, knees dominating foreground, energetic perspective"],
+    ["夸张透视 · 单膝撑地向前探身","one knee on ground, torso reaching toward viewer, pronounced depth and foreshortening"],
+    ["夸张透视 · 趴卧姿势，双腿向后延伸","lying prone with upper body near camera and legs extending away, dramatic depth"],
+    ["夸张透视 · 从沙发上横躺，腿部进入前景","reclining across a sofa, legs entering foreground, stylish perspective emphasis"],
+    ["夸张透视 · 坐地抬腿，脚尖朝镜头","sitting on floor lifting one leg toward viewer, toe pointed toward camera, dynamic foreshortening"],
+    ["夸张透视 · 俯身撑膝，脸与手贴近镜头","bending forward with hands on knees, face and hands very close to camera"],
+    ["夸张透视 · 回头时上半身后仰","leaning upper body backward while glancing back, dramatic body curve and perspective"],
+    ["夸张透视 · 侧躺前景腿部明显放大","side-lying pose with foreground leg noticeably enlarged by perspective"],
+    ["夸张透视 · 坐在高处垂腿，镜头从下往上","sitting on a higher surface with legs dangling, camera looking upward from below"],
+    ["夸张透视 · 四肢展开形成对角线","limbs extended in diagonal directions, graphic body arrangement with exaggerated perspective"]
+  ],
+  view_direction: [
+    ["无（不添加此部分）",""],
+    ["正面正视","front view, facing viewer directly"],
+    ["左侧视图","left side view, left profile"],
+    ["右侧视图","right side view, right profile"],
+    ["正侧面45度","front three-quarter view, 45-degree angle"],
+    ["背面后视","back view, viewed from behind"],
+    ["背面三分之四","rear three-quarter view, over-the-shoulder angle"],
+    ["仰视","low-angle view, camera looking upward"],
+    ["极低机位仰视","extreme low-angle view from near ground level"],
+    ["俯视","high-angle view, camera looking downward"],
+    ["正上方俯视","top-down overhead view"],
+    ["平视","eye-level view, camera at subject eye height"],
+    ["虫视角","worm's-eye view, dramatic upward perspective"],
+    ["鸟瞰视角","bird's-eye view, distant overhead perspective"],
+    ["肩后视角","over-the-shoulder view"],
+    ["主观视角","first-person point of view, POV framing"],
+    ["镜面反射视角","mirror reflection view, subject seen through a mirror"],
+    ["荷兰角倾斜视角","dutch angle, tilted camera framing"]
+  ],
+
+  camera: [
+    ["无（不添加此部分）",""],
+    ["轻微俯拍 · 近距离","slight high angle, close distance, mild foreshortening"],
+    ["低机位 · 腿部形成前景","low angle, legs forming strong foreground, perspective exaggeration"],
+    ["三分之四侧面 · 中景","three-quarter side view, medium shot"],
+    ["正面 · 全身留白构图","front view, full body, large negative space around subject"],
+    ["侧面 · 近中景","side profile view, medium close shot"],
+    ["轻广角 · 人物贴近镜头","mild wide-angle perspective, subject close to camera"],
+    ["略偏斜构图 · 非对称留白","slightly tilted framing, asymmetrical negative-space composition"],
+    ["高位俯视 · 手脚形成透视","top-down high angle, hands and legs creating perspective depth"],
+    ["脸部特写 · 只保留头肩","close-up portrait, head-and-shoulders framing, facial expression emphasized"],
+    ["超近景特写 · 聚焦眼神与嘴部","extreme close-up, focus on eyes and mouth, intimate framing"],
+    ["半身近景 · 胸像构图","bust shot framing, upper torso visible, expression-focused composition"],
+    ["腰部中景 · 动作与表情兼顾","waist-up medium shot, both gesture and expression clearly visible"],
+    ["膝上镜头 · 人物与服装都清楚","knee-up shot, outfit details and pose both visible"],
+    ["远景全身 · 人物较小，背景留白更多","long shot full body, subject smaller in frame, more breathing room"],
+    ["仰拍近景 · 脸部更有压迫感","low-angle close shot, face appearing slightly more imposing"],
+    ["俯拍坐姿 · 头脸更突出","high-angle seated shot, emphasizing face and compact body shape"],
+    ["镜头贴脸广角 · 透视感更强","wide-angle close-up, camera near face, stronger perspective distortion"],
+    ["长焦压缩感 · 背景更平","telephoto-like compressed composition, flatter background depth"],
+    ["正侧45度 · 轮廓线更明显","45-degree angle view, silhouette and facial contour emphasized"],
+    ["背后斜侧镜头 · 强调回头瞬间","rear three-quarter angle, capturing the over-shoulder glance"],
+    ["平视纪录感 · 像杂志抓拍","eye-level candid framing, editorial snapshot feeling"],
+    ["画面下切 · 头部靠近上边缘","cropped composition, head near top edge, modern editorial framing"],
+    ["横向留白构图 · 人物偏一侧","subject placed to one side, horizontal negative-space composition"],
+    ["竖版海报构图 · 人物居中偏下","vertical poster composition, subject centered slightly lower"],
+    ["手部前景特写 · 手势更明显","hands pushed toward foreground, gesture-focused perspective"],
+    ["肩上视角感 · 像在近距离对视","over-the-shoulder feeling, intimate conversational distance"],
+    ["轻微荷兰角 · 不稳定感","subtle dutch angle, slightly unstable stylish framing"],
+    ["从地面仰视 · 鞋腿与下半身透视明显","ground-level low angle, strong perspective on legs and lower body"],
+    ["成人时尚特写 · 锁骨肩线近景","adult fashion close-up, framing collarbone and shoulder line, tasteful sensual editorial composition"],
+    ["成人时尚近景 · 腰线上方裁切","adult fashion medium close-up, crop around waist and upper body, confident sensual editorial framing"],
+    ["成人时尚侧面 · 强调腰臀轮廓线","adult fashion side-view composition, emphasizing elegant waist and hip silhouette without explicit focus"],
+    ["成人时尚仰拍 · 长腿透视","adult fashion low-angle full-body shot, elongated leg perspective, confident editorial mood"],
+    ["成人时尚俯拍 · 坐姿与腿部形成几何线条","adult fashion high-angle seated shot, legs creating clean geometric lines, tasteful sensuality"],
+    ["成人时尚背部视角 · 回眸特写","adult fashion rear three-quarter close shot, over-shoulder glance, elegant sensual framing"],
+    ["成人时尚半身 · 肩颈与手势为重点","adult fashion upper-body portrait, emphasis on neck, shoulders and hand gesture, refined sensual mood"],
+    ["成人时尚贴近镜头 · 轻微广角","adult fashion intimate close-distance shot, mild wide-angle perspective, confident sensual presence"],
+    ["成人时尚裁切 · 腿部进入前景但不过度聚焦","adult fashion cropped composition, legs entering foreground without explicit emphasis, stylish magazine framing"],
+    ["成人杂志封面 · 冷感性感半身","adult fashion magazine cover composition, cool sensual waist-up portrait, elegant negative space"],
+    ["夸张广角透视 · 脸近腿远","dramatic wide-angle perspective, face close to camera with legs receding into depth"],
+    ["夸张广角透视 · 脚部前景放大","dramatic wide-angle shot, foreground foot enlarged toward camera"],
+    ["极低机位仰拍 · 身体线条被拉长","extreme low-angle shot, body lines stretched dramatically upward"],
+    ["极高机位俯拍 · 人物缩成几何图形","extreme top-down shot, body arranged into a compact geometric shape"],
+    ["镜头贴近膝盖 · 上半身后退","camera placed near knees, upper body receding backward in perspective"],
+    ["镜头贴近手部 · 手势主导前景","camera close to hand, gesture dominating foreground"],
+    ["鱼眼感轻微畸变","subtle fisheye-like distortion, playful exaggerated perspective"],
+    ["对角线构图 · 从角落切入","strong diagonal composition entering from a corner, dynamic editorial framing"],
+    ["镜头位于地面边缘 · 鞋底与腿部拉伸","camera near floor edge, soles and legs stretched by perspective"],
+    ["近景回头广角 · 面部与肩线突出","wide-angle over-shoulder close shot, face and shoulder line emphasized"],
+    ["横向杂志跨页感","editorial spread-like horizontal composition, stylish wide framing"],
+    ["前景遮挡构图 · 透过物件看人物","foreground-obstructed framing, viewing subject through an object for depth"]
+  ],
+  scene: [
+    ["无（不添加此部分）",""],
+    ["冬日树影 + 米白背景","minimal winter tree silhouettes, off-white background, faint cool shadows"],
+    ["安静教室窗边","minimal quiet classroom window background, pale daylight, simplified shapes"],
+    ["浅灰楼梯平台","minimal pale-gray stair landing, clean architectural lines"],
+    ["傍晚公交站","minimal quiet bus stop at dusk, cool desaturated atmosphere"],
+    ["空旷天桥","minimal pedestrian overpass, pale sky, sparse urban geometry"],
+    ["室内纯色背景 + 蓝灰矩形色块","plain indoor background, pale blue-gray rectangular graphic blocks"],
+    ["冬季便利店门口","minimal convenience store entrance in winter, cool diffuse light, simplified signage"],
+    ["雨后街道倒影","minimal wet street reflections after rain, cool muted palette"],
+    ["图书馆角落","minimal quiet library corner, simplified shelves, soft diffuse window light"],
+    ["自动贩卖机旁","minimal vending-machine corner, pale cyan light, sparse urban details"],
+    ["空教室最后一排","minimal empty classroom back row, muted daylight, clean geometric background"],
+
+    ["抽象海报背景 · 蓝灰大色块","abstract editorial poster background, oversized pale blue and cool gray color blocks, clean negative space, graphic composition"],
+    ["杂志封面背景 · 极简版式","minimal fashion magazine cover style background, editorial layout, subtle framing lines, clean hierarchy, large negative space"],
+    ["海报拼贴背景 · 半透明几何","abstract poster collage background, layered translucent geometric shapes, soft paper-like texture, modern graphic design"],
+    ["杂志内页背景 · 栅格排版","editorial magazine spread style background, subtle grid layout, floating panels, clean margins, refined composition"],
+    ["展览海报背景 · 圆形与矩形","gallery poster style background, circles and rectangles arranged asymmetrically, elegant modernist composition"],
+    ["时尚广告背景 · 柔和渐变","fashion editorial backdrop, soft cool gradient, minimal design elements, sophisticated poster-like atmosphere"],
+    ["纸质拼贴背景 · 撕纸边缘","paper collage poster background, torn paper edges, muted layered sheets, delicate handmade editorial feel"],
+    ["版式海报背景 · 细线框架","graphic poster layout, thin frame lines, structured editorial composition, cool minimalist design"],
+    ["抽象杂志背景 · 斜切色面","abstract magazine-style background, diagonal color planes, pale blue-gray palette, clean contemporary graphic look"],
+    ["高冷封面背景 · 留白与边框","luxury editorial cover background, lots of breathing room, thin border frame, understated magazine aesthetic"],
+    ["印刷感海报背景 · 细颗粒","printed poster style background, very subtle grain, muted ink-like texture, clean editorial composition"],
+    ["现代海报背景 · 浮动标签块","modern poster background, floating label-like blocks, modular editorial design, sparse and stylish arrangement"]
+  ],
+  accent: [
+    ["无（不添加此部分）",""],
+    ["雾蓝","pale mist blue accent color"],
+    ["灰紫","muted gray-violet accent color"],
+    ["鼠尾草绿","desaturated sage-green accent color"],
+    ["烟粉","dusty rose accent color"],
+    ["冷米杏","cool beige-cream accent color"],
+    ["深青灰","dark teal-gray accent color"],
+    ["酒红灰","muted wine-gray accent color"]
+  ]
+};
+
+const LABELS = {
+  character:"人物", hair:"发型", eyes:"眼睛", emotion:"情绪", interaction:"互动",
+  holiday:"节日特供", story:"故事情节",
+  accessory:"头部配饰", top:"上装", outerwear:"外搭", bottoms:"下装",
+  legwear:"腿部", footwear:"鞋子 / 赤脚", fashion_extra:"额外配件", special_outfit:"特殊服装（可多选）", body_modifier:"身材修改器（可多选）", tattoo_color:"淫纹颜色", special_prompt:"特殊提示词（可多选）", seductive_pose:"诱惑姿势（可多选）", special_pose:"特殊姿势（可多选）",
+  pose:"姿势", view_direction:"镜头方向", camera:"视角 / 机位", scene:"场景", accent:"点缀色"
+};
+
+const DROPDOWN_KEYS = Object.keys(POOLS);
+const MULTI_KEYS = new Set(["special_outfit", "body_modifier", "special_prompt", "seductive_pose", "special_pose"]);
+
+let state = {};
+let locked = {};
+let expandedKeys = new Set();
+
+function pick(arr){ return arr[Math.floor(Math.random()*arr.length)] }
+function emptyItem(key){ return POOLS[key].find(item=>item[1]==="") || POOLS[key][0]; }
+function resetToEmptyDefaults(){
+  state={}; locked={}; expandedKeys=new Set();
+  Object.keys(POOLS).forEach(key=>{ state[key] = MULTI_KEYS.has(key) ? [emptyItem(key)] : emptyItem(key); });
+  save();
+}
+
+function randomize(force=false){
+  Object.keys(POOLS).forEach(key=>{
+    if(force || !locked[key] || !state[key]) {
+      state[key] = MULTI_KEYS.has(key) ? [pick(POOLS[key])] : pick(POOLS[key]);
+    }
+  });
+  save();
+  render();
+}
+
+function selectedItems(key){
+  const v = state[key];
+  if(!v) return [];
+  if(MULTI_KEYS.has(key)) {
+    if(Array.isArray(v) && v.length && Array.isArray(v[0])) return v;
+    if(Array.isArray(v) && typeof v[0] === "string") return [v];
+    return [];
+  }
+  return [v];
+}
+function promptFor(key){ return selectedItems(key).map(item=>item[1]).filter(Boolean).join(", "); }
+function labelFor(key){ return selectedItems(key).map(item=>item[0]).filter(Boolean).join(" + "); }
+
+function buildPositive(){
+  return `${FIXED_HEAD},
+
+${state.character[1]},
+${state.hair[1]},
+${state.eyes[1]},
+${state.emotion[1]},
+${state.interaction[1]},
+${state.holiday[1]},
+${state.story[1]},
+${state.accessory[1]},
+
+${state.top[1]},
+${state.outerwear[1]},
+${state.bottoms[1]},
+${state.legwear[1]},
+${state.footwear[1]},
+${state.fashion_extra[1]},
+${promptFor("special_outfit")},
+${promptFor("body_modifier")},
+${state.tattoo_color[1]},
+${promptFor("special_prompt")},
+
+${state.pose[1]},
+${promptFor("seductive_pose")},
+${promptFor("special_pose")},
+${state.view_direction[1]},
+${state.camera[1]},
+
+${state.scene[1]},
+${state.accent[1]},
+
+${FIXED_STYLE}`;
+}
+
+function buildAll(){
+  return `${buildPositive()}
+
+Negative prompt:
+${NEGATIVE}`;
+}
+
+function render(){
+  const grid = document.getElementById("grid");
+  grid.innerHTML = "";
+  const order = ["character","hair","eyes","emotion","interaction","holiday","story","accessory","top","outerwear","bottoms","legwear","footwear","fashion_extra","special_outfit","body_modifier","tattoo_color","special_prompt","pose","seductive_pose","special_pose","view_direction","camera","scene","accent"];
+  order.forEach(key=>{
+    const div = document.createElement("article");
+    div.className = "item" + (["holiday","story","pose","camera","scene"].includes(key) ? " wide" : "") + (locked[key] ? " locked" : "") + (expandedKeys.has(key) ? " expanded" : "");
+    div.innerHTML = `
+      <div class="item-head">
+        <div class="item-name">${LABELS[key]}</div>
+        <div class="item-actions">
+          <button class="expand-picker" title="展开/收起选项" aria-label="展开/收起选项">⌄</button>
+          <button class="reroll" title="只随机这一项" aria-label="只随机这一项">↻</button>
+          <button class="lock" title="${locked[key] ? "解锁" : "锁定"}" aria-label="${locked[key] ? "解锁" : "锁定"}">${locked[key] ? "🔒" : "🔓"}</button>
+        </div>
+      </div>
+      <div class="value">${labelFor(key)}</div>`;
+
+    const chosenPrompts = new Set(selectedItems(key).map(item=>item[1]));
+    const currentIndex = Math.max(0, POOLS[key].findIndex(item => chosenPrompts.has(item[1])));
+    const wrap = document.createElement("div");
+    wrap.className = "picker-wrap";
+    const select = document.createElement("select");
+    select.className = "picker";
+    if(MULTI_KEYS.has(key)) { select.multiple = true; select.size = 6; }
+    select.innerHTML = POOLS[key].map((item, idx) =>
+      `<option value="${idx}" ${chosenPrompts.has(item[1]) ? "selected" : ""}>${item[0]}</option>`
+    ).join("");
+    select.onchange = (e) => {
+      if(MULTI_KEYS.has(key)) {
+        const values = [...e.target.selectedOptions].map(o=>POOLS[key][Number(o.value)]);
+        state[key] = values.length ? values : [POOLS[key][0]];
+      } else {
+        state[key] = POOLS[key][Number(e.target.value)];
+      }
+      save();
+      render();
+    };
+    const note = document.createElement("div");
+    note.className = "picker-note";
+    note.textContent = MULTI_KEYS.has(key)
+      ? "可多选：电脑按 Ctrl/Command 点击；手机直接点选多项。↻ 会重抽为一项，🔒 可锁定组合。"
+      : "可直接下拉选择，也可以点 ↻ 单独随机，或点 🔒 锁定。";
+    wrap.appendChild(select);
+    wrap.appendChild(note);
+    div.appendChild(wrap);
+
+    div.querySelector(".reroll").onclick = ()=>{
+      const one = pick(POOLS[key]);
+      state[key] = MULTI_KEYS.has(key) ? [one] : one;
+      save();
+      render();
+    };
+    div.querySelector(".expand-picker").onclick = ()=>{
+      if(expandedKeys.has(key)) expandedKeys.delete(key); else expandedKeys.add(key);
+      render();
+    };
+    div.querySelector(".lock").onclick = ()=>{
+      locked[key] = !locked[key];
+      save();
+      render();
+    };
+    grid.appendChild(div);
+  });
+  document.getElementById("promptText").value = buildAll();
+}
+
+function save(){
+  localStorage.setItem("anima-random-state", JSON.stringify(state));
+  localStorage.setItem("anima-random-locks", JSON.stringify(locked));
+}
+
+function load(){
+  try{
+    const s = JSON.parse(localStorage.getItem("anima-random-state") || "{}");
+    const l = JSON.parse(localStorage.getItem("anima-random-locks") || "{}");
+    state = s; locked = l;
+  }catch(e){
+    state={}; locked={};
+  }
+}
+
+function snapshotSelections(){
+  return {
+    state: JSON.parse(JSON.stringify(state)),
+    locked: JSON.parse(JSON.stringify(locked)),
+    width: parseInt(document.getElementById('genW')?.value||'768')||768,
+    height: parseInt(document.getElementById('genH')?.value||'1024')||1024,
+    batch: parseInt(document.getElementById('genBatch')?.value||'1')||1,
+    hd: parseInt(document.getElementById('genHd')?.value||'0')||0,
+  };
+}
+function applySnapshot(snapshot){
+  if(!snapshot || !snapshot.state) return;
+  state = normalizeSnapshotState(snapshot.state);
+  locked = snapshot.locked || {};
+  expandedKeys = new Set(Object.keys(state).filter(k=>selectedItems(k).some(x=>x && x[1])));
+  if(document.getElementById('genW') && snapshot.width) document.getElementById('genW').value=String(snapshot.width);
+  if(document.getElementById('genH') && snapshot.height) document.getElementById('genH').value=String(snapshot.height);
+  if(document.getElementById('genBatch') && snapshot.batch) document.getElementById('genBatch').value=String(snapshot.batch);
+  if(document.getElementById('genHd')) document.getElementById('genHd').value=String(snapshot.hd||0);
+  save(); render();
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+function normalizeSnapshotState(saved){
+  const out={};
+  Object.keys(POOLS).forEach(key=>{
+    const vals = MULTI_KEYS.has(key)
+      ? (Array.isArray(saved?.[key]?.[0]) ? saved[key] : (saved?.[key] ? [saved[key]] : []))
+      : (saved?.[key] ? [saved[key]] : []);
+    const matched=vals.map(v=>POOLS[key].find(x=>x[1]===v[1] || x[0]===v[0])).filter(Boolean);
+    out[key]=MULTI_KEYS.has(key) ? (matched.length?matched:[emptyItem(key)]) : (matched[0]||emptyItem(key));
+  });
+  return out;
+}
+function snapshotFromPrompt(prompt){
+  const text=String(prompt||''); const recovered={};
+  Object.keys(POOLS).forEach(key=>{
+    const hits=POOLS[key].filter(item=>item[1] && text.includes(item[1]));
+    recovered[key]=MULTI_KEYS.has(key) ? (hits.length?hits:[emptyItem(key)]) : (hits[0]||emptyItem(key));
+  });
+  return {state:recovered,locked:{}};
+}
+
+async function copyText(text){
+  try{
+    await navigator.clipboard.writeText(text);
+  }catch(e){
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    ta.remove();
+  }
+  const toast = document.getElementById("toast");
+  toast.classList.add("show");
+  setTimeout(()=>toast.classList.remove("show"),1200);
+}
+
+document.getElementById("randomBtn").onclick = ()=>randomize(false);
+document.getElementById("randomAll").onclick = ()=>randomize(true);
+document.getElementById("unlockAll").onclick = ()=>{
+  locked = {};
+  save();
+  render();
+};
+document.getElementById("copyPositive").onclick = ()=>copyText(buildPositive());
+document.getElementById("copyAll").onclick = ()=>copyText(buildAll());
+
+resetToEmptyDefaults();
+render();
+
+/* ============ 一键生图（接入远程面板 · 02人物加画风） ============ */
+const PANEL_TOKEN_KEY = 'jt_panel_token';
+function panelToken(){
+  let t = localStorage.getItem(PANEL_TOKEN_KEY) || '';
+  return t.trim();
+}
+function panelAPI(path, opt={}){
+  const base = Object.assign({}, opt, {headers:Object.assign({'X-Panel-Token': panelToken()}, opt.headers||{})});
+  async function attempt(n){
+    const controller = new AbortController();
+    const timer = setTimeout(()=>controller.abort(), 60 * 1000);
+    try{
+      const r = await fetch(path, Object.assign({}, base, {signal:controller.signal}));
+      if(r.status===401) throw new Error('令牌错误，请先回主面板输入令牌');
+      if(!r.ok){
+        let detail=''; try{ detail=(await r.json()).error||''; }catch(_){ }
+        if(r.status===409) throw new Error(detail||'已有任务正在运行，请到历史记录查看进度，完成后再提交');
+        throw new Error(detail||('HTTP '+r.status));
+      }
+      return await r.json();
+    }catch(e){
+      if(n < 2 && (e.name==='AbortError' || e.name==='TypeError' || /network|fetch/i.test(e.message||''))){
+        await new Promise(x=>setTimeout(x, 1000 * (n+1)));
+        return attempt(n+1);
+      }
+      if(e.name==='AbortError') throw new Error('面板请求超过60秒，请稍后重试');
+      throw e;
+    }finally{ clearTimeout(timer); }
+  }
+  return attempt(0);
+}
+function blobImage(url){
+  return fetch(url, {headers:{'X-Panel-Token': panelToken()}}).then(r=>{
+    if(!r.ok) throw new Error('图片加载失败 '+r.status);
+    return r.blob();
+  });
+}
+
+let genRunning = false;
+
+const GEN_LORA_DEFAULTS = {
+  lora1: '05_style3_v2_step1600.safetensors',
+  lora2: '04_style3_step800.safetensors',
+};
+function loraLabel(name){
+  return (name||'').split('\\').pop().replace(/\.safetensors$/i,'');
+}
+function fillLoraSelect(sel, list, def){
+  sel.innerHTML = '';
+  list.forEach(x=>{
+    const o = document.createElement('option');
+    o.value = x; o.textContent = loraLabel(x);
+    if(x===def) o.selected = true;
+    sel.appendChild(o);
+  });
+  if(!list.includes(def)){
+    const o = document.createElement('option');
+    o.value = def; o.textContent = loraLabel(def);
+    o.selected = true;
+    sel.appendChild(o);
+  }
+}
+async function loadGenLoras(){
+  const l1 = document.getElementById('genLora1');
+  const l2 = document.getElementById('genLora2');
+  // 已填充过则保留用户当前选择，不重置
+  if(l1.options.length > 0 && l2.options.length > 0) return;
+  // RunningHub 云端模式：直接用云端 LoRA 文件名，不调本机列表
+  if(l1.options.length === 0) fillLoraSelect(l1, [GEN_LORA_DEFAULTS.lora1], GEN_LORA_DEFAULTS.lora1);
+  if(l2.options.length === 0) fillLoraSelect(l2, [GEN_LORA_DEFAULTS.lora2], GEN_LORA_DEFAULTS.lora2);
+}
+function checkComfyGen(){
+  const badge = document.getElementById('comfyGenBadge');
+  if(!badge) return;
+  badge.textContent = '● 云端 RunningHub';
+  badge.style.color = '#2f9d6b';
+}
+async function oneKeyGen(){
+  if(genRunning) return;
+  const btn = document.getElementById('genBtn');
+  const st = document.getElementById('genStatus');
+  const res = document.getElementById('genResult');
+  genRunning = true;
+  btn.disabled = true;
+  st.textContent = '正在提交…';
+  res.innerHTML = '';
+  try{
+    const prompt = buildPositive();
+    // LoRA与触发词固定在后端配置；页面只暴露尺寸和批量。
+    const lora1 = GEN_LORA_DEFAULTS.lora1;
+    const lora2 = GEN_LORA_DEFAULTS.lora2;
+    const trigger = 'jt_style3_v2';
+    const width = parseInt(document.getElementById('genW').value)||768;
+    const height = parseInt(document.getElementById('genH').value)||1024;
+    const batch = Math.min(4, Math.max(1, parseInt(document.getElementById('genBatch').value)||1));
+    const hd = parseInt(document.getElementById('genHd').value)||0;
+    const body = {
+      workflow: 'anima02',
+      prompt: prompt,
+      width: width, height: height, batch: batch, hd: hd, seed: null,
+      loras: { LORA1: lora1, LORA2: lora2 },
+      trigger: trigger,
+      selection_snapshot: snapshotSelections(),
+    };
+    const r = await panelAPI('/api/generate', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(body)
+    });
+    if(r.error) throw new Error(r.error);
+    const jid = r.job_id;
+    st.textContent = '✓ 已提交云端，正在排队…';
+    let lastPct = -1;
+    const pollDeadline = Date.now() + 35 * 60 * 1000;
+    for(;;){
+      if(Date.now() > pollDeadline) throw new Error('等待超过35分钟；任务编号：'+jid+'。可刷新历史记录查看结果');
+      await new Promise(x=>setTimeout(x,3000));
+      const j = await panelAPI('/api/job/'+jid);
+      if(j.status==='running'){
+        const p = j.progress_pct||0;
+        if(p!==lastPct){ lastPct=p; const phase = j.provider_status==='FINALIZING'?'云端完成，等待结果…':(j.provider_status==='DOWNLOADING'?'正在下载图片…':(j.provider_status==='RUNNING'?'云端生成中…':'云端排队中…')); st.textContent = phase+' '+p+'%（任务 '+jid+'）'; }
+        continue;
+      }
+      if(j.status==='done'){
+        st.textContent = '✓ 完成（'+j.elapsed+'秒）';
+        (j.images||[]).forEach((im, imageIndex)=>{
+          const wrap = document.createElement('div');
+          wrap.style.marginTop='10px';
+          const img = document.createElement('img'); img.loading='lazy'; img.decoding='async';
+          if(im.remote){
+            img.src=im.preview_url||im.url;
+            img.onerror=()=>{ img.style.display='none'; };
+          }
+          else blobImage(im.url.replace('/api/image/','/api/preview/')).then(b=>{ img.src=URL.createObjectURL(b); }).catch(()=>{
+            blobImage(im.url).then(b=>{ img.src=URL.createObjectURL(b); }).catch(()=>{ img.alt='预览加载失败，可点下方打开原图'; });
+          });
+          const fav = document.createElement('button'); fav.className='dl'; fav.textContent='♥ 收藏图片和提示词';
+          fav.onclick=async()=>{ fav.disabled=true; fav.textContent='收藏中…'; try{ await panelAPI('/api/favorites',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({job_id:jid,image_index:imageIndex})}); fav.textContent='✓ 已收藏'; }catch(e){ fav.disabled=false; fav.textContent='收藏失败：'+e.message; } };
+          const dl = document.createElement('a'); dl.className='dl'; dl.href=im.url; dl.target='_blank'; dl.download=im.file; dl.textContent='⬇ 打开/下载原图';
+          wrap.appendChild(img); wrap.appendChild(fav); wrap.appendChild(dl);
+          res.appendChild(wrap);
+        });
+        if(!(j.images||[]).length) st.textContent='✗ 云端完成但没有返回可下载图片';
+        break;
+      }
+      if(j.status==='error'){
+        st.textContent = '✗ 失败：' + (j.error||'').slice(0,200);
+        break;
+      }
+    }
+  }catch(e){
+    st.textContent = '✗ 出错：' + e.message;
+  }finally{
+    genRunning = false;
+    btn.disabled = false;
+  }
+}
+document.getElementById('genBtn').onclick = oneKeyGen;
+document.getElementById('promptToggle').onclick = ()=>{
+  const panel = document.getElementById('promptPanel');
+  const open = !panel.classList.contains('is-open');
+  panel.classList.toggle('is-open', open);
+  document.getElementById('promptToggle').setAttribute('aria-expanded', String(open));
+};
+checkComfyGen();
+
+/* ============ 历史记录 ============ */
+function toggleHistory(){
+  const ov = document.getElementById('historyOverlay');
+  const show = ov.style.display === 'none';
+  ov.style.display = show ? 'block' : 'none';
+  if(show) renderHistory();
+}
+function toggleFavorites(){
+  const ov=document.getElementById('favoritesOverlay');
+  const show=ov.style.display==='none'; ov.style.display=show?'block':'none';
+  if(show) renderFavorites();
+}
+async function renderFavorites(){
+  const box=document.getElementById('favoritesList'); box.innerHTML='<div class="hint">加载中…</div>';
+  try{
+    const list=await panelAPI('/api/favorites'); box.innerHTML='';
+    if(!list.length){ box.innerHTML='<div class="hint">暂无收藏</div>'; return; }
+    list.forEach(f=>{
+      const d=document.createElement('div'); d.className='job';
+      const img=document.createElement('img'); img.src=f.preview_url||f.image_url; img.loading='lazy';
+      const apply=document.createElement('button'); apply.className='dl'; apply.textContent='↺ 套用提示词选项';
+      apply.onclick=()=>{ applySnapshot((f.selection_snapshot&&f.selection_snapshot.state)?f.selection_snapshot:snapshotFromPrompt(f.prompt)); toggleFavorites(); };
+      const copy=document.createElement('button'); copy.className='dl'; copy.textContent='复制该图片完整提示词'; copy.onclick=()=>copyText(f.prompt||'');
+      const dl=document.createElement('a'); dl.className='dl'; dl.href=f.image_url; dl.target='_blank'; dl.download='favorite.png'; dl.textContent='⬇ 下载收藏原图';
+      d.appendChild(img); d.appendChild(apply); d.appendChild(copy); d.appendChild(dl); box.appendChild(d);
+    });
+  }catch(e){ box.innerHTML='<div class="hint">收藏加载失败：'+e.message+'</div>'; }
+}
+
+async function renderHistory(){
+  const box = document.getElementById('historyList');
+  box.innerHTML = '<div style="color:var(--muted);font-size:13px;text-align:center;padding:20px">加载中…</div>';
+  try{
+    const list = await panelAPI('/api/jobs');
+    box.innerHTML = '';
+    if(!list.length){
+      box.innerHTML = '<div style="color:var(--muted);font-size:13px;text-align:center;padding:20px">暂无历史记录</div>';
+      return;
+    }
+    list.slice(0, 8).forEach(j=>{
+      const d = document.createElement('div'); d.className='job';
+      const tag = j.status==='done'?'done':(j.status==='error'?'err':'run');
+      const tagTxt = j.status==='done'?'完成':(j.status==='error'?'失败':(j.status==='running'?'生成中':'排队'));
+      d.innerHTML = `<div class="top"><span>${(j.wf_name||j.workflow).replace(/</g,'&lt;')}</span><span class="tag ${tag}">${tagTxt}</span></div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:6px">${j.batch}张 · 高清${j.hd} · ${j.width||'默认'}×${j.height||'默认'}${j.elapsed?' · '+j.elapsed+'秒':''}${j.error?' · '+(j.error).replace(/</g,'&lt;'):''}</div>`;
+      box.appendChild(d);
+      if((j.images||[]).length){
+        const show = document.createElement('button');
+        show.className='dl'; show.textContent='查看/加载 '+j.images.length+' 张图片';
+        show.onclick=()=>{
+          show.remove();
+          (j.images||[]).forEach(im=>{
+            const wrap = document.createElement('div');
+            const img=document.createElement('img'); img.loading='lazy'; img.decoding='async';
+            if(im.remote){
+              img.src=im.preview_url||im.url;
+              img.onerror=()=>{ img.style.display='none'; };
+            }
+            else blobImage(im.url.replace('/api/image/','/api/preview/')).then(b=>{ img.src=URL.createObjectURL(b); }).catch(()=>{
+              blobImage(im.url).then(b=>{ img.src=URL.createObjectURL(b); }).catch(()=>{ img.alt='预览加载失败，可点下方打开原图'; });
+            });
+            const fav=document.createElement('button'); fav.className='dl'; fav.textContent='♥ 收藏图片和提示词';
+            fav.onclick=async()=>{ fav.disabled=true; fav.textContent='收藏中…'; try{ await panelAPI('/api/favorites',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({job_id:j.id,image_index:(j.images||[]).indexOf(im)})}); fav.textContent='✓ 已收藏'; }catch(e){ fav.disabled=false; fav.textContent='收藏失败：'+e.message; } };
+            const dl=document.createElement('a'); dl.className='dl'; dl.href=im.url; dl.target='_blank'; dl.download=im.file; dl.textContent='⬇ 打开/下载原图';
+            wrap.appendChild(img); wrap.appendChild(fav); wrap.appendChild(dl); d.appendChild(wrap);
+          });
+        };
+        d.appendChild(show);
+      }
+    });
+  }catch(e){
+    box.innerHTML = '<div style="color:#c14b4b;font-size:13px;text-align:center;padding:20px">历史加载失败：'+e.message+'</div>';
+  }
+}
+</script>
+</body>
+</html>

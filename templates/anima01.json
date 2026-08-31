@@ -1,0 +1,217 @@
+{
+ "1": {
+  "class_type": "UNETLoader",
+  "inputs": {
+   "unet_name": "Anima\\anima-base-v1.0.safetensors",
+   "weight_dtype": "default"
+  }
+ },
+ "70": {
+  "class_type": "LoraLoaderModelOnly",
+  "inputs": {
+   "lora_name": "{{LORA1}}",
+   "strength_model": 0.6,
+   "model": [
+    "1",
+    0
+   ]
+  }
+ },
+ "2": {
+  "class_type": "CLIPLoader",
+  "inputs": {
+   "clip_name": "Anima\\qwen_3_06b_base.safetensors",
+   "type": "stable_diffusion",
+   "device": "default"
+  }
+ },
+ "3": {
+  "class_type": "VAELoader",
+  "inputs": {
+   "vae_name": "Anima\\qwen_image_vae.safetensors"
+  }
+ },
+ "8": {
+  "class_type": "ModelSamplingAuraFlow",
+  "inputs": {
+   "model": [
+    "70",
+    0
+   ],
+   "shift": 3.0
+  }
+ },
+ "21": {
+  "class_type": "ChinesePromptToEnglishLLM",
+  "inputs": {
+   "中文需求": "{{PROMPT}}",
+   "用途": "Anima生图",
+   "LoRA触发词": "{{TRIGGER}}",
+   "模型": "deepseek-chat",
+   "随机种子": 20260802,
+   "Ollama地址": "http://127.0.0.1:11434",
+   "API类型": "OpenAI兼容",
+   "API地址": "https://api.deepseek.com/v1",
+   "API密钥": ""
+  }
+ },
+ "4": {
+  "class_type": "CLIPTextEncode",
+  "inputs": {
+   "text": [
+    "21",
+    0
+   ],
+   "clip": [
+    "2",
+    0
+   ]
+  }
+ },
+ "5": {
+  "class_type": "CLIPTextEncode",
+  "inputs": {
+   "text": "different person, changed identity, wrong subject count, deformed face, malformed anatomy, extra fingers, extra limbs, blurry, low quality, text, watermark, signature, jpeg artifacts",
+   "clip": [
+    "2",
+    0
+   ]
+  }
+ },
+ "6": {
+  "class_type": "EmptyLatentImage",
+  "inputs": {
+   "width": "{{WIDTH}}",
+   "height": "{{HEIGHT}}",
+   "batch_size": "{{BATCH}}"
+  }
+ },
+ "9": {
+  "class_type": "KSampler",
+  "inputs": {
+   "model": [
+    "8",
+    0
+   ],
+   "positive": [
+    "4",
+    0
+   ],
+   "negative": [
+    "5",
+    0
+   ],
+   "latent_image": [
+    "6",
+    0
+   ],
+   "seed": "{{SEED}}",
+   "steps": 28,
+   "cfg": 4.0,
+   "sampler_name": "euler",
+   "scheduler": "simple",
+   "denoise": 1.0
+  }
+ },
+ "10": {
+  "class_type": "VAEDecode",
+  "inputs": {
+   "samples": [
+    "9",
+    0
+   ],
+   "vae": [
+    "3",
+    0
+   ]
+  }
+ },
+ "13": {
+  "class_type": "UpscaleModelLoader",
+  "inputs": {
+   "model_name": "4x-ClearRealityV1.pth"
+  }
+ },
+ "14": {
+  "class_type": "ImageUpscaleWithModel",
+  "inputs": {
+   "upscale_model": [
+    "13",
+    0
+   ],
+   "image": [
+    "10",
+    0
+   ]
+  }
+ },
+ "15": {
+  "class_type": "ImageScaleBy",
+  "inputs": {
+   "image": [
+    "14",
+    0
+   ],
+   "upscale_method": "lanczos",
+   "scale_by": 0.5
+  }
+ },
+ "16": {
+  "class_type": "UpscaleModelLoader",
+  "inputs": {
+   "model_name": "4x-UltraSharp.pth"
+  }
+ },
+ "17": {
+  "class_type": "ImageUpscaleWithModel",
+  "inputs": {
+   "upscale_model": [
+    "16",
+    0
+   ],
+   "image": [
+    "10",
+    0
+   ]
+  }
+ },
+ "18": {
+  "class_type": "ImageScaleBy",
+  "inputs": {
+   "image": [
+    "17",
+    0
+   ],
+   "upscale_method": "lanczos",
+   "scale_by": 0.5
+  }
+ },
+ "19": {
+  "class_type": "easy imageIndexSwitch",
+  "inputs": {
+   "index": "{{HD}}",
+   "image0": [
+    "10",
+    0
+   ],
+   "image1": [
+    "15",
+    0
+   ],
+   "image2": [
+    "18",
+    0
+   ]
+  }
+ },
+ "11": {
+  "class_type": "SaveImage",
+  "inputs": {
+   "images": [
+    "19",
+    0
+   ],
+   "filename_prefix": "{{PREFIX}}"
+  }
+ }
+}

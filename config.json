@@ -1,0 +1,395 @@
+{
+ "workflows": [
+  {
+   "id": "anima02",
+   "name": "Anima Base · 人物加画风（漫画剧情）",
+   "prompt_default": "银白色波波头短发，浅蓝色内层发丝，蓝色花朵发饰，细长半垂的蓝眼睛，眼下小痣，冷淡倦怠的萌系表情，jk制服，樱花树下，特写",
+   "needs_ollama": false,
+   "loras": [
+    {
+     "key": "LORA1",
+     "label": "人物 LoRA",
+     "default": "05_style3_v2_step1600.safetensors",
+     "strength": 0.7
+    },
+    {
+     "key": "LORA2",
+     "label": "画风 LoRA",
+     "default": "04_style3_step800.safetensors",
+     "strength": 0.6
+    }
+   ],
+   "trigger_default": "jt_style3_v2",
+   "size_mode": "native",
+   "size_presets": [
+    {
+     "label": "默认 768×1024",
+     "w": 768,
+     "h": 1024
+    },
+    {
+     "label": "1:1 方图",
+     "w": 1024,
+     "h": 1024
+    },
+    {
+     "label": "3:4 竖图",
+     "w": 768,
+     "h": 1024
+    },
+    {
+     "label": "4:3 横图",
+     "w": 1024,
+     "h": 768
+    },
+    {
+     "label": "9:16 竖长图",
+     "w": 768,
+     "h": 1360
+    },
+    {
+     "label": "16:9 宽屏",
+     "w": 1360,
+     "h": 768
+    }
+   ],
+   "batch_mode": "sequential",
+   "batch_max": 4,
+   "hd": [
+    "关闭",
+    "ClearReality 极速2×",
+    "UltraSharp 精细2×"
+   ],
+   "speed": "约1.5-2分钟/次(云端)",
+   "ref": "无（纯文字生成）",
+   "desc": "RunningHub云端 · 人物LoRA(05_style3_v2_step1600)+画风LoRA(04_style3_step800) · 触发词 jt_style3_v2",
+   "template": "anima02.json",
+   "translate_default": true,
+   "backend": "runninghub",
+   "rh_workflow_id": "2091826879766933505",
+   "rh_node_map": {
+    "prompt": {
+     "node": "4",
+     "field": "text"
+    },
+    "negative": {
+     "node": "5",
+     "field": "text"
+    },
+    "lora1_name": {
+     "node": "7",
+     "field": "lora_name"
+    },
+    "lora1_strength": {
+     "node": "7",
+     "field": "strength_model"
+    },
+    "lora2_name": {
+     "node": "8",
+     "field": "lora_name"
+    },
+    "lora2_strength": {
+     "node": "8",
+     "field": "strength_model"
+    },
+    "width": {
+     "node": "6",
+     "field": "width"
+    },
+    "height": {
+     "node": "6",
+     "field": "height"
+    },
+    "batch": {
+     "node": "6",
+     "field": "batch_size"
+    },
+    "seed": {
+     "node": "10",
+     "field": "seed"
+    },
+    "hd": {
+     "node": "20",
+     "field": "index"
+    }
+   }
+  },
+  {
+   "id": "h3_t2v_i2v",
+   "name": "MiniMax H3 · 文生/图生视频+首尾帧（超级加速版）",
+   "kind": "video",
+   "backend": "runninghub",
+   "rh_workflow_id": "2093554209044480001",
+   "desc": "RunningHub云端 · MiniMax H3 FL2VA · 4步T8加速 · 支持文生/图生视频与首尾帧",
+   "rh_media": {
+    "first_frame": {
+     "node": "37",
+     "field": "image",
+     "type": "image",
+     "label": "首帧图（图生视频，可选）"
+    },
+    "last_frame": {
+     "node": "55",
+     "field": "image",
+     "type": "image",
+     "label": "尾帧图（可选）"
+    }
+   },
+   "rh_params": {
+    "prompt": {
+     "node": "36",
+     "field": "prompt",
+     "type": "text",
+     "label": "视频提示词"
+    },
+    "width": {
+     "node": "44",
+     "field": "值",
+     "type": "number",
+     "label": "宽",
+     "vtype": "int"
+    },
+    "height": {
+     "node": "46",
+     "field": "值",
+     "type": "number",
+     "label": "高",
+     "vtype": "int"
+    },
+    "duration": {
+     "node": "45",
+     "field": "值",
+     "type": "number",
+     "label": "时长（秒）",
+     "vtype": "int"
+    }
+   },
+   "params_defaults": {
+    "width": 768,
+    "height": 1344,
+    "duration": 7
+   }
+  },
+  {
+   "id": "wardrobe",
+   "name": "Wan2.2 · 换装+迁移+服装带货（流量密码版）",
+   "kind": "video",
+   "backend": "runninghub",
+   "rh_workflow_id": "2093554049743339522",
+   "desc": "RunningHub云端 · Wan2.2 Animate · 人物图+服装图换装迁移 · 视频动作",
+   "rh_media": {
+    "person": {
+     "node": "54",
+     "field": "image",
+     "type": "image",
+     "label": "人物图",
+     "required": true
+    },
+    "cloth": {
+     "node": "64",
+     "field": "image",
+     "type": "image",
+     "label": "服装图",
+     "required": true
+    },
+    "video": {
+     "node": "4",
+     "field": "video",
+     "type": "video",
+     "label": "动作参考视频（可选）"
+    }
+   },
+   "rh_params": {
+    "prompt": {
+     "node": "53",
+     "field": "value",
+     "type": "text",
+     "label": "换装提示词"
+    },
+    "negative": {
+     "node": "62",
+     "field": "text",
+     "type": "text",
+     "label": "负向词"
+    },
+    "width": {
+     "node": "1",
+     "field": "value",
+     "type": "number",
+     "label": "宽",
+     "vtype": "int"
+    },
+    "height": {
+     "node": "5",
+     "field": "value",
+     "type": "number",
+     "label": "高",
+     "vtype": "int"
+    },
+    "duration": {
+     "node": "32",
+     "field": "value",
+     "type": "number",
+     "label": "时长（秒）",
+     "vtype": "int"
+    }
+   },
+   "params_defaults": {
+    "width": 576,
+    "height": 1024,
+    "duration": 6
+   }
+  },
+  {
+   "id": "action",
+   "name": "Wan2.2 · 动作迁移（高仿动作）",
+   "kind": "video",
+   "backend": "runninghub",
+   "rh_workflow_id": "2093554104655167490",
+   "desc": "RunningHub云端 · Wan2.2 Animate · 视频动作迁移到目标角色",
+   "rh_media": {
+    "person": {
+     "node": "1031",
+     "field": "image",
+     "type": "image",
+     "label": "目标角色图",
+     "required": true
+    },
+    "ref": {
+     "node": "1084",
+     "field": "image",
+     "type": "image",
+     "label": "参考图（可选）"
+    },
+    "video": {
+     "node": "1055",
+     "field": "video",
+     "type": "video",
+     "label": "动作参考视频",
+     "required": true
+    }
+   },
+   "rh_params": {
+    "prompt": {
+     "node": "1062",
+     "field": "positive_prompt",
+     "type": "text",
+     "label": "正向提示词"
+    },
+    "negative": {
+     "node": "1062",
+     "field": "negative_prompt",
+     "type": "text",
+     "label": "负向提示词"
+    },
+    "width": {
+     "node": "1050",
+     "field": "value",
+     "type": "number",
+     "label": "宽",
+     "vtype": "int"
+    },
+    "height": {
+     "node": "1049",
+     "field": "value",
+     "type": "number",
+     "label": "高",
+     "vtype": "int"
+    }
+   },
+   "params_defaults": {
+    "width": 1280,
+    "height": 720
+   }
+  },
+  {
+   "id": "h3_lightx2v",
+   "name": "MiniMax H3 · 8步加速图生视频（lightx2v）",
+   "kind": "video",
+   "backend": "runninghub",
+   "rh_workflow_id": "2093554154237509633",
+   "desc": "RunningHub云端 · MiniMax H3 FL2VA · 8步Turbo · 图生视频。提示词需含“视频时长：[N]秒”格式，否则工作流内部解析会失败。",
+   "rh_media": {
+    "first_frame": {
+     "node": "37",
+     "field": "image",
+     "type": "image",
+     "label": "首帧图（图生视频）",
+     "required": true
+    }
+   },
+   "rh_params": {
+    "prompt": {
+     "node": "50",
+     "field": "text",
+     "type": "text",
+     "label": "视频提示词"
+    },
+    "max_side": {
+     "node": "64",
+     "field": "value",
+     "type": "number",
+     "label": "最长边长度",
+     "vtype": "int"
+    }
+   },
+   "params_defaults": {
+    "max_side": 832,
+    "prompt": "视频时长：[5]秒\nshot1:一个女人在街道上行走，身姿摇曳，低角度仰拍，镜头逐渐上移"
+   },
+   "prompt_placeholder": "视频时长：[5]秒\nshot1:画面描述…\nshot2:画面描述…",
+   "prompt_hint": "⚠️ 该工作流要求提示词包含「视频时长：[数字]秒」行，否则内部解析会失败。示例见输入框占位文字。"
+  },
+  {
+   "id": "h3_4step",
+   "name": "MiniMax H3 · 4步加速首尾帧视频",
+   "kind": "video",
+   "backend": "runninghub",
+   "rh_workflow_id": "2093554183483215873",
+   "desc": "RunningHub云端 · MiniMax H3 · 4步Turbo · 首帧+尾帧生成视频",
+   "rh_media": {
+    "first_frame": {
+     "node": "146",
+     "field": "image",
+     "type": "image",
+     "label": "首帧图",
+     "required": true
+    },
+    "last_frame": {
+     "node": "147",
+     "field": "image",
+     "type": "image",
+     "label": "尾帧图",
+     "required": true
+    }
+   },
+   "rh_params": {
+    "prompt": {
+     "node": "176",
+     "field": "value",
+     "type": "text",
+     "label": "视频提示词"
+    },
+    "duration": {
+     "node": "144",
+     "field": "value",
+     "type": "number",
+     "label": "时长（秒）",
+     "vtype": "float"
+    },
+    "max_side": {
+     "node": "145",
+     "field": "value",
+     "type": "number",
+     "label": "最长边长度",
+     "vtype": "int"
+    }
+   },
+   "params_defaults": {
+    "duration": 5,
+    "max_side": 1024
+   }
+  }
+ ],
+ "default_prompt_reset": true
+}

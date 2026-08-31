@@ -1,0 +1,1063 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sketch Anime 双模式提示词生成器</title>
+  <style>
+    :root{
+      --bg:#f7f4f2;
+      --card:#fffdfb;
+      --ink:#34302f;
+      --muted:#8d817d;
+      --line:#e8ded9;
+      --accent:#b8867e;
+      --accent-dark:#926a64;
+      --accent2:#f4e8e4;
+      --shadow:0 14px 38px rgba(78,60,55,.08);
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      background:
+        radial-gradient(circle at 10% 0%, rgba(226,191,180,.26), transparent 33%),
+        radial-gradient(circle at 90% 8%, rgba(208,198,188,.20), transparent 30%),
+        linear-gradient(180deg,#fcfaf8 0%,var(--bg) 100%);
+      color:var(--ink);
+      font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+      min-height:100vh;
+    }
+    .wrap{
+      width:min(1120px, calc(100% - 32px));
+      margin:0 auto;
+      padding:44px 0 72px;
+    }
+    .hero{
+      display:flex;
+      justify-content:space-between;
+      gap:24px;
+      align-items:flex-end;
+      margin-bottom:24px;
+    }
+    .eyebrow{
+      color:#a18d87;
+      letter-spacing:.16em;
+      font-size:12px;
+      font-weight:850;
+      margin-bottom:10px;
+    }
+    h1{
+      margin:0;
+      font-size:clamp(30px,4vw,52px);
+      letter-spacing:-.04em;
+      line-height:1.04;
+    }
+    .hero p{
+      margin:14px 0 0;
+      color:var(--muted);
+      line-height:1.8;
+      max-width:760px;
+      font-size:15px;
+    }
+    .top-actions{
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      justify-content:flex-end;
+    }
+    button{
+      border:0;
+      cursor:pointer;
+      font:inherit;
+    }
+    .btn{
+      border-radius:16px;
+      padding:12px 16px;
+      font-weight:780;
+      transition:.18s ease;
+    }
+    .btn:hover{transform:translateY(-1px)}
+    .btn.secondary{
+      background:#fff;
+      color:#7d6964;
+      border:1px solid var(--line);
+    }
+    .panel{
+      background:rgba(255,253,251,.94);
+      border:1px solid var(--line);
+      border-radius:24px;
+      box-shadow:var(--shadow);
+    }
+    .soul{
+      padding:18px 20px;
+      margin-bottom:14px;
+    }
+    .label-title{
+      font-size:12px;
+      color:#a4928d;
+      font-weight:850;
+      letter-spacing:.08em;
+      margin-bottom:12px;
+    }
+    .chips{
+      display:flex;
+      flex-wrap:wrap;
+      gap:9px;
+    }
+    .chip{
+      background:var(--accent2);
+      color:#7f625c;
+      border-radius:999px;
+      padding:8px 12px;
+      font-size:13px;
+      font-weight:750;
+    }
+    .mode-switch{
+      padding:16px 20px;
+      margin-bottom:18px;
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      align-items:center;
+    }
+    .mode-btn{
+      border:1px solid var(--line);
+      background:#fff;
+      color:#7d6964;
+      border-radius:14px;
+      padding:11px 15px;
+      font-weight:800;
+    }
+    .mode-btn.active{
+      background:linear-gradient(135deg,#bf8f86,#9f7169);
+      color:#fff;
+      border-color:transparent;
+    }
+    .mode-note{
+      width:100%;
+      color:#9d8c87;
+      font-size:12px;
+      line-height:1.6;
+      margin-top:2px;
+    }
+.settings{
+      padding:17px 20px;
+      margin-bottom:18px;
+      display:grid;
+      grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+      gap:14px;
+    }
+    .setting label{
+      display:block;
+      color:#9d8c87;
+      font-weight:800;
+      font-size:12px;
+      margin-bottom:8px;
+    }
+    .setting input{
+      width:100%;
+      border:1px solid var(--line);
+      border-radius:13px;
+      padding:11px 12px;
+      background:#fff;
+      color:#5a504d;
+      font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+      outline:none;
+    }
+    .setting input:focus{
+      border-color:#caa39b;
+      box-shadow:0 0 0 3px rgba(184,134,126,.12);
+    }
+    .setting-note{
+      margin-top:6px;
+      color:#aa9d98;
+      font-size:11px;
+      line-height:1.5;
+    }
+    .grid{
+      display:grid;
+      grid-template-columns:repeat(2,minmax(0,1fr));
+      gap:14px;
+    }
+    .item{
+      background:rgba(255,253,251,.96);
+      border:1px solid var(--line);
+      border-radius:20px;
+      box-shadow:0 8px 24px rgba(78,60,55,.045);
+      padding:17px 17px 16px;
+      min-height:118px;
+      position:relative;
+      transition:.18s ease;
+    }
+    .item.locked{
+      border-color:#cfa9a1;
+      background:#fff9f7;
+    }
+    .item.wide{grid-column:1/-1}
+    .item-head{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      margin-bottom:10px;
+    }
+    .item-actions{
+      display:flex;
+      gap:7px;
+      align-items:center;
+    }
+    .item-name{
+      color:#a4938e;
+      font-size:12px;
+      font-weight:850;
+    }
+    .lock,.reroll{
+      width:34px;height:34px;
+      border-radius:11px;
+      background:#f3eeeb;
+      color:#9a8781;
+      display:grid;
+      place-items:center;
+      font-size:15px;
+      transition:.18s ease;
+    }
+    .reroll{
+      background:#f6e9e5;
+      color:#9d6f68;
+    }
+    .lock:hover,.reroll:hover{
+      transform:translateY(-1px);
+      filter:brightness(.98);
+    }
+    .locked .lock{
+      background:#edd9d4;
+      color:#805f58;
+    }
+    .value{
+      font-size:16px;
+      line-height:1.65;
+      font-weight:770;
+    }
+    .picker-wrap{margin-top:12px}
+    .picker{
+      width:100%;
+      border:1px solid var(--line);
+      background:#fffdfc;
+      color:#6e615d;
+      border-radius:12px;
+      padding:10px 12px;
+      font:inherit;
+      font-size:13px;
+      outline:none;
+    }
+    .picker:focus{
+      border-color:#caa39b;
+      box-shadow:0 0 0 3px rgba(184,134,126,.12);
+    }
+    .picker-note{
+      margin-top:7px;
+      color:#aa9d98;
+      font-size:12px;
+      line-height:1.5;
+    }
+    .random{
+      width:100%;
+      margin:18px 0;
+      border-radius:22px;
+      padding:20px 24px;
+      color:#fff;
+      background:linear-gradient(135deg,#bf8f86,#9f7169);
+      font-size:18px;
+      font-weight:870;
+      letter-spacing:.02em;
+      box-shadow:0 16px 32px rgba(145,95,85,.20);
+    }
+    .random:active{transform:scale(.995)}
+    .prompt{
+      margin-top:4px;
+      overflow:hidden;
+    }
+    .prompt-head{
+      padding:18px 20px;
+      border-bottom:1px solid var(--line);
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:16px;
+    }
+    .prompt-head h2{
+      margin:0;
+      font-size:18px;
+    }
+    .prompt-head p{
+      margin:6px 0 0;
+      color:var(--muted);
+      font-size:13px;
+    }
+    .prompt-actions{
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+    }
+    .prompt-actions button{
+      padding:10px 13px;
+      border-radius:12px;
+      font-weight:760;
+      background:#f5e9e5;
+      color:#8d625b;
+    }
+    textarea{
+      display:block;
+      width:100%;
+      min-height:440px;
+      border:0;
+      resize:vertical;
+      outline:0;
+      padding:20px;
+      background:#fff;
+      color:#514846;
+      font:13px/1.72 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    }
+    .toast{
+      position:fixed;
+      left:50%;
+      bottom:30px;
+      transform:translateX(-50%) translateY(20px);
+      background:#342d2b;
+      color:#fff;
+      padding:11px 16px;
+      border-radius:12px;
+      opacity:0;
+      pointer-events:none;
+      transition:.22s;
+      font-weight:700;
+      font-size:13px;
+      box-shadow:0 12px 30px rgba(0,0,0,.16);
+    }
+    .toast.show{
+      opacity:1;
+      transform:translateX(-50%) translateY(0);
+    }
+    .hint{
+      text-align:center;
+      color:#a99a95;
+      font-size:12px;
+      margin-top:18px;
+      line-height:1.7;
+    }
+    @media(max-width:720px){
+      .wrap{width:min(100% - 20px,1120px);padding-top:26px}
+      .hero{display:block}
+      .top-actions{justify-content:flex-start;margin-top:18px}
+      .grid,.settings{grid-template-columns:1fr}
+      .item.wide{grid-column:auto}
+      .prompt-head{align-items:flex-start;flex-direction:column}
+      textarea{min-height:540px}
+    }
+  
+.cloud-panel{margin-top:20px;padding:20px}.cloud-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.cloud-head h2{margin:0}.cloud-home{display:inline-block;padding:10px 14px;border-radius:13px;background:#fff;color:#765f5a;text-decoration:none;border:1px solid var(--line);font-weight:800}.cloud-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:16px}.cloud-grid label{font-size:12px;color:var(--muted);font-weight:800}.cloud-grid input,.cloud-grid select{display:block;width:100%;margin-top:6px;border:1px solid var(--line);border-radius:11px;padding:10px;background:#fff;color:var(--ink)}.cloud-note{font-size:12px;color:var(--muted);line-height:1.65;margin-top:10px}.cloud-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}.cloud-generate{width:100%;margin-top:14px;border-radius:18px;padding:16px;background:linear-gradient(135deg,var(--accent,#bf8f86),var(--accent-dark,#9f7169));color:#fff;font-weight:850}.cloud-generate.local{background:linear-gradient(135deg,#668e86,#456e68)}.backend-results{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}.backend-result{border:1px solid var(--line);border-radius:15px;padding:10px;min-height:70px;background:rgba(255,255,255,.6)}.backend-result h3{margin:0 0 4px}.cloud-status{font-size:13px;color:#6f5c58;font-weight:750;margin:8px 0}.cloud-result img,.cloud-job img{display:block;width:100%;max-height:640px;object-fit:contain;border-radius:12px;background:#f5f3f2;margin-top:8px}.cloud-job{border:1px solid var(--line);background:#fff;border-radius:15px;padding:12px;margin:10px 0}.cloud-dl{display:block;width:100%;border:0;text-align:center;margin-top:7px;padding:10px;border-radius:10px;background:var(--accent2);color:#755b56;font-weight:750;text-decoration:none;cursor:pointer}.cloud-floating{position:fixed;right:14px;z-index:60;border:1px solid var(--line);border-radius:16px;padding:10px 13px;background:#fff;box-shadow:var(--shadow);cursor:pointer}.cloud-history-open{bottom:18px}.cloud-favorites-open{bottom:66px}.cloud-overlay{display:none;position:fixed;inset:0;z-index:90;background:rgba(247,244,242,.98);overflow:auto;padding:15px}.cloud-overlay.open{display:block}.cloud-overlay-inner{max-width:680px;margin:auto}.cloud-overlay-head{display:flex;justify-content:space-between;align-items:center}.cloud-close{border:0;background:none;font-size:25px;cursor:pointer}.cloud-setting-note{display:block;margin-top:5px;font-size:11px;color:var(--muted);line-height:1.4}@media(max-width:720px){.cloud-grid,.cloud-actions,.backend-results{grid-template-columns:1fr}}
+
+</style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="hero">
+      <div>
+        <div class="eyebrow">SKETCH ANIME · COMFYUI RANDOM PROMPT</div>
+        <h1>铅笔淡彩手绘风双模式提示词生成器</h1>
+        <p>
+          固定「日系成人女性 + 细墨线 + 石墨排线 + 彩铅淡彩 + 少量马克笔 + 白色速写纸」的核心画风，
+          现在拆成两个独立功能：一个是「原创随机器」，用于随机原创角色；一个是「角色版」，用于明确角色并自动带出该角色的身份、经典发型、眼睛、服装与识别特征。两种模式共用你的手绘画风骨架，适合 Anime 底模 + 自训练画风 LoRA。
+        </p>
+      </div>
+      <div class="top-actions">
+        <button class="btn secondary" id="unlockAll">全部解锁</button>
+        <button class="btn secondary" id="randomAll">重抽全部</button>
+      </div>
+    </section>
+
+    <section class="panel soul">
+      <div class="label-title">固定灵魂 / 不参与随机</div>
+      <div class="chips">
+        <span class="chip">传统手绘动漫</span>
+        <span class="chip">细墨线稿</span>
+        <span class="chip">石墨铅笔排线</span>
+        <span class="chip">交叉排线</span>
+        <span class="chip">彩铅淡彩</span>
+        <span class="chip">少量马克笔</span>
+        <span class="chip">黑白为主</span>
+        <span class="chip">局部强调色</span>
+        <span class="chip">白色速写纸</span>
+        <span class="chip">轻微纸张纹理</span>
+        <span class="chip">成人女性</span>
+        <span class="chip">细致眼睛与睫毛</span>
+        <span class="chip">手绘发丝</span>
+        <span class="chip">留白背景</span>
+        <span class="chip">竖版角色插画</span>
+        <span class="chip">经典动漫女角色模块</span>
+        <span class="chip">角色模式自动套用发型服装身份</span>
+      </div>
+    </section>
+
+    <section class="panel mode-switch">
+      <button class="mode-btn active" id="modeOriginal">原创随机器</button>
+      <button class="mode-btn" id="modeCharacter">角色版</button>
+      <div class="mode-note" id="modeNote">原创随机器：随机发型、眼睛、服装、配饰、姿势和镜头，适合做原创人物。</div>
+    </section>
+
+    <section class="panel settings">
+      <div class="setting">
+        <label for="triggerInput">LoRA 触发词（可选）</label>
+        <input id="triggerInput" placeholder="例如：my_sketch_style" />
+        <div class="setting-note">ComfyUI 里 LoRA 本身仍由 LoRA Loader 控制；这里仅用于需要文字 trigger 的 LoRA。</div>
+      </div>
+      <div class="setting">
+        <label for="prefixInput">自定义底模前缀（可选）</label>
+        <input id="prefixInput" placeholder="例如：masterpiece, best quality, very aesthetic" />
+        <div class="setting-note">留空会使用内置 Anime 通用质量词；可换成你底模常用的 score / quality 前缀。</div>
+      </div>
+    </section>
+
+    <section class="grid" id="grid"></section>
+
+    <button class="random" id="randomBtn">✦ 随机搭配未锁定项目</button>
+
+    <section class="panel prompt">
+      <div class="prompt-head">
+        <div>
+          <h2>完整 Prompt</h2>
+          <p>已经组合成适合 Anime 底模 + 画风 LoRA 的英文提示词。</p>
+        </div>
+        <div class="prompt-actions">
+          <button id="copyPositive">复制正向</button>
+          <button id="copyNegative">复制负向</button>
+          <button id="copyAll">复制全部</button>
+        </div>
+      </div>
+      <textarea id="promptText" spellcheck="false"></textarea>
+    </section>
+
+    <div class="hint">
+      单文件 HTML，无需服务器。每项可 ↻ 单独随机、🔒 锁定、下拉直选；LoRA trigger 和自定义底模前缀会保存在浏览器本地。
+      当角色模式选中明确角色时，会优先使用该角色自带的人物身份、经典发型、服装与关键识别特征；其他随机项只保留身材、姿势、镜头、纸面背景、点缀色等可安全微调项。
+    </div>
+  
+<section class="panel cloud-panel" id="cloudPanel">
+  <div class="cloud-head"><div><h2>云端 / 本地生图</h2><div class="cloud-note">同一套原始选项可分别提交到RunningHub，或通过反向隧道提交到你一直运行的本机ComfyUI。</div></div><a class="cloud-home" href="/promptgen">← 返回当前总主页</a></div>
+  <div class="cloud-grid">
+    <label>宽<input id="cloudW" type="number" value="768" min="256" max="2048" step="16"></label>
+    <label>高<input id="cloudH" type="number" value="1024" min="256" max="2048" step="16"></label>
+    <label>批量<input id="cloudBatch" type="number" value="1" min="1" max="4"><span class="cloud-setting-note" id="cloudBatchNote"></span></label>
+    <label>高清<select id="cloudHd"><option value="0">关闭</option><option value="1">ClearReality 2×</option><option value="2">UltraSharp 2×</option></select></label>
+    <label>种子模式<select id="cloudSeedMode"><option value="random">随机（显示实际值）</option><option value="fixed">固定</option></select></label>
+    <label>种子值<input id="cloudSeed" type="number" min="1" max="9007199254740991" step="1"></label>
+    <label>铅绘分步<select id="cloudSequence"><option value="off">关闭·普通出图</option><option value="3">3步：轮廓→黑白→淡彩</option><option value="4">4步：轮廓→成型→黑白→淡彩</option></select></label>
+  </div>
+  <div class="cloud-note">LoRA与正式触发词由后端固定：<b>jt_style1_v1</b>。本页触发词框只保留原页面显示，不会篡改后端映射。</div>
+  <div class="cloud-actions"><button class="cloud-generate" id="cloudGenerateCloud">☁ 云端生图</button><button class="cloud-generate local" id="cloudGenerateLocal">🖥 本地ComfyUI生图</button></div>
+  <div class="backend-results"><section class="backend-result" data-backend="cloud"><h3>云端结果</h3><div class="cloud-status" id="cloudStatusCloud"></div><div class="cloud-result" id="cloudResultCloud"></div></section><section class="backend-result" data-backend="local"><h3>本地结果</h3><div class="cloud-status" id="cloudStatusLocal"></div><div class="cloud-result" id="cloudResultLocal"></div></section></div>
+</section>
+
+</main>
+
+  <div class="toast" id="toast">已复制</div>
+
+<script>
+const DEFAULT_PREFIX = `masterpiece, best quality, highres, very aesthetic`;
+
+const FIXED_HEAD = `1girl, solo, adult woman, mature feminine anime character,
+beautiful detailed face, refined facial features,
+large expressive anime eyes, detailed irises, delicate eyelashes,
+soft blush, smooth pale skin, subtle natural lips,
+carefully drawn hair strands, elegant feminine proportions`;
+
+const FIXED_STYLE = `traditional hand-drawn anime illustration,
+fine ink lineart, clean delicate contour lines,
+graphite pencil shading, visible pencil grain,
+dense parallel hatching and cross-hatching,
+colored pencil rendering, subtle marker coloring,
+visible hand-drawn strokes, restrained traditional-media texture,
+mostly monochrome black-and-white drawing with selective accent colors,
+soft pale skin coloring, muted low-saturation palette,
+white sketchbook paper, faint paper texture,
+minimal loose pencil background, sparse graphite shadow marks,
+scanned traditional artwork feeling, slightly unfinished sketchbook finish`;
+
+const NEGATIVE = `worst quality, low quality, lowres, blurry, jpeg artifacts,
+watermark, signature, text, logo,
+photorealistic, realistic photography, 3d, cgi,
+glossy digital painting, plastic skin, heavy airbrush,
+oil painting, watercolor wash, vector art,
+flat cel shading, thick cartoon outlines,
+oversaturated colors, neon colors, strong color cast,
+muddy shading, chaotic scribbles, dirty background,
+complex detailed scenery, crowded background,
+bad anatomy, malformed hands, bad hands,
+extra fingers, missing fingers, fused fingers,
+extra limbs, duplicate body parts, deformed body`;
+
+const POOLS = {
+  character: [
+    ["标准纤细型","slender adult woman, elegant narrow shoulders, refined mature anime face, balanced feminine silhouette"],
+    ["柔和曲线型","adult woman, soft curvy feminine figure, gentle mature facial features, softly defined waist and hips"],
+    ["高挑模特型","tall adult woman, long elegant limbs, fashion-model proportions, poised silhouette"],
+    ["娇小成熟型","petite adult woman, compact feminine proportions, clearly mature facial features"],
+    ["运动健康型","fit adult woman, toned but feminine build, graceful athletic proportions, healthy posture"],
+    ["丰满优雅型","curvy adult woman, elegant hourglass silhouette, fuller bust and hips, poised mature appearance"],
+    ["冷艳成熟型","mature adult woman, sharp refined face, confident elegant presence, long graceful proportions"],
+    ["甜美成熟型","adult woman, soft rounded feminine face, warm cute-but-mature appearance, gentle body lines"]
+  ],
+
+  hair: [
+    ["黑色齐肩鲍伯 + 长侧刘海","glossy black shoulder-length bob, long face-framing side bangs"],
+    ["黑色短鲍伯 + 中分碎发","short black bob, soft center-parted wispy fringe"],
+    ["金色齐肩鲍伯 + 偏分","chin-to-shoulder length blonde bob, elegant side part"],
+    ["浅金中长直发","medium-long pale blonde straight hair, fine layered strands"],
+    ["粉色中长层次发","medium-long pastel pink layered hair, soft airy bangs"],
+    ["粉色长发 + 侧边蝴蝶结","long soft pink hair, side ribbon ornaments, flowing strands"],
+    ["薄荷绿中长卷发","medium-long pale mint-green wavy hair, soft curled ends"],
+    ["银白长直发","long silver-white straight hair, clean silky strands"],
+    ["银白高双马尾","long silver-white high twin tails, ribbon ties"],
+    ["黑紫渐变蝴蝶发","black hair with violet-purple gradient tips, butterfly-inspired layered hairstyle"],
+    ["深紫短层次发","short dark-purple layered hair, wispy face-framing locks"],
+    ["蓝黑长发 + 公主切","long blue-black hair, subtle hime-cut side locks"],
+    ["冷灰长发 + 低马尾","long cool-gray hair in a loose low ponytail"],
+    ["灰绿中长发 + 半扎","medium-long pale sage hair, half-up hairstyle"],
+    ["红棕长卷发","long muted auburn wavy hair, elegant loose curls"],
+    ["白银长发 + 双低辫","long silver-white hair in low twin braids"],
+    ["墨黑高马尾","long ink-black hair in a high ponytail, loose side strands"],
+    ["浅粉短狼尾","short pale-pink wolf cut, layered wispy ends"]
+  ],
+
+  eyes: [
+    ["浅灰色通透眼","pale gray irises, clear soft gaze"],
+    ["冰蓝色眼睛","icy blue irises, crisp luminous gaze"],
+    ["灰蓝色眼睛","gray-blue irises, calm refined gaze"],
+    ["琥珀金眼","warm amber-gold irises, detailed pupils"],
+    ["深紫色眼睛","deep violet irises, soft elegant gaze"],
+    ["淡紫色眼睛","pale lavender irises, dreamy expression"],
+    ["灰绿色眼睛","muted sage-green irises, gentle cool gaze"],
+    ["暖红棕眼","warm reddish-brown irises, soft reflective highlights"],
+    ["金绿色猫系眼","yellow-green irises, slightly catlike gaze"]
+  ],
+
+  expression: [
+    ["安静淡然","calm neutral expression, soft relaxed mouth"],
+    ["温柔浅笑","gentle subtle smile, warm composed expression"],
+    ["害羞微红","shy restrained expression, slightly stronger blush"],
+    ["俏皮微笑","playful small smile, lively eyes"],
+    ["冷淡自信","cool confident expression, composed gaze"],
+    ["轻微不满","slightly pouty expression, mildly annoyed gaze"],
+    ["困倦慵懒","sleepy relaxed expression, half-lidded gaze"],
+    ["若有所思","thoughtful distant expression, introspective mood"],
+    ["脸红紧张","flustered but restrained expression, visible blush"],
+    ["甜美开心","soft cheerful smile, gentle bright expression"],
+    ["微微惊讶","subtle surprised expression, parted lips"],
+    ["高冷凝视","serious elegant gaze, reserved mature expression"]
+  ],
+
+  interaction: [
+    ["直视镜头","looking directly at viewer, direct eye contact"],
+    ["侧目看镜头","glancing sideways toward viewer"],
+    ["回眸看镜头","looking back over shoulder toward viewer"],
+    ["低头再抬眼","head slightly lowered, eyes lifted toward viewer"],
+    ["视线看向远处","looking into the distance, gaze away from viewer"],
+    ["轻轻靠近镜头","leaning slightly closer toward viewer"],
+    ["手托脸看镜头","one hand resting against cheek while looking at viewer"],
+    ["拨头发时看镜头","adjusting hair with one hand while looking toward viewer"],
+    ["双手在身前互动","hands interacting delicately in front of body"],
+    ["抱住小物件","holding a small object close to body, attention divided between object and viewer"]
+  ],
+
+  species: [
+    ["普通人类","human woman, no animal ears"],
+    ["猫耳娘","adult catgirl, soft cat ears, subtle feline details"],
+    ["狐狸耳娘","adult foxgirl, tall soft fox ears, elegant fantasy details"],
+    ["精灵","adult elf woman, long pointed ears, refined fantasy appearance"],
+    ["蝴蝶主题人类","human woman, butterfly hair ornaments, butterfly-inspired accessories"],
+    ["轻幻想魔法系","adult fantasy woman, subtle magical ornament details, no wings"],
+    ["女仆猫系","adult cat-eared maid woman, tasteful cute feline details"],
+    ["普通人类 · 都市感","human adult woman, contemporary urban character styling"]
+  ],
+
+  character_inspired: [
+    ["关闭角色模式","no specific character, original character design"],
+    ["日向雏田","Hyuga Hinata, adult Hinata, recognizable Hyuga Hinata design, Konohagakure kunoichi of the Hyuga clan, Byakugan user, gentle shy personality, long dark indigo hair with straight bangs, pale lavender Byakugan eyes, signature ninja heroine identity, classic Hinata-inspired outfit styling"],
+    ["春野樱","Haruno Sakura, adult Sakura, recognizable Haruno Sakura design, Konohagakure kunoichi, elite medical ninja, super-strength fighter, determined and intelligent personality, short pink hair, green eyes, signature ninja heroine identity, classic Sakura-inspired outfit styling"],
+    ["纲手","Tsunade, recognizable Tsunade design, legendary Sannin, Fifth Hokage, elite medical ninja, powerful mature woman, blonde hair with twin front bangs, amber-brown eyes, forehead diamond mark, voluptuous figure, commanding presence, classic Tsunade outfit styling"],
+    ["山中井野","Yamanaka Ino, adult Ino, recognizable Yamanaka Ino design, Konohagakure kunoichi of the Yamanaka clan, sensory-type ninja, stylish confident personality, long blonde ponytail, bright eyes, classic Ino outfit styling"],
+    ["天天","Tenten, adult Tenten, recognizable Tenten design, Konohagakure kunoichi, weapons specialist, energetic disciplined personality, dark hair in twin buns, warm brown eyes, Chinese-inspired ninja styling"],
+    ["手鞠","Temari, adult Temari, recognizable Temari design, Sunagakure kunoichi, wind-style fighter, strong confident strategist personality, blonde hair in four ponytails, teal eyes, classic Temari outfit styling"],
+    ["蝴蝶忍","Shinobu Kocho, recognizable Shinobu Kocho design, Demon Slayer Corps Hashira, Insect Hashira, calm smiling but sharp personality, black hair with purple tips, violet eyes, butterfly hair ornaments, butterfly-themed haori, signature swordswoman identity"],
+    ["甘露寺蜜璃","Mitsuri Kanroji, recognizable Mitsuri Kanroji design, Demon Slayer Corps Hashira, Love Hashira, sweet emotional personality, long pink-and-green braided hair, bright green eyes, curvy cheerful heroine, signature Mitsuri uniform styling"],
+    ["雷姆","Rem, recognizable Rem design, oni maid heroine, blue-haired twin maid from a fantasy mansion, devoted gentle personality, short light-blue hair, blue eyes, classic maid uniform styling"],
+    ["拉姆","Ram, recognizable Ram design, oni maid heroine, pink-haired twin maid from a fantasy mansion, teasing confident personality, short pink hair, red-pink eyes, classic maid uniform styling"],
+    ["爱蜜莉雅","Emilia, recognizable Emilia design, half-elf fantasy heroine, silver-haired royal-candidate heroine, gentle kind personality, long silver hair, violet eyes, white-and-lilac fantasy outfit styling"],
+    ["2B","2B, YoRHa No.2 Type B, recognizable 2B design, female android soldier, cool disciplined personality, white bob hair, black visor, black gothic battle dress, signature elegant combat android identity"],
+    ["18号","Android 18, recognizable Android 18 design, cool female android fighter, composed detached personality, blonde bob haircut, pale blue eyes, signature casual fighter styling"],
+    ["布尔玛","Bulma, adult Bulma, recognizable Bulma design, genius scientist and inventor, stylish modern woman, blue hair, bright expressive eyes, capsule-corporation sci-fi heroine identity"],
+    ["时崎狂三","Kurumi Tokisaki, recognizable Kurumi Tokisaki design, gothic time-manipulating heroine, dangerous flirtatious personality, long black hair, red-and-black gothic dress styling, intense heterochromia-inspired gaze"],
+    ["阿库娅","Aqua, recognizable Aqua design, goddess heroine, lively vain comedic personality, long sky-blue hair in high ponytail, blue eyes, signature fantasy goddess styling"],
+    ["惠惠","Megumin, recognizable Megumin design, explosion mage heroine, chuunibyou personality, dark brown bob hair, red eyes, iconic mage-girl identity, classic fantasy mage outfit styling"],
+    ["达克妮斯","Darkness, recognizable Darkness design, female knight heroine, blonde masochistic crusader, long blonde hair, blue eyes, armored knight-woman identity"],
+    ["明日香","Asuka Langley, recognizable Asuka design, red-haired pilot heroine, competitive fiery personality, auburn hair, twin-tail styling, blue eyes, signature pilot-girl identity"],
+    ["绫波丽","Rei Ayanami, recognizable Rei Ayanami design, quiet enigmatic pilot heroine, short pale blue hair, red eyes, minimal stoic expression, signature pilot-girl identity"],
+    ["米卡莎","Mikasa Ackerman, recognizable Mikasa design, serious fighter heroine, skilled soldier identity, short black hair, gray eyes, restrained strong personality, classic survey-corps styling"],
+    ["祢豆子","Nezuko Kamado, recognizable Nezuko design, demon girl heroine, gentle protective personality, long black hair with orange-red gradient, pink eyes, bamboo gag aesthetic, signature kimono styling"],
+    ["雪之下雪乃","Yukinoshita Yukino, recognizable Yukino design, elegant honor-student heroine, intelligent aloof personality, long black hair, blue eyes, refined schoolgirl identity"],
+    ["宝多六花","Takarada Rikka, recognizable Rikka Takarada design, modern schoolgirl heroine, calm understated beauty, straight dark hair, contemporary schoolgirl styling"],
+    ["Makima","Makima, recognizable Makima design, mysterious authority figure, long auburn-red braided hair, golden ringed eyes, composed unsettling elegance, signature office-like styling"],
+    ["Zero Two","Zero Two, recognizable Zero Two design, horned sci-fi heroine, teasing bold personality, long pink hair, small red horns, confident sensual energy, signature pilot-suit-inspired identity"],
+    ["C.C.","C.C., recognizable C.C. design, immortal mysterious heroine, long mint-green hair, golden eyes, calm elegant expression, signature dark refined styling"],
+    ["Saber","Saber, Artoria Pendragon, recognizable Saber design, female knight heroine, blonde hair, blue-green eyes, noble disciplined personality, signature knight identity and blue dress/armor styling"],
+    ["远坂凛","Tohsaka Rin, recognizable Rin Tohsaka design, tsundere mage heroine, long dark twin tails, blue eyes, confident refined personality, signature red-and-black mage styling"],
+    ["间桐樱","Matou Sakura, recognizable Sakura Matou design, gentle reserved mage heroine, long purple hair, violet eyes, soft shy personality, signature modest schoolgirl / mage styling"],
+    ["妮可·罗宾","Nico Robin, recognizable Nico Robin design, archaeologist heroine, mature elegant calm beauty, long black hair, blue eyes, poised intellectual aura"],
+    ["娜美","Nami, recognizable Nami design, navigator heroine, stylish clever personality, long orange hair, confident lively expression, signature fashionable adventurer styling"],
+    ["薇薇","Nefertari Vivi, recognizable Vivi design, princess heroine, long light-blue hair, noble gentle personality, elegant royal aura"],
+    ["博雅·汉库克","Boa Hancock, recognizable Boa Hancock design, pirate empress heroine, very long black hair, striking mature beauty, regal proud personality, glamorous signature styling"]
+  ],
+
+  outfit: [
+    ["经典黑白女仆装","classic black-and-white maid dress, puff sleeves, white frilled apron, lace trim, maid headband, fitted waist"],
+    ["哥特猫耳女仆装","gothic cat-maid dress, black fitted bodice, white apron, layered ruffles, lace trim, ribbon details"],
+    ["粉黑甜系女仆装","pink-and-black maid dress, layered frills, heart brooch, ribbon accents, fitted corset-like waist"],
+    ["紫黑哥特女仆装","dark violet-and-black gothic maid outfit, white lace accents, layered skirt, elegant ribbon details"],
+    ["运动短T + 运动短裤","fitted sporty t-shirt tied at waist, athletic shorts with side stripes, clean sporty styling"],
+    ["宽松运动T + 短裤","loose sports t-shirt, fitted athletic shorts, casual gym-club styling"],
+    ["黑色吊带背心 + 外搭衬衫","black fitted tank top, loose shirt draped around shoulders, casual mature styling"],
+    ["浅色修身长袖 + 牛仔裤","light fitted long-sleeve top, high-waisted jeans, understated modern casual outfit"],
+    ["红色无肩带连衣裙","fitted red strapless dress, elegant clean silhouette, minimal accessories"],
+    ["黑色蕾丝吊带 + 格纹短裙","black lace camisole top, red-and-black plaid pleated mini skirt, gothic casual styling"],
+    ["黑色修身连衣裙","fitted black sleeveless dress, elegant simple neckline, refined mature styling"],
+    ["学院风衬衫 + 百褶裙","clean collared blouse, ribbon tie, pleated skirt, mature academy-inspired styling"],
+    ["机械机能女仆装","black-and-white maid-inspired outfit with subtle mechanical accessories, utility straps, futuristic sneakers"],
+    ["幻想战斗女仆","fantasy maid-inspired dress, fitted bodice, layered skirt, decorative belts and light armor accents"],
+    ["白衬衫 + 高腰短裙","white fitted blouse, high-waisted dark skirt, elegant office-casual styling"],
+    ["针织上衣 + 高腰裤","soft fitted knit top, high-waisted tailored pants, mature casual fashion"],
+    ["露肩针织 + 短裙","soft off-shoulder knit top, fitted short skirt, tasteful feminine fashion"],
+    ["短款夹克 + 高腰短裤","cropped jacket, fitted inner top, high-waisted shorts, stylish urban outfit"],
+    ["吊带连衣裙","simple fitted slip dress, delicate straps, elegant minimal styling"],
+    ["哥特洛丽塔改良裙","mature gothic-lolita inspired dress, lace collar, corset waist, layered ruffles, restrained ornate details"]
+  ],
+
+  accessory: [
+    ["白色女仆发箍","white frilled maid headband"],
+    ["黑色细丝带","small black ribbon hair ornaments"],
+    ["深蓝蝴蝶结","dark navy ribbon bows"],
+    ["红色心形胸针","small red heart-shaped brooch"],
+    ["金色圆环耳坠","small gold hoop earrings with delicate drop charm"],
+    ["心形项链","delicate heart pendant necklace"],
+    ["蝴蝶发饰","blue-and-violet butterfly hair ornaments"],
+    ["幽灵发夹","small cute ghost-shaped hair clips"],
+    ["三角金属发夹","minimal triangular metal hair clip"],
+    ["黑色蕾丝颈圈","thin black lace choker"],
+    ["金色铃铛","small polished gold bell ornament at collar"],
+    ["发带 + 小蝴蝶结","thin headband with small ribbon accents"],
+    ["简约耳钉","small minimalist earrings"],
+    ["无明显配饰","no prominent accessory, clean character design"]
+  ],
+
+  legwear: [
+    ["裸腿","bare legs"],
+    ["白色过膝袜","white thigh-high socks"],
+    ["黑色过膝袜","black thigh-high socks"],
+    ["白色长袜","white knee-high socks"],
+    ["黑色长袜","black knee-high socks"],
+    ["薄黑丝袜","sheer black tights"],
+    ["灰色连裤袜","soft gray tights"],
+    ["白色蕾丝长袜","white lace-trim thigh-high socks"],
+    ["运动中筒袜","white sporty crew socks"],
+    ["不强调腿部服饰","legwear not emphasized"]
+  ],
+
+  footwear: [
+    ["玛丽珍鞋","classic mary jane shoes"],
+    ["黑色短靴","black ankle boots"],
+    ["白色运动鞋","clean white sneakers"],
+    ["机能运动鞋","chunky futuristic technical sneakers"],
+    ["乐福鞋","polished loafers"],
+    ["低跟鞋","elegant low heels"],
+    ["厚底鞋","chunky platform shoes"],
+    ["细带凉鞋","minimal strappy sandals"],
+    ["赤足","barefoot"],
+    ["画面不出现鞋子","feet cropped out of frame, footwear not visible"]
+  ],
+
+  prop: [
+    ["无道具","no handheld prop"],
+    ["咖啡杯","holding a small coffee cup"],
+    ["粉色猫形抱枕","holding a translucent pink cat-shaped cushion"],
+    ["信封","holding a small envelope"],
+    ["书本","holding a closed book"],
+    ["手机","holding a smartphone casually"],
+    ["小礼盒","holding a small gift box"],
+    ["发带 / 丝带","holding a loose ribbon in one hand"],
+    ["小包","holding a compact handbag"],
+    ["机械背包","wearing a compact retro-futuristic mechanical backpack"]
+  ],
+
+  pose: [
+    ["跪坐双手并拢","kneeling politely with legs folded underneath, both hands together in front, torso leaning slightly forward"],
+    ["跪姿双手比V","kneeling pose, both hands making peace signs near shoulders, playful compact silhouette"],
+    ["坐姿双腿并拢偏侧","sitting with both legs together angled to one side, hands resting near knees"],
+    ["侧坐一膝抬起","sitting sideways, one knee raised, one arm loosely embracing the knee"],
+    ["抱膝坐地","sitting on floor hugging one knee, relaxed compact pose"],
+    ["侧躺撑头","lying on one side, head supported by one hand, knees softly bent"],
+    ["靠墙半身站姿","leaning against a wall, relaxed shoulders, subtle body curve"],
+    ["站姿手扶腰","standing with one hand on hip, elegant confident posture"],
+    ["轻微前倾","standing and leaning slightly toward viewer, hands near thighs, graceful foreshortening"],
+    ["一手托腮一手垂下","one hand resting against cheek, the other arm relaxed downward"],
+    ["抬手整理头发","raising one hand to adjust hair, torso slightly turned"],
+    ["坐地后撑","sitting on floor leaning back on both hands, one leg bent and one extended"],
+    ["高凳侧坐翘腿","sitting sideways on a high stool with legs crossed, fashion editorial posture"],
+    ["背身回眸","body facing away, looking back over shoulder, elegant silhouette"],
+    ["蹲姿贴近镜头","crouching close to camera, knees forming foreground, balanced dramatic perspective"],
+    ["半躺放松","reclining lightly with upper body supported, relaxed elegant posture"],
+    ["单膝跪地","one knee on the floor, the other knee raised, one hand resting on raised knee"],
+    ["行走中回头","walking in profile while glancing back, slight motion in hair and clothing"]
+  ],
+
+  camera: [
+    ["正面半身近景","front view, upper-body portrait, medium close shot"],
+    ["正面膝上构图","front view, knee-up shot, centered vertical composition"],
+    ["三分之四身竖图","three-quarter body portrait, vertical composition, character filling most of canvas"],
+    ["全身竖版","full-body vertical portrait, character centered, generous white margins"],
+    ["轻微俯拍近景","slight high angle, close portrait, subtle foreshortening"],
+    ["低机位仰拍","low-angle portrait, elegant elongated body perspective"],
+    ["三分之四侧面","three-quarter side view, medium shot, strong silhouette"],
+    ["高位俯视坐姿","high-angle seated composition, compact geometric body arrangement"],
+    ["轻广角贴近人物","mild wide-angle lens feeling, subject close to camera, dynamic perspective"],
+    ["低机位腿部前景","low angle, foreground leg creating depth, tasteful fashion framing"],
+    ["回眸近景","rear three-quarter close shot, face and shoulder line emphasized"],
+    ["头像 + 胸像","head-and-bust portrait, face and hair detail emphasized"],
+    ["腰部中景","waist-up medium shot, hand gesture and outfit details visible"],
+    ["斜向动态构图","diagonal composition, energetic editorial framing"],
+    ["贴近膝盖透视","camera close to knees, upper body receding slightly, noticeable foreshortening"],
+    ["杂志感近景","eye-level fashion editorial close shot, clean vertical crop"]
+  ],
+
+  background: [
+    ["纯白速写纸","clean white sketchbook paper background, almost empty"],
+    ["米白速写纸","warm off-white drawing paper, subtle paper grain"],
+    ["背后铅笔阴影块","rough graphite shadow block behind character, diagonal pencil hatching"],
+    ["边缘松散排线","loose graphite hatch marks around outer edges, large untouched white space"],
+    ["淡粉色马克笔底","very pale blush-pink marker wash behind character, sparse pencil hatch marks"],
+    ["淡灰阴影墙感","minimal pale-gray wall-like graphite shading, hand-drawn texture"],
+    ["几何铅笔框","minimal hand-drawn geometric pencil lines behind character"],
+    ["草稿式透视线","faint loose construction and perspective lines on white paper"],
+    ["局部黑色铅笔块","small dark graphite mass behind one side of character, otherwise white background"],
+    ["完全留白","large negative space, nearly blank white paper background"]
+  ],
+
+  accent: [
+    ["黑白 + 淡粉","mostly monochrome with soft pale-pink selective accents"],
+    ["黑白 + 深红","mostly monochrome with restrained deep-red accents"],
+    ["黑白 + 藏蓝","mostly monochrome with muted navy-blue accents"],
+    ["黑白 + 紫色","mostly monochrome with muted violet accents"],
+    ["黑白 + 薄荷绿","mostly monochrome with pale mint-green accents"],
+    ["黑白 + 金色","mostly monochrome with small warm-gold accents"],
+    ["黑白 + 冷蓝","mostly monochrome with cool pale-blue accents"],
+    ["黑白 + 灰紫","mostly monochrome with desaturated gray-violet accents"],
+    ["极淡多色彩铅","very restrained multi-color colored-pencil accents, low saturation"],
+    ["近乎纯黑白","almost entirely monochrome, only skin blush lightly colored"]
+  ],
+
+  story: [
+    ["纯角色立绘","standalone character illustration, no specific narrative"],
+    ["刚整理好女仆制服","quiet moment just after adjusting her maid uniform, casual character-study feeling"],
+    ["运动结束后休息","resting after light exercise, relaxed everyday moment"],
+    ["被叫到后回头","caught in the moment of turning after someone calls her"],
+    ["准备出门","getting ready to go out, small fashion-story moment"],
+    ["靠墙短暂休息","taking a quiet break while leaning against a wall"],
+    ["收到小礼物","just received a small gift, restrained emotional reaction"],
+    ["咖啡时间","quiet coffee-break moment, calm intimate mood"],
+    ["拍照时临时摆姿势","spontaneous pose for a casual photo, natural editorial feeling"],
+    ["发呆的空白瞬间","quiet absent-minded pause, introspective sketchbook mood"],
+    ["刚运动完被抓拍","candid moment just after exercise, slightly flushed but composed"],
+    ["换好衣服后的镜前感","post-outfit-change fashion moment, poised character-study atmosphere"]
+  ]
+};
+
+const LABELS = {
+  character:"身材 / 体型微调",
+  hair:"原创模式发型",
+  eyes:"原创模式眼睛",
+  expression:"表情",
+  interaction:"视线 / 互动",
+  species:"原创模式角色属性",
+  character_inspired:"经典动漫女角色",
+  outfit:"原创模式服装",
+  accessory:"原创模式配饰",
+  legwear:"原创模式腿部",
+  footwear:"原创模式鞋子",
+  prop:"道具",
+  pose:"姿势",
+  camera:"视角 / 机位",
+  background:"纸面背景",
+  accent:"局部点缀色",
+  story:"轻剧情"
+};
+
+const ORDER = [
+  "character","hair","eyes","expression","interaction","species","character_inspired",
+  "outfit","accessory","legwear","footwear","prop",
+  "pose","camera","background","accent","story"
+];
+
+const WIDE_KEYS = ["outfit","pose","camera","background","story"];
+
+let state = {};
+let locked = {};
+let currentMode = 'original';
+
+function pick(arr){ return arr[Math.floor(Math.random()*arr.length)] }
+
+function randomize(force=false){
+  Object.keys(POOLS).forEach(key=>{
+    if(force || !locked[key] || !state[key]) state[key] = pick(POOLS[key]);
+  });
+  save();
+  render();
+}
+
+function clean(v){ return (v || "").trim().replace(/,+\s*$/, ""); }
+
+function buildPositive(){
+  const customPrefix = clean(document.getElementById("prefixInput")?.value);
+  const trigger = clean(document.getElementById("triggerInput")?.value);
+  const prefix = customPrefix || DEFAULT_PREFIX;
+  const characterMode = currentMode === "character";
+
+  let parts = [
+    prefix,
+    trigger,
+    FIXED_HEAD
+  ].filter(Boolean);
+
+  if(characterMode){
+    parts = parts.concat([
+      state.character_inspired?.[1],
+      state.character?.[1],
+      state.expression?.[1],
+      state.interaction?.[1],
+      state.prop?.[1],
+      state.pose?.[1],
+      state.camera?.[1],
+      state.story?.[1],
+      state.background?.[1],
+      state.accent?.[1],
+      FIXED_STYLE
+    ].filter(Boolean));
+  }else{
+    parts = parts.concat([
+      state.character?.[1],
+      state.hair?.[1],
+      state.eyes?.[1],
+      state.expression?.[1],
+      state.interaction?.[1],
+      state.species?.[1],
+      state.outfit?.[1],
+      state.accessory?.[1],
+      state.legwear?.[1],
+      state.footwear?.[1],
+      state.prop?.[1],
+      state.pose?.[1],
+      state.camera?.[1],
+      state.story?.[1],
+      state.background?.[1],
+      state.accent?.[1],
+      FIXED_STYLE
+    ].filter(Boolean));
+  }
+
+  return parts.join(",\\n\\n");
+}
+
+function buildAll(){
+  return `${buildPositive()}
+
+Negative prompt:
+${NEGATIVE}`;
+}
+
+
+function isCharacterMode(){
+  return currentMode === "character";
+}
+
+function keyEnabledInCurrentMode(key){
+  const shared = ["character","expression","interaction","prop","pose","camera","background","accent","story"];
+  const originalOnly = ["hair","eyes","species","outfit","accessory","legwear","footwear"];
+  const characterOnly = ["character_inspired"];
+  if(shared.includes(key)) return true;
+  if(originalOnly.includes(key)) return currentMode === "original";
+  if(characterOnly.includes(key)) return currentMode === "character";
+  return true;
+}
+
+function updateModeUI(){
+  const origBtn = document.getElementById("modeOriginal");
+  const charBtn = document.getElementById("modeCharacter");
+  const note = document.getElementById("modeNote");
+  origBtn.classList.toggle("active", currentMode === "original");
+  charBtn.classList.toggle("active", currentMode === "character");
+  note.textContent = currentMode === "original"
+    ? "原创随机器：随机发型、眼睛、服装、配饰、姿势和镜头，适合做原创人物。"
+    : "角色版：明确角色后，角色身份、经典发型、眼睛、服装与识别特征自动接管，其它项目只做安全微调。";
+}
+
+function render(){
+  const grid = document.getElementById("grid");
+  grid.innerHTML = "";
+
+  updateModeUI();
+  ORDER.forEach(key=>{
+    if(!keyEnabledInCurrentMode(key)) return;
+    const div = document.createElement("article");
+    div.className = "item" + (WIDE_KEYS.includes(key) ? " wide" : "") + (locked[key] ? " locked" : "");
+
+    div.innerHTML = `
+      <div class="item-head">
+        <div class="item-name">${LABELS[key]}</div>
+        <div class="item-actions">
+          <button class="reroll" title="只随机这一项" aria-label="只随机这一项">↻</button>
+          <button class="lock" title="${locked[key] ? "解锁" : "锁定"}" aria-label="${locked[key] ? "解锁" : "锁定"}">${locked[key] ? "🔒" : "🔓"}</button>
+        </div>
+      </div>
+      <div class="value">${state[key][0]}</div>`;
+
+    const currentIndex = Math.max(0, POOLS[key].findIndex(item => item[1] === state[key][1]));
+    const wrap = document.createElement("div");
+    wrap.className = "picker-wrap";
+    const select = document.createElement("select");
+    select.className = "picker";
+    select.innerHTML = POOLS[key].map((item, idx) =>
+      `<option value="${idx}" ${idx === currentIndex ? "selected" : ""}>${item[0]}</option>`
+    ).join("");
+
+    select.onchange = (e) => {
+      state[key] = POOLS[key][Number(e.target.value)];
+      save();
+      render();
+    };
+
+    const note = document.createElement("div");
+    note.className = "picker-note";
+    note.textContent = "可下拉直选，也可以点 ↻ 单独随机，或点 🔒 锁定。";
+    wrap.appendChild(select);
+    wrap.appendChild(note);
+    div.appendChild(wrap);
+
+    div.querySelector(".reroll").onclick = ()=>{
+      state[key] = pick(POOLS[key]);
+      save();
+      render();
+    };
+    div.querySelector(".lock").onclick = ()=>{
+      locked[key] = !locked[key];
+      save();
+      render();
+    };
+    grid.appendChild(div);
+  });
+
+  document.getElementById("promptText").value = buildAll();
+}
+
+function save(){
+  localStorage.setItem("sketch-anime-random-state-v1", JSON.stringify(state));
+  localStorage.setItem("sketch-anime-random-locks-v1", JSON.stringify(locked));
+  localStorage.setItem("sketch-anime-trigger-v1", document.getElementById("triggerInput")?.value || "");
+  localStorage.setItem("sketch-anime-prefix-v1", document.getElementById("prefixInput")?.value || "");
+  localStorage.setItem("sketch-anime-mode-v1", currentMode);
+}
+
+function load(){
+  try{
+    state = JSON.parse(localStorage.getItem("sketch-anime-random-state-v1") || "{}");
+    locked = JSON.parse(localStorage.getItem("sketch-anime-random-locks-v1") || "{}");
+    document.getElementById("triggerInput").value = localStorage.getItem("sketch-anime-trigger-v1") || "";
+    document.getElementById("prefixInput").value = localStorage.getItem("sketch-anime-prefix-v1") || "";
+    currentMode = localStorage.getItem("sketch-anime-mode-v1") || "original";
+  }catch(e){
+    state={}; locked={};
+  }
+}
+
+async function copyText(text){
+  try{
+    await navigator.clipboard.writeText(text);
+  }catch(e){
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    ta.remove();
+  }
+  const toast = document.getElementById("toast");
+  toast.classList.add("show");
+  setTimeout(()=>toast.classList.remove("show"),1200);
+}
+
+document.getElementById("randomBtn").onclick = ()=>randomize(false);
+document.getElementById("randomAll").onclick = ()=>randomize(true);
+document.getElementById("unlockAll").onclick = ()=>{
+  locked = {};
+  save();
+  render();
+};
+document.getElementById("copyPositive").onclick = ()=>copyText(buildPositive());
+document.getElementById("copyNegative").onclick = ()=>copyText(NEGATIVE);
+document.getElementById("copyAll").onclick = ()=>copyText(buildAll());
+
+document.getElementById("modeOriginal").onclick = ()=>{
+  currentMode = "original";
+  save();
+  render();
+};
+document.getElementById("modeCharacter").onclick = ()=>{
+  currentMode = "character";
+  save();
+  render();
+};
+
+document.getElementById("triggerInput").addEventListener("input", ()=>{
+  save(); render();
+});
+document.getElementById("prefixInput").addEventListener("input", ()=>{
+  save(); render();
+});
+
+load();
+randomize(false);
+</script>
+
+<button class="cloud-floating cloud-favorites-open" id="cloudFavOpen">♥ 收藏</button><button class="cloud-floating cloud-history-open" id="cloudHistOpen">📁 历史</button>
+<div class="cloud-overlay" id="cloudHistOverlay"><div class="cloud-overlay-inner"><div class="cloud-overlay-head"><h2>历史记录</h2><button class="cloud-close">×</button></div><div id="cloudHistList"></div></div></div>
+<div class="cloud-overlay" id="cloudFavOverlay"><div class="cloud-overlay-inner"><div class="cloud-overlay-head"><h2>本原始页面收藏</h2><button class="cloud-close">×</button></div><div id="cloudFavList"></div></div></div>
+
+
+<script>
+const CLOUD_STYLE_ID='sketch';
+const CLOUD_TRIGGER='jt_style1_v1';
+const CLOUD_PAGE_ID='original_sketch';
+const CLOUD_HAS_SEQUENCE=true;
+let cloudRunning={cloud:false,local:false};
+const cloudApi=async(path,opt={})=>{const r=await fetch(path,opt);let d={};try{d=await r.json()}catch{}if(!r.ok)throw new Error(d.error||('HTTP '+r.status));return d};
+function cloudNewSeed(){return Math.floor(Math.random()*9007199254740990)+1}
+function cloudStripStyleTokens(text){return String(text||'').replace(/(?<![A-Za-z0-9_])jt_style\d+_v\d+(?![A-Za-z0-9_])/gi,'').replace(/(?:\s*,\s*){2,}/g,', ').replace(/^\s*,|,\s*$/g,'').trim()}
+function cloudSequenceMode(){if(!CLOUD_HAS_SEQUENCE)return'off';return cloudSequence.value==='3'?'sketch3':(cloudSequence.value==='4'?'sketch4':'off')}
+function cloudUpdateBatch(){const staged=CLOUD_HAS_SEQUENCE&&cloudSequence.value!=='off';cloudBatch.disabled=staged;if(staged){cloudBatch.value=1;cloudBatchNote.textContent='分步模式：每阶段1张，共提交3/4个云任务'}else cloudBatchNote.textContent='普通出图：1个云任务，批量节点一次出N张'}
+function cloudSnapshot(backend){return{source_page:CLOUD_PAGE_ID,style:CLOUD_STYLE_ID,mode:currentMode,state:JSON.parse(JSON.stringify(state)),locked:JSON.parse(JSON.stringify(locked)),trigger_input:document.getElementById('triggerInput')?.value||'',prefix_input:document.getElementById('prefixInput')?.value||'',width:+cloudW.value,height:+cloudH.value,batch:+cloudBatch.value,hd:+cloudHd.value,sequence_mode:cloudSequenceMode(),prompt_mode:'options',manual_positive:'',manual_negative:'',seed:+cloudSeed.value,seed_mode:cloudSeedMode.value,generation_backend:backend}}
+function cloudApplySnapshot(s){if(!s||s.source_page!==CLOUD_PAGE_ID||!s.state)return;state=JSON.parse(JSON.stringify(s.state));locked=JSON.parse(JSON.stringify(s.locked||{}));currentMode=s.mode||'original';if(document.getElementById('triggerInput'))triggerInput.value=s.trigger_input||'';if(document.getElementById('prefixInput'))prefixInput.value=s.prefix_input||'';cloudW.value=s.width||768;cloudH.value=s.height||1024;cloudBatch.value=s.batch||1;cloudHd.value=s.hd||0;cloudSeed.value=s.seed||cloudNewSeed();cloudSeedMode.value=s.seed_mode||'fixed';if(CLOUD_HAS_SEQUENCE)cloudSequence.value=s.sequence_mode==='sketch3'?'3':(s.sequence_mode==='sketch4'?'4':'off');save();render();cloudUpdateBatch();cloudFavOverlay.classList.remove('open');window.scrollTo({top:0,behavior:'smooth'})}
+function cloudAddResult(j,container){container.innerHTML='';(j.images||[]).forEach((im,i)=>{const x=document.createElement('div');x.className='cloud-job';x.innerHTML=`${im.stage_label?`<b>${im.stage_label}</b>`:''}<div class="cloud-note">${j.generation_backend==='local'?'本地':'云端'} · 种子：${j.seed??j.sequence_seed??'未知'} · ${j.width}×${j.height} · 批量${j.batch}</div><img loading="lazy" decoding="async" src="${im.preview_url||im.url}"><button class="cloud-dl cloud-fav">♥ 收藏图片、提示词和种子</button><a class="cloud-dl" target="_blank" href="${im.url}">⬇ 下载原图</a>`;x.querySelector('.cloud-fav').onclick=async e=>{e.target.disabled=true;e.target.textContent='收藏中…';try{await cloudApi('/api/favorites',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({job_id:j.id,image_index:i})});e.target.textContent='✓ 已收藏'}catch(err){e.target.disabled=false;e.target.textContent='收藏失败：'+err.message}};container.appendChild(x)})}
+async function cloudGenerateNow(backend){if(cloudRunning[backend])return;cloudRunning[backend]=true;const button=backend==='local'?cloudGenerateLocal:cloudGenerateCloud;const status=backend==='local'?cloudStatusLocal:cloudStatusCloud;const result=backend==='local'?cloudResultLocal:cloudResultCloud;button.disabled=true;status.textContent='正在提交…';result.innerHTML='';try{if(cloudSeedMode.value==='random')cloudSeed.value=cloudNewSeed();const positive=cloudStripStyleTokens(buildPositive());const body={workflow:'anima02',prompt:positive,negative_prompt:NEGATIVE,prompt_mode:'options',width:+cloudW.value,height:+cloudH.value,batch:+cloudBatch.value,hd:+cloudHd.value,seed:+cloudSeed.value,seed_mode:cloudSeedMode.value,style_id:CLOUD_STYLE_ID,mode:currentMode,sequence_mode:cloudSequenceMode(),generation_backend:backend,selection_snapshot:cloudSnapshot(backend)};const r=await cloudApi('/api/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});while(1){await new Promise(x=>setTimeout(x,3000));const j=await cloudApi('/api/job/'+r.job_id);const stage=(j.stage_status||[]).find(x=>x.status==='RUNNING');status.textContent=(stage?.stage_label||j.provider_status||j.status)+' '+(j.progress_pct||0)+'%';if(j.status==='done'){status.textContent='✓ 完成（'+j.elapsed+'秒，种子 '+j.seed+'）';cloudAddResult(j,result);break}if(j.status==='error')throw new Error(j.error||'生成失败')}}catch(e){status.textContent='✗ '+e.message}finally{cloudRunning[backend]=false;button.disabled=false}}
+async function cloudHistory(){cloudHistList.innerHTML='加载中…';const a=await cloudApi('/api/jobs');cloudHistList.innerHTML='';a.filter(j=>j.style_id===CLOUD_STYLE_ID).slice(0,12).forEach(j=>{const d=document.createElement('div');d.className='cloud-job';d.innerHTML=`<b>${j.status} · ${j.generation_backend==='local'?'本地':'云端'} · ${j.mode==='character'?'角色':'原创'}</b><div class="cloud-note">${j.width}×${j.height} · ${j.batch}张 · 种子 ${j.seed??j.sequence_seed??'未知'} · ${j.elapsed||''}秒</div><button class="cloud-dl">查看图片</button>`;d.querySelector('button').onclick=()=>cloudAddResult(j,d);cloudHistList.appendChild(d)})}
+async function cloudFavorites(){cloudFavList.innerHTML='加载中…';const a=await cloudApi('/api/favorites');cloudFavList.innerHTML='';a.filter(f=>f.selection_snapshot?.source_page===CLOUD_PAGE_ID).forEach(f=>{const d=document.createElement('div');d.className='cloud-job';d.innerHTML=`<div class="cloud-note">种子：${f.seed??f.selection_snapshot?.seed??'未知'}</div><img loading="lazy" src="${f.preview_url||f.image_url}"><button class="cloud-dl cloud-apply">↺ 套用提示词、选项和种子</button><button class="cloud-dl cloud-copy">复制完整提示词</button><a class="cloud-dl" href="${f.image_url}" target="_blank">⬇ 下载收藏原图</a>`;d.querySelector('.cloud-apply').onclick=()=>cloudApplySnapshot(f.selection_snapshot);d.querySelector('.cloud-copy').onclick=()=>navigator.clipboard.writeText((CLOUD_TRIGGER+', '+(f.prompt||'')).trim());cloudFavList.appendChild(d)})}
+cloudGenerateCloud.onclick=()=>cloudGenerateNow('cloud');cloudGenerateLocal.onclick=()=>cloudGenerateNow('local');cloudSeedMode.onchange=()=>{if(cloudSeedMode.value==='random')cloudSeed.value=cloudNewSeed()};if(CLOUD_HAS_SEQUENCE)cloudSequence.onchange=cloudUpdateBatch;cloudHistOpen.onclick=()=>{cloudHistOverlay.classList.add('open');cloudHistory()};cloudFavOpen.onclick=()=>{cloudFavOverlay.classList.add('open');cloudFavorites()};document.querySelectorAll('.cloud-overlay .cloud-close').forEach(b=>b.onclick=()=>b.closest('.cloud-overlay').classList.remove('open'));cloudSeed.value=cloudNewSeed();cloudUpdateBatch();
+</script>
+
+</body>
+</html>

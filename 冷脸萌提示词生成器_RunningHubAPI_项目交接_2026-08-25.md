@@ -1,0 +1,558 @@
+# 冷脸萌提示词生成器 × RunningHub API 接入项目交接文档
+
+**交接日期：** 2026-08-25  
+**项目目录：** `D:\LAN-Share\lora\_work\comfy_panel\`  
+**项目性质：** 公网可访问的「冷脸萌」动漫提示词随机搭配器，并通过 RunningHub OpenAPI v2 直接提交云端 Anima Base + 双 LoRA 生图任务。  
+**凭据约定：** 本文所有 API Key、面板令牌、SSH 密码、私钥内容均写作 `[REDACTED]`。不得把旧代码中硬编码的值复制到文档、Git 或新部署包。
+
+---
+
+## 1. 一页交接结论
+
+### 已经完成且可复用的能力
+
+1. **冷脸萌提示词生成器前端完成。**
+   - 单页面 HTML，支持按维度随机、下拉直选、单项锁定、全部重抽；
+   - 输出 Anima Base 可用的英文正向提示词和负向提示词；
+   - 固定审美骨架为：冷脸萌 / 半睁细长冷眼 / 眼下美人痣 / 低饱和细线稿 / 平涂 / 留白海报感；
+   - 已扩展服装、外搭、下装、袜子、鞋、配饰、姿势、镜头、场景、节日和故事等词库。
+
+2. **RunningHub API 适配代码已实现。**
+   - 通过 `POST https://www.runninghub.ai/openapi/v2/run/workflow/{workflowId}` 提交；
+   - 通过 `POST https://www.runninghub.ai/openapi/v2/query` 轮询；
+   - 提交内容为 `nodeInfoList`，可覆盖提示词、双 LoRA 文件名/强度、宽高、批量、种子与高清分支；
+   - 成功后会下载 `results[].url` 指向的 PNG 到面板服务器的 job 目录。
+
+3. **RunningHub 工作流已配置。**
+   - 工作流 ID：`2091826879766933505`；
+   - 面板 workflow ID：`anima02`；
+   - 云端路线：人物 LoRA `05_style3_v2_step1600.safetensors` + 画风 LoRA `04_style3_step800.safetensors`；
+   - 触发词：`jt_style3_v2`；
+   - 默认输出：768×1024，支持 1:1、3:4、4:3、9:16、16:9 等预设。
+
+### 必须优先处理的事项
+
+1. **凭据安全整改（P0）**：当前 `server.py` 中存在 RunningHub Key 的硬编码兜底值，必须移除，并在 systemd 环境变量中显式注入 `[REDACTED]`。旧 key 应视为已暴露并轮换。
+2. **公网鉴权整改（P0）**：代码目前 `_auth()` 直接返回 `True`，即 8189 端口实际无令牌保护；运维文档仍写“访问需令牌”，两者不一致。必须恢复鉴权或限制来源/IP 后再对外继续使用。
+3. **远端真实性复核（P1）**：已找到本地实现和配置，但当前 `panel_data/jobs.json` 中没有保存 `anima02` 的完成任务记录。因此不要把“接口代码已完成”写成“本次版本已经重新完成云端 E2E 验收”。重新提交一次小尺寸单张任务并记录 `taskId`、结果 URL、下载文件 SHA256。
+4. **页面文案与实际后端要对齐（P1）**：前端“一键生图”已指向 `anima02`，运行时会显示“云端 RunningHub”；页面内仍有“用当前 Prompt 直接调用本机”的旧表述，应改成“提交到 RunningHub 云端”。
+
+---
+
+## 2. 产品目标与边界
+
+### 2.1 面向用户的功能
+
+用户在网页上快速组合“冷脸萌”动漫人物提示词，并可：
+
+- 随机生成不同人物、发型、眼睛、情绪、服装和场景组合；
+- 锁定已满意的项目，仅重抽其余项目；
+- 复制正向提示词，或连同负面词一起复制；
+- 直接点击“一键生图”，把当前英文 prompt 投递到已固定的 RunningHub 工作流；
+- 在页面中查看任务进度、历史任务和下载的 PNG。
+
+### 2.2 不属于本项目的能力
+
+- 不是 Qwen 多参考人物保持/锁脸工程；
+- 不保证固定角色身份一致性；页面的“冷脸萌”是**风格和人物气质模板**，并非特定人物身份证明；
+- 不应把“年少/少女”字样与成人时尚/偏性感姿势混在同一用户路径。当前词库应统一改用“成年女性 / adult woman”并在提交层做成年主体保护；
+- 不应直接暴露 ComfyUI 原始 API、模型目录或任意节点编辑能力；
+- 不得从 RunningHub 下载、提取或逆向平台加密节点，仅可调用官方开放 API 中允许的 workflow 和可修改参数。
+
+---
+
+## 3. 当前架构
+
+```text
+浏览器
+  ├─ /promptgen：冷脸萌随机搭配器（HTML/JS）
+  └─ /：远程工作流控制面板
+          │ HTTP(S) 8189
+          ▼
+公网服务器：8.210.125.65（Ubuntu，无GPU）
+  └─ systemd: comfy-panel
+       ├─ static/promptgen.html
+       ├─ server.py
+       ├─ config.json
+       ├─ templates/anima02.json
+       └─ panel_data/jobs/{job_id}/  # 任务记录与下载图片
+          │
+          ├─ RunningHub OpenAPI v2（anima02）
+          │      ├─ run/workflow/{workflowId}
+          │      └─ query
+          │
+          └─ 其他本机 ComfyUI 工作流经 SSH 反向隧道转发
+                 服务器 127.0.0.1:8199 -> 本机 127.0.0.1:8188
+```
+
+> 本项目中的 `anima02` 已配置为 `backend: "runninghub"`，因此该工作流不依赖本机 ComfyUI、8199 隧道或本机 LoRA 列表。面板里其他工作流才走本机 ComfyUI 隧道。
+
+---
+
+## 4. 本地源码、远端部署和重要文件
+
+### 4.1 本地权威目录
+
+```text
+D:\LAN-Share\lora\_work\comfy_panel\
+  server.py                         # Python stdlib 后端；含RunningHub适配
+  config.json                       # 当前有效工作流配置（目前仅anima02）
+  static\promptgen.html             # 冷脸萌提示词生成器
+  static\index.html                 # 面板首页（当前与promptgen内容同步/相近）
+  templates\anima02.json            # anima02 的本机模板；RH模式不直接使用该JSON
+  _translate.py                      # DeepSeek翻译辅助模块（RH当前不启用翻译）
+  tools\deploy.py                   # SFTP上传 + 生成/更新systemd服务
+  PANEL_TOKEN.txt                    # 面板令牌，敏感，不外传
+  tools\creds.json                  # SSH凭据，敏感，不外传
+  panel_data\jobs.json              # 服务端历史任务记录（本地副本）
+  panel_data\jobs\                  # 下载后的历史图片
+  运维文档_远程控制面板.md           # 旧运维文档；部分内容已过时，见第11节
+```
+
+### 4.2 服务器路径
+
+```text
+/home/admin/comfy-panel/
+  server.py
+  config.json
+  static/
+  templates/
+  panel_data/
+
+systemd unit: comfy-panel
+公网入口: http://8.210.125.65:8189
+```
+
+### 4.3 更新部署命令
+
+在 Windows Git Bash 中执行：
+
+```bash
+cd D:/LAN-Share/lora/_work/comfy_panel/tools
+sshev/Scripts/python.exe deploy.py
+```
+
+**注意：** 当前 `deploy.py` 会上传 `server.py`、`config.json`、`_translate.py`、`static/*` 和 `templates/*.json`，并重写 systemd unit、重启服务。部署前必须先完成凭据整改，禁止把 key 写回源码。
+
+---
+
+## 5. 冷脸萌提示词生成器说明
+
+### 5.1 前端入口
+
+- 文件：`static/promptgen.html`；
+- 页面标题：`冷脸萌随机搭配器`；
+- 主要脚本从约第476行开始；
+- 状态保存在浏览器 `localStorage`：
+  - `anima-random-state`：各维度当前选择；
+  - `anima-random-locks`：各维度锁定状态；
+  - `jt_panel_token`：旧版面板令牌缓存（整改后可继续使用，但不可作为唯一安全层）。
+
+### 5.2 固定骨架
+
+`FIXED_HEAD` 主要定义：
+
+```text
+1girl, solo, young adult woman,
+cool-cute vibe, kuudere,
+half-lidded / narrow / slightly droopy / non-round eyes,
+subtle blush,
+small beauty mark under one eye,
+delicate face, refined features
+```
+
+`FIXED_STYLE` 主要定义：
+
+```text
+clean anime illustration,
+thin delicate lineart, fine gray outlines,
+flat colors, soft cel shading,
+limited low-saturation palette,
+cool gray / off-white / muted pastel,
+large negative space, simple background,
+quiet melancholic atmosphere,
+white sticker-like outline
+```
+
+`NEGATIVE` 主要抑制：水印、签名、文字、写实皮肤、3D、厚涂、强反差高饱和、圆眼/大睁眼、夸张笑容、坏手和额外肢体。
+
+### 5.3 可随机/直选的维度
+
+| 分类 | key | 内容示例 |
+|---|---|---|
+| 人物基调 | `character` | 银灰系疏离成年女性、雾紫系安静成年女性 |
+| 发型 | `hair` | 短鲍伯、齐肩、中长、长发、双马尾、辫子 |
+| 眼睛 | `eyes` | 灰蓝细长半睁眼、雾紫细长下垂眼 |
+| 情绪/互动 | `emotion`、`interaction` | 困倦冷淡、发呆恍神、回头看镜头 |
+| 节日/剧情 | `holiday`、`story` | 圣诞、樱花季、雨天便利店、窗边等消息 |
+| 服装 | `top`、`outerwear`、`bottoms`、`legwear`、`footwear`、`fashion_extra` | 上装、外套、下装、袜子、鞋、配饰拆分组合 |
+| 姿势 | `pose` | 坐姿、站姿、回眸、时尚编辑姿势、透视姿势 |
+| 镜头 | `camera` | 三分之四中景、近景、广角、低机位、海报构图 |
+| 场景/色彩 | `scene`、`accent` | 冬日树影、教室、湿街反射、编辑海报背景、点缀色 |
+
+### 5.4 安全与产品文案整改
+
+当前页面显示有“少女”“JK”“成人时尚性感姿势”等混合词。建议下一版统一如下：
+
+1. UI 人物描述统一为“成年女性”；
+2. 保留 JK/制服作为**服装/时尚标签**，但不得以其推断年龄；
+3. 成人时尚姿势只与明确成年主语组合；
+4. 将涉及半透明、过膝袜、透视等词条标记为“成人时尚”，并保留不露骨限制；
+5. 前端提示增加一句：`仅生成虚构成年角色；不得输入或生成未成年人性化内容。`；
+6. 后端也应执行同类输入保护，不能只依赖 UI 文案。
+
+---
+
+## 6. RunningHub OpenAPI 接入细节
+
+### 6.1 基础配置
+
+当前代码常量：
+
+```python
+RH_BASE = "https://www.runninghub.ai/openapi/v2"
+RH_TIMEOUT_SUBMIT = 60
+RH_TIMEOUT_QUERY = 30
+```
+
+认证头：
+
+```http
+Authorization: Bearer [REDACTED]
+Content-Type: application/json
+```
+
+> **整改要求：** `RH_KEY` 必须只来自 `RUNNINGHUB_API_KEY` 环境变量。禁止使用源码内默认 key。若环境变量缺失，应让服务启动失败或该后端返回明确配置错误。
+
+### 6.2 提交任务
+
+函数：`rh_submit(workflow_id, node_info_list, instance_type="default", use_personal_queue="false")`
+
+请求：
+
+```http
+POST /openapi/v2/run/workflow/{workflowId}
+```
+
+请求体：
+
+```json
+{
+  "addMetadata": false,
+  "nodeInfoList": [
+    {"nodeId": "4", "fieldName": "text", "fieldValue": "..."},
+    {"nodeId": "6", "fieldName": "width", "fieldValue": 768}
+  ],
+  "instanceType": "default",
+  "usePersonalQueue": "false"
+}
+```
+
+成功判定：响应 `status == "RUNNING"`，并保存 `taskId`。
+
+### 6.3 查询任务
+
+函数：`rh_query(task_id)`
+
+请求：
+
+```http
+POST /openapi/v2/query
+Content-Type: application/json
+Authorization: Bearer [REDACTED]
+
+{"taskId": "..."}
+```
+
+处理规则：
+
+- `FAILED`：抛出 `errorCode + errorMessage`；
+- `SUCCESS`：读取 `results`；
+- 其他状态：每 8 秒轮询一次；
+- 当前总超时：1800 秒（30分钟）。
+
+### 6.4 结果下载
+
+当状态为 `SUCCESS` 时：
+
+1. 遍历 `results`；
+2. 读取每个 `url`；
+3. 以流式读取+最多3次重试方式下载；
+4. 保存至 `panel_data/jobs/{job_id}/rh_{taskId}_{n}.png`；
+5. 返回 `/api/image/{job_id}/{file}` 供前端预览和下载。
+
+建议改进：下载后增加 PNG 魔数、尺寸、SHA256 校验，并把 `taskId`、远端 URL（可脱敏或保留域名）、输出 SHA256 写入 job JSON。
+
+---
+
+## 7. anima02 的 RunningHub 节点映射（核心）
+
+配置文件：`config.json`。
+
+| 面板参数 | RunningHub nodeId | fieldName | 当前含义 |
+|---|---:|---|---|
+| 正向提示词 | 4 | `text` | `trigger + 用户 prompt`，**原样传递，不走翻译** |
+| 负面提示词 | 5 | `text` | 当前 mapping 保留，但 `rh_build_node_info()` 未写入该字段；见待办 |
+| LoRA 1 名称 | 7 | `lora_name` | 人物/主体 LoRA |
+| LoRA 1 强度 | 7 | `strength_model` | 当前默认 0.7 |
+| LoRA 2 名称 | 8 | `lora_name` | 画风 LoRA |
+| LoRA 2 强度 | 8 | `strength_model` | 当前默认 0.6 |
+| 宽 | 6 | `width` | 预设输入 |
+| 高 | 6 | `height` | 预设输入 |
+| 批量 | 6 | `batch_size` | 1–4 |
+| 种子 | 10 | `seed` | 非0时传递，0/空则用平台随机 |
+| 高清分支 | 20 | `index` | 0关闭 / 1 ClearReality / 2 UltraSharp |
+
+### 7.1 当前默认值
+
+```json
+{
+  "workflow": "anima02",
+  "rh_workflow_id": "2091826879766933505",
+  "trigger_default": "jt_style3_v2",
+  "LORA1": "05_style3_v2_step1600.safetensors",
+  "LORA1_strength": 0.7,
+  "LORA2": "04_style3_step800.safetensors",
+  "LORA2_strength": 0.6,
+  "size": "768x1024",
+  "batch_max": 4,
+  "hd": ["关闭", "ClearReality 极速2×", "UltraSharp 精细2×"]
+}
+```
+
+### 7.2 已知实现差异
+
+- `rh_node_map` 配了 negative node 5，但 `rh_build_node_info()` 当前没有把负面词写入；
+- 前端当前提交的是组合后的英文正向词，未传 negative 字段；
+- 若 RunningHub workflow 的节点 ID 或字段名发生变化，任务可能仍被接受但参数未生效。因此必须在每次更新工作流后做“字段变更核验”：提交固定 seed、固定尺寸、醒目的测试词，检查返回图是否真反映对应参数；
+- 当前 RH 分支不翻译中文 prompt（`translate=False`），这是刻意设计。提示词生成器天然输出英文；如果允许用户在主面板输入中文，应先明确是否需要恢复 DeepSeek 翻译，而不是默默期望 RunningHub 模型自行理解。
+
+---
+
+## 8. 服务端流程与 API
+
+### 8.1 对外 HTTP API
+
+| 路径 | 方法 | 功能 |
+|---|---|---|
+| `/` | GET | 面板页面 |
+| `/promptgen` | GET | 冷脸萌提示词生成器 |
+| `/api/health` | GET | 服务与本机 ComfyUI 状态 |
+| `/api/workflows` | GET | 暴露配置的 workflow 元数据 |
+| `/api/jobs` | GET | 最近20条任务 |
+| `/api/image/{job_id}/{file}` | GET | 获取任务下载图 |
+| `/api/generate` | POST | 新建生成任务 |
+| `/api/comfy/start` | POST | 仅本机 ComfyUI 路线的远程启动接口 |
+
+### 8.2 `/api/generate` 请求示例（anima02）
+
+```json
+{
+  "workflow": "anima02",
+  "prompt": "adult woman, cool-cute kuudere, narrow half-lidded eyes, ...",
+  "width": 768,
+  "height": 1024,
+  "batch": 1,
+  "hd": 0,
+  "seed": 123456,
+  "trigger": "jt_style3_v2",
+  "loras": {
+    "LORA1": "05_style3_v2_step1600.safetensors",
+    "LORA2": "04_style3_step800.safetensors"
+  }
+}
+```
+
+RunningHub 分支将：
+
+1. 验证 workflow 和 LoRA key 名；
+2. 不校验本机 LoRA 列表（云端模型库不同）；
+3. 将 trigger 前置到 prompt；
+4. 构造 nodeInfoList；
+5. 后台线程提交 RH、轮询、下载；
+6. 立即返回：
+
+```json
+{"job_id":"<12位job id>"}
+```
+
+前端随后轮询 `/api/jobs` 显示状态。
+
+### 8.3 任务状态
+
+- `running`：已创建且云端任务/下载尚未完成；
+- `done`：结果图片已下载到 `panel_data/jobs/{jobid}/`；
+- `error`：提交、查询、下载或超时失败，错误字符串会保存在 job 中；
+- 服务重启时遗留的 `running` job 会被标注为：`服务重启，任务中断（未出图）`，防止全局锁长期占用。
+
+---
+
+## 9. 已有证据与当前验证边界
+
+### 9.1 已确认的本地事实
+
+1. `config.json` 当前确实将 `anima02` 设为 `backend: "runninghub"`，关联 workflow ID `2091826879766933505`；
+2. `server.py` 中已有 submit、query、轮询、结果下载和 job 存档完整代码路径；
+3. `promptgen.html` 的一键生图逻辑会识别 RH 模式，并将 `workflow: 'anima02'` 提交到 `/api/generate`；
+4. `panel_data/jobs.json` 保存过本机 ComfyUI 的多条成功 E2E：FLUX、Qwen、Anima 等；
+5. 当前本地 `jobs.json` 没有保存 `anima02` 的成功 RH 任务记录，故本交接不能把该份源码状态夸大成“截至本次交接已重新完整验证 RunningHub 云端成片”。
+
+### 9.2 接手后的最小 E2E 验收（必须执行）
+
+使用安全的测试 prompt、默认 768×1024、batch=1、HD=0、固定 seed：
+
+1. 设置服务器 `RUNNINGHUB_API_KEY=[REDACTED]`；
+2. 重启 `comfy-panel`；
+3. POST `/api/generate` 创建 `anima02` 任务；
+4. 记录返回的 panel `job_id`；
+5. 查 `/api/jobs`，确认含 `rh_task_id`；
+6. 确认 RH 状态由 RUNNING 变 SUCCESS；
+7. 确认下载 PNG 文件存在、可解码、非零尺寸；
+8. 计算 SHA256，保存到验收记录；
+9. 截图或保存 taskId、job JSON、最终 PNG；
+10. 再做一次固定种子复跑，确认参数仍可稳定传入。
+
+**验收不能只看 HTTP 200。** 提交成功、RH任务运行、RH成功、图片下载成功、页面可显示，是五个不同状态。
+
+---
+
+## 10. P0/P1 修复清单
+
+### P0-1：移除硬编码 RunningHub API Key
+
+现状：`server.py` 的 `RH_KEY` 有硬编码 fallback。  
+风险：源码泄露即等于账户额度被盗用；公网面板遭到滥用时难以归因。
+
+目标代码逻辑：
+
+```python
+RH_KEY = os.environ.get("RUNNINGHUB_API_KEY", "").strip()
+if not RH_KEY:
+    raise RuntimeError("RUNNINGHUB_API_KEY is required")
+```
+
+并在 systemd unit 中设置：
+
+```ini
+Environment=RUNNINGHUB_API_KEY=[REDACTED]
+```
+
+旧 key 必须在 RunningHub 控制台中轮换/作废后再部署。
+
+### P0-2：恢复公网鉴权或收口访问面
+
+现状：`Handler._auth()` 直接返回 `True`，即所有 API 实际匿名可调用。  
+风险：任何人可消耗云端额度、读取 job 列表和下载图片。
+
+至少选择一种：
+
+- **方案A（推荐）：** 恢复 Bearer token 校验，静态页登录后在 `Authorization: Bearer <token>` 传递；
+- **方案B：** 用 Nginx/安全组只允许固定 IP/VPN；
+- **方案C：** 在网关层加 Basic Auth + HTTPS，再保留服务内 token。
+
+不建议仅依赖 URL 中的 token 或 localStorage token；应采用 header，并启用 HTTPS。
+
+### P0-3：限流与额度保护
+
+建议加入：
+
+- 每 IP 每分钟请求数；
+- 每用户每日任务配额；
+- 最大 batch 限制保持 4 或更低；
+- RunningHub 任务中的 `instanceType` 固定白名单；
+- prompt 长度上限；
+- 发生连续错误时指数退避；
+- job 目录保留期与总空间上限；
+- 审计字段：请求时间、来源IP（脱敏存储）、workflow、seed、taskId、成本/队列状态、输出哈希。
+
+### P1-1：补齐负面词传输
+
+前端已内置 `NEGATIVE`，配置也有 node 5 映射，当前 RH 组包没有写入。可扩展 job 参数 `negative`，并在 `rh_build_node_info()` 中：
+
+```python
+set_field("negative", job.get("negative", ""))
+```
+
+然后用包含明显负面约束的固定种子验收，验证 node 5 真实生效。
+
+### P1-2：修正文案和日志
+
+- 把 `promptgen.html` 的“调用本机 02 工作流”改为“提交 RunningHub 云端 02 工作流”；
+- `/api/workflows` 返回中包含 `backend`，前端明确显示“云端 RunningHub”；
+- 在 job 卡片展示 `rh_task_id`（可复制）、远端状态和下载时间；
+- 当前进度百分比用倒计时推算，不代表 RH 的真实采样进度，应显示“排队/运行/下载”阶段文字，避免伪精确百分比。
+
+### P1-3：部署脚本同步 RH 环境变量
+
+当前 `deploy.py` 只写 PANEL_TOKEN、COMFY_URL、PANEL_PORT、PANEL_DIR、DEEPSEEK_API_KEY。需要加上 `RUNNINGHUB_API_KEY` 的安全读取和 systemd 注入，且绝不能 `print()` 完整值或提交到 `creds.json`。
+
+---
+
+## 11. 旧运维文档中需要更新的部分
+
+文件：`运维文档_远程控制面板.md`。
+
+| 旧描述 | 当前问题 | 新口径 |
+|---|---|---|
+| “面板只暴露 jt 目录全部9个工作流” | 当前有效 `config.json` 仅含 `anima02` 一项 | 以当前 config 为准；若要恢复多工作流，需要合并配置并逐项E2E。 |
+| “访问需令牌” | 代码 `_auth()` 实际放行所有请求 | 必须先整改，整改前不得宣称鉴权生效。 |
+| “RunningHub/DeepSeek” | RH 路线当前不翻译，DeepSeek只与其他本机路线相关 | 文档拆开描述：RH verbatim prompt；本机中文翻译是独立可选模块。 |
+| “Ollama 已不再需要” | 与本项目无直接依赖，但系统是否已删除不是本文范围 | 写成“anima02 RH路线不依赖Ollama”，不要写“已删除”。 |
+| 面板架构全部围绕本机 ComfyUI | anima02 为云端 RH 直连 | 增加云端分支图和故障诊断。 |
+
+---
+
+## 12. 常见故障定位
+
+| 现象 | 首查位置 | 常见原因 | 处理 |
+|---|---|---|---|
+| `/api/generate` 返回 401/403 | 鉴权层 | token、反向代理或来源限制 | 按正式鉴权方案检查 header/网关。 |
+| 提交报 `RH submit failed` | `server.py` / systemd 日志 | key缺失、网络、接口变更、workflow无权限 | 检查环境变量是否存在（只检查是否设置，勿输出值）、curl连通性、RH控制台权限。 |
+| 返回 `RH submit error` | RH响应体 | workflow ID 错、节点字段不合法、额度/队列限制 | 记录 errorCode/errorMessage；核对第7节映射。 |
+| 一直运行到30分钟超时 | `/api/jobs`、RH query | RH排队、状态未识别、query API变更 | 查 `rh_task_id` 到平台；保留原始响应脱敏日志。 |
+| RH成功但页面无图 | job目录/下载逻辑 | results没有url、URL过期、下载中断 | 查看 job error，验证服务器可访问结果URL；检查磁盘。 |
+| 图没有应用 LoRA/尺寸/HD | RH nodeInfoList | node ID/fieldName已随workflow变化 | 固定seed做单参数变化实验；不要凭提交成功假设生效。 |
+| 页面显示“本机工作流” | `promptgen.html` 文案 | 老旧文案未更新 | 改为 RH 云端提示并显示 backend。 |
+| 任务被陌生人创建 | access log/jobs | 公网无鉴权或 key泄露 | 立即停服务、轮换 key、恢复鉴权和限流。 |
+
+---
+
+## 13. 接手执行顺序
+
+### 第一步：先安全，不先扩功能
+
+1. 在 RunningHub 轮换旧 API key；
+2. 从 `server.py` 移除硬编码 fallback；
+3. 把新 key 写入远端 systemd 环境变量或权限600的 EnvironmentFile；
+4. 恢复 `_auth()`；
+5. 为 8189 配置 HTTPS 或至少 IP 白名单；
+6. 重启服务并检查 `systemctl status comfy-panel`。
+
+### 第二步：做一次最小 RH 真正 E2E
+
+1. 调用 `anima02`、batch=1、HD=0、固定 seed；
+2. 记录 panel job ID + RH task ID；
+3. 等待成功，保存 PNG + SHA256；
+4. 验证 trigger、两条 LoRA、宽高中的至少一个可见参数确实生效；
+5. 将任务 JSON 和验收结果写入 `panel_data/jobs/` 或独立 `evidence/`，不要只留聊天记录。
+
+### 第三步：再完善产品
+
+1. 修正“成年主体”文案与输入安全规则；
+2. 接通 negative prompt；
+3. 展示真实的 RH 阶段状态；
+4. 加配额、限流、审计和图片清理策略；
+5. 对词库进行内容审查，避免冲突（如未成年人暗示与成人时尚内容混合）；
+6. 再考虑新增其他 RunningHub workflow。每新增一个，都必须重新建立 node 映射和E2E证据。
+
+---
+
+## 14. 最终交接结论
+
+本项目的核心不是本地 ComfyUI 人物一致性工作流，而是：
+
+> **一个面向公网用户的“冷脸萌”英文动漫提示词随机生成器，使用固定风格骨架和可组合词库，通过 RunningHub OpenAPI v2 调用指定云端工作流完成一键生图。**
+
+代码层已具备 RunningHub 的提交、查询、下载和 job 存档路径；配置已明确到 workflow ID、节点映射、双 LoRA、触发词、尺寸、种子和高清开关。当前交接的关键风险不是“缺少功能”，而是**凭据硬编码、匿名公网调用、文档与代码不一致，以及需要补一次可复核的 RH 云端 E2E 记录**。
+
+先完成 P0 安全整改和一次固定参数 E2E，再继续词库、UI、负面词和更多 workflow 扩展。
