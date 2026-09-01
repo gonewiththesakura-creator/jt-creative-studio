@@ -29,7 +29,7 @@ def command(client,text,timeout=120):
 def rollback_release(client):
  for remote in RELEASE_FILES:
   command(client,f"cp -- {shlex.quote(remote+BACKUP_SUFFIX)} {shlex.quote(remote)}")
- command(client,"systemctl restart comfy-panel",timeout=180)
+ command(client,"sudo systemctl restart comfy-panel",timeout=180)
 
 def health_check():
  with urllib.request.urlopen("http://8.210.125.65:8189/api/health",timeout=60) as response:return json.load(response)
@@ -54,7 +54,7 @@ try:
    with sftp.open(remote,"rb") as handle:live=handle.read()
    data=local.read_bytes();assert live==data,f"live mismatch: {local.name}"
    print(local.name,len(data),hashlib.sha256(data).hexdigest())
-  command(client,"systemctl restart comfy-panel",timeout=180)
+  command(client,"sudo systemctl restart comfy-panel",timeout=180)
   time.sleep(1)
   state=health_check();assert state.get("ok") and state.get("local_comfy_ok"),state
   print("HEALTH",json.dumps(state,ensure_ascii=False))
