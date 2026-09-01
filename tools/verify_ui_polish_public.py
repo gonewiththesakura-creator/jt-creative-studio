@@ -90,6 +90,8 @@ def layout(route, ready, active, width, height, name):
             columns:getComputedStyle(document.querySelector('.studio-grid')).gridTemplateColumns,
             buttonHeights:footerButtons.map(x=>Math.round(x.getBoundingClientRect().height)),
             toolLabels:[...document.querySelectorAll('.topbar-action')].map(x=>x.innerText.trim()),
+            homeLinks:[document.querySelector('.brand')?.getAttribute('href'),[...document.querySelectorAll('.topnav-link')].find(x=>x.innerText==='创作台')?.getAttribute('href')],
+            legacyLinks:[...document.querySelectorAll('a')].filter(x=>x.getAttribute('href')==='/promptgen').length,
             shell:!!document.querySelector('.app-shell'),
             preview:!!document.querySelector('.preview-pane')
           }
@@ -101,6 +103,7 @@ def layout(route, ready, active, width, height, name):
     assert data["active"] == active
     assert all(value >= 44 for value in data["buttonHeights"])
     assert all(label for label in data["toolLabels"])
+    assert data["homeLinks"] == ["/", "/"] and data["legacyLinks"] == 0
     return screenshot(name)
 
 
@@ -109,6 +112,11 @@ call("Page.enable")
 
 # Read the live APIs before relying on any overlay or video UI.
 navigate("/promptgen", "typeof importGeneratedPromptToManual==='function'")
+canonical_state = evaluate(
+    """({path:location.pathname,canonical:document.querySelector('link[rel=canonical]')?.getAttribute('href')||'',brand:document.querySelector('.brand').getAttribute('href'),creator:document.querySelector('.topnav-link.active').getAttribute('href')})"""
+)
+print("CANONICAL_HOME", canonical_state)
+assert canonical_state == {"path": "/", "canonical": "/", "brand": "/", "creator": "/"}
 api_state = evaluate(
     """(async()=>{
       const read=async path=>{const r=await fetch(path);const d=await r.json();if(!r.ok)throw new Error(path+': '+(d.error||r.status));return d};

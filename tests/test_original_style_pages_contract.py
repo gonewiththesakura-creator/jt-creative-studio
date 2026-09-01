@@ -33,7 +33,7 @@ for name,c in CASES.items():
   checks[f'{name} native batch control']='id="cloudBatch"' in html and 'batch:+cloudBatch.value' in html
   checks[f'{name} history favorites']=all(x in html for x in ['/api/jobs','/api/favorites','cloudHistory','cloudFavorites','套用提示词、选项和种子'])
   checks[f'{name} structured snapshot']=all(x in html for x in ['source_page:CLOUD_PAGE_ID','state:JSON.parse(JSON.stringify(state))','locked:JSON.parse(JSON.stringify(locked))','seed:+cloudSeed.value'])
-  checks[f'{name} back home']='href="/promptgen"' in html
+  checks[f'{name} back home']='href="/">' in html and 'href="/promptgen"' not in html
 checks['sketch staged controls']=CASES['sketch']['built'].exists() and all(x in CASES['sketch']['built'].read_text(encoding='utf8') for x in ['id="cloudSequence"','cloudSequenceMode','cloudBatch.value=1'])
 home=(ROOT/'static'/'promptgen.html').read_text(encoding='utf8');server=(ROOT/'server.py').read_text(encoding='utf8')
 checks['home original links']=all(x in home for x in ['href="/original-sketch"','原始铅绘','href="/original-graphic"','原始古风'])
