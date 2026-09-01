@@ -11,7 +11,7 @@ Env:
 """
 import json, os, re, sys, time, uuid, threading, urllib.request, urllib.parse
 import http.server, socketserver, pathlib, secrets, hashlib
-import socket, base64, struct, subprocess
+import socket, base64, struct, subprocess, io
 
 BASE = pathlib.Path(__file__).resolve().parent
 COMFY_URL = os.environ.get("COMFY_URL", "http://127.0.0.1:8188").rstrip("/")
@@ -31,6 +31,9 @@ RH_KEY = os.environ.get("RUNNINGHUB_API_KEY", "")
 RH_TIMEOUT_SUBMIT = 60
 RH_TIMEOUT_QUERY = 30
 RH_SUBMIT_HARD_TIMEOUT = 120  # wall-clock cap for the whole submit (all retries)
+# V2 query exposes only real task states, not a stable percentage. Keep these
+# conservative and fixed; never manufacture progress from elapsed/poll count.
+RH_STAGE_PROGRESS = {"QUEUED": 0.02, "RUNNING": 0.10}
 
 TPL_DIR = BASE / "templates"
 CONFIG = json.loads((BASE / "config.json").read_text(encoding="utf-8"))
@@ -88,6 +91,8 @@ _lock_jobs = threading.Lock()
 _LORA_CACHE = {"t": 0.0, "list": []}
 _progress = {}                    # prompt_id -> (value, max) from ComfyUI WebSocket
 _favorites = {}
+_archive_locks = {}
+_archive_locks_guard = threading.Lock()
 
 # ---------- minimal WebSocket client (stdlib only) for real sampling progress ----------
 def _ws_connect(host, port, path):
@@ -358,6 +363,86 @@ def fetch_and_save(im, dest_dir):
     p.write_bytes(data)
     return p
 
+def _comfy_view_url(im, preview=None):
+    values = {"filename": im["filename"], "subfolder": im.get("subfolder", ""),
+              "type": im.get("type", "output")}
+    if preview:
+        values["preview"] = preview
+    return f"{COMFY_URL}/view?{urllib.parse.urlencode(values)}"
+
+def fetch_preview_and_save(im, dest):
+    """Fetch a compact ComfyUI WebP first, then cap decode dimensions."""
+    data = http_bytes(_comfy_view_url(im, preview="webp;55"), timeout=120)
+    dest = pathlib.Path(dest)
+    try:
+        from PIL import Image
+        tmp = dest.with_suffix(".tmp.webp")
+        with Image.open(io.BytesIO(data)) as image:
+            image = image.convert("RGB")
+            image.thumbnail((1280, 1280))
+            image.save(tmp, "WEBP", quality=72, method=4)
+        tmp.replace(dest)
+    except ImportError:
+        dest.write_bytes(data)
+    return dest
+
+def _archive_lock(job_id, filename):
+    key = (job_id, filename)
+    with _archive_locks_guard:
+        return _archive_locks.setdefault(key, threading.Lock())
+
+def ensure_local_original(job, image):
+    """Return a durable original, fetching it once when not archived yet."""
+    dest = JOBS_DIR / job["id"] / image["file"]
+    if dest.exists():
+        image["archive_status"] = "ready"
+        image["size"] = dest.stat().st_size
+        return dest
+    with _archive_lock(job["id"], image["file"]):
+        if dest.exists():
+            image["archive_status"] = "ready"
+            image["size"] = dest.stat().st_size
+            return dest
+        source = {"filename": image["comfy_filename"],
+                  "subfolder": image.get("comfy_subfolder", ""),
+                  "type": image.get("comfy_type", "output")}
+        image["archive_status"] = "downloading"
+        data = http_bytes(_comfy_view_url(source), timeout=300)
+        part = dest.with_suffix(dest.suffix + ".part")
+        part.write_bytes(data)
+        part.replace(dest)
+        image["size"] = dest.stat().st_size
+        image["archive_status"] = "ready"
+        return dest
+
+def archive_local_originals(job):
+    """Archive full PNGs after previews are visible; never change job success."""
+    job["archive_status"] = "running"
+    for image in job.get("images") or []:
+        if image.get("remote"):
+            continue
+        try:
+            ensure_local_original(job, image)
+        except Exception as error:
+            image["archive_status"] = "error"
+            image["archive_error"] = str(error)[:300]
+        with _lock_jobs:
+            save_jobs()
+    job["archive_status"] = "done" if all(
+        image.get("remote") or image.get("archive_status") == "ready"
+        for image in job.get("images") or []) else "partial"
+    with _lock_jobs:
+        save_jobs()
+
+def existing_job_for_request(client_request_id, generation_backend):
+    """Return a previously accepted job for an idempotent browser submit."""
+    if not client_request_id:
+        return None
+    with _lock_jobs:
+        return next((j for j in _jobs.values()
+                     if j.get("client_request_id") == client_request_id
+                     and j.get("generation_backend", "cloud") == generation_backend), None)
+
 def substitute(template_text, mapping):
     return re.sub(r"\{\{[A-Z0-9_]+\}\}", lambda m: str(mapping.get(m.group(0), m.group(0))), template_text)
 
@@ -550,12 +635,11 @@ def prepend_trigger_once(prompt, trigger):
     return f"{trigger}, {prompt}" if prompt else trigger
 
 def _rh_wait_task(job, task_id, deadline, progress_base=0, progress_span=100):
-    poll_count = 0
     while time.time() < deadline:
         status, results = rh_query(task_id)
-        poll_count += 1
         job["provider_status"] = status or "RUNNING"
-        job["progress_pct"] = min(99, progress_base + min(progress_span - 3, poll_count * 3))
+        fraction = RH_STAGE_PROGRESS.get(str(status or "RUNNING").upper(), 0.10)
+        job["progress_pct"] = round(min(99, progress_base + progress_span * fraction))
         if status == "SUCCESS":
             if results:
                 return results
@@ -652,7 +736,7 @@ def rh_run(job, jobdir, w):
 
 def local_run_image(job, jobdir, w, prompt=None, negative_prompt=None,
                     batch_size=None, hd=None, seed=None, stage_id=None,
-                    stage_label=None):
+                    stage_label=None, stage_index=0, stage_total=1):
     """Run one native-batch job on the user's local ComfyUI via COMFY_URL.
 
     On the relay COMFY_URL is 127.0.0.1:8199, the existing reverse tunnel to
@@ -673,21 +757,39 @@ def local_run_image(job, jobdir, w, prompt=None, negative_prompt=None,
     )
     pid = submit_job({"prompt": api})
     job["prompt_ids"].append(pid)
+    job["comfy_prompt_id"] = pid
     job["provider_status"] = stage_label or "LOCAL_RUNNING"
-    imgs = _wait_progress(job, pid, 0, 1)
+    imgs = _wait_progress(job, pid, stage_index, stage_total)
     images = []
-    for im in imgs:
-        p = fetch_and_save(im, jobdir)
+    job["provider_status"] = "RESULT_TRANSFERRING"
+    job["transfer_index"] = 0
+    job["transfer_total"] = len(imgs)
+    job["transfer_started"] = time.time()
+    span = 100 / max(1, stage_total)
+    base = stage_index * span
+    for index, im in enumerate(imgs, 1):
+        job["provider_status"] = "RESULT_DOWNLOADING"
+        job["transfer_index"] = index
+        job["progress_pct"] = round(min(99, base + span * (0.90 + 0.09 * ((index - 1) / max(1, len(imgs))))))
+        preview_file = f"preview_{pathlib.Path(im['filename']).stem}.webp"
+        preview_path = fetch_preview_and_save(im, jobdir / preview_file)
         images.append({
             "url": f"/api/image/{job['id']}/{im['filename']}",
-            "preview_url": f"/api/preview/{job['id']}/{im['filename']}",
-            "file": im["filename"], "size": p.stat().st_size, "remote": False,
+            "preview_url": f"/api/local-preview/{job['id']}/{preview_file}",
+            "file": im["filename"], "size": None, "remote": False,
+            "preview_file": preview_file, "preview_size": preview_path.stat().st_size,
+            "comfy_filename": im["filename"], "comfy_subfolder": im.get("subfolder", ""),
+            "comfy_type": im.get("type", "output"), "archive_status": "pending",
             "stage_id": stage_id, "stage_label": stage_label,
         })
+        job["progress_pct"] = round(min(99, base + span * (0.90 + 0.09 * (index / max(1, len(imgs))))))
     if not images:
         raise RuntimeError("local ComfyUI returned no images")
+    job["transfer_finished"] = time.time()
+    job["progress_pct"] = round(min(99, base + span))
     if stage_id is None:
         job["images"] = images
+        job["provider_status"] = "LOCAL_PREVIEW_READY"
     return images
 
 def local_run_sketch_sequence(job, jobdir, w):
@@ -696,13 +798,14 @@ def local_run_sketch_sequence(job, jobdir, w):
     job["sequence_seed"] = sequence_seed
     job["stage_status"] = []
     all_images = []
-    for stage_id, stage_label, stage_prompt in stages:
+    for stage_index, (stage_id, stage_label, stage_prompt) in enumerate(stages):
         job["stage_status"].append({"stage_id": stage_id, "stage_label": stage_label, "status": "RUNNING"})
         prompt = f"{job['prompt']}, {stage_prompt}, same exact character, same pose, same camera, same composition across the whole process series"
         images = local_run_image(
             job, jobdir, w, prompt=prompt, batch_size=1,
             hd=job.get("hd", 0) if stage_id == "colored" else 0,
             seed=sequence_seed, stage_id=stage_id, stage_label=stage_label,
+            stage_index=stage_index, stage_total=len(stages),
         )
         all_images.extend(images)
         job["stage_status"][-1]["status"] = "DONE"
@@ -841,6 +944,7 @@ def run_job(job):
                 local_run_image(job, jobdir, w)
             job["status"] = "done"
             job["progress_pct"] = 100
+            job["provider_status"] = "LOCAL_DONE"
         else:
             raise RuntimeError("unknown generation backend")
     except Exception as e:
@@ -849,9 +953,11 @@ def run_job(job):
     job["elapsed"] = round(time.time() - t0, 1)
     with _lock_jobs:
         save_jobs()
+    if job.get("status") == "done" and job.get("generation_backend") == "local":
+        threading.Thread(target=archive_local_originals, args=(job,), daemon=True).start()
 
 def _wait_progress(job, pid, img_index, total, timeout=1800):
-    """Poll ComfyUI history, folding real WS sampling progress into job.progress_pct."""
+    """Poll ComfyUI history; reserve the final 10% for result transfer."""
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
@@ -867,11 +973,12 @@ def _wait_progress(job, pid, img_index, total, timeout=1800):
                     for im in out.get("images", []):
                         imgs.append(im)
                 if imgs:
+                    job["progress_pct"] = round(min(99, ((img_index + 0.90) / max(1, total)) * 100))
                     return imgs
             if st.get("status_str") == "error" or st.get("error"):
                 raise RuntimeError(f"ComfyUI execution error: {json.dumps(st, ensure_ascii=False)[:300]}")
         v, m = _progress.get(pid, (0, 1))
-        pct = (img_index + (v / m if m else 0)) / total * 100
+        pct = (img_index + 0.88 * (v / m if m else 0)) / max(1, total) * 100
         job["progress_pct"] = round(min(pct, 99))
         time.sleep(2)
     raise TimeoutError(f"comfyui timeout after {timeout}s")
@@ -967,6 +1074,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "prompt", "negative_prompt", "prompt_mode", "seed", "seed_mode", "style_id", "mode",
                     "sequence_mode", "sequence_seed", "rh_task_ids", "stage_status", "generation_backend",
                     "media", "params",
+                    "client_request_id", "comfy_prompt_id", "prompt_ids",
+                    "transfer_index", "transfer_total", "transfer_started", "transfer_finished",
                 )
                 j = {k: src.get(k) for k in allowed}
             self._send(200, json.dumps(j, ensure_ascii=False).encode())
@@ -986,10 +1095,28 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         "download_started", "download_finished", "selection_snapshot",
                         "style_id", "mode", "seed", "seed_mode", "prompt_mode",
                         "sequence_mode", "sequence_seed", "rh_task_ids", "stage_status", "generation_backend",
+                        "client_request_id", "comfy_prompt_id",
+                        "transfer_index", "transfer_total", "transfer_started", "transfer_finished",
                     )
                     j = {k: src.get(k) for k in allowed}
                     items.append(j)
             self._send(200, json.dumps(items, ensure_ascii=False).encode())
+        elif path.startswith("/api/local-preview/"):
+            if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
+            try:
+                rest = path.split("/api/local-preview/", 1)[1]
+                jobid, fname = rest.split("/", 1)
+                p = (JOBS_DIR / jobid / fname).resolve()
+                if not str(p).startswith(str((JOBS_DIR / jobid).resolve())):
+                    return self._send(403, b'{"error":"bad path"}')
+                data = p.read_bytes()
+                self._send(200, data, "image/webp", {"Cache-Control": "private, max-age=86400"})
+            except FileNotFoundError:
+                self._send(404, b'{"error":"preview not found"}')
+            except (BrokenPipeError, ConnectionResetError):
+                return
+            except Exception as error:
+                self._send(500, json.dumps({"error": str(error)[:200]}).encode())
         elif path.startswith("/api/preview/"):
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
             try:
@@ -1062,6 +1189,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 p = (JOBS_DIR / jobid / fname).resolve()
                 if not str(p).startswith(str((JOBS_DIR / jobid).resolve())):
                     return self._send(403, b'{"error":"bad path"}')
+                if not p.exists():
+                    with _lock_jobs:
+                        job = _jobs.get(jobid)
+                        image = next((item for item in (job or {}).get("images", [])
+                                      if item.get("file") == fname), None)
+                    if not job or not image or image.get("remote"):
+                        return self._send(404, b'{"error":"not found"}')
+                    p = ensure_local_original(job, image)
+                    with _lock_jobs:
+                        save_jobs()
                 size = p.stat().st_size
                 self.send_response(200)
                 self.send_header("Content-Type", "image/png")
@@ -1214,7 +1351,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 if im.get("remote"):
                     download_file_resilient(im["url"], dest, timeout=120)
                 else:
-                    src = JOBS_DIR / jid / im["file"]
+                    src = ensure_local_original(job, im)
                     dest.write_bytes(src.read_bytes())
             except Exception as e:
                 return self._send(502, json.dumps({"error": f"收藏图片失败：{str(e)[:200]}"}, ensure_ascii=False).encode())
@@ -1260,7 +1397,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
         generation_backend = str(body.get("generation_backend") or "cloud")
         if generation_backend not in ("cloud", "local"):
             return self._send(400, b'{"error":"unknown generation_backend"}')
+        client_request_id = str(body.get("client_request_id") or "").strip()[:96]
         with _submit_locks[generation_backend]:
+            # Browser submission retries reuse this id. If the first response was
+            # lost, return the same accepted task instead of generating twice.
+            existing_job = existing_job_for_request(client_request_id, generation_backend)
+            if existing_job:
+                return self._send(200, json.dumps({
+                    "job_id": existing_job["id"], "existing_job": existing_job["id"],
+                    "deduplicated": True, "message": "same request already accepted",
+                }).encode())
             active_id = self._running_job_id(generation_backend)
             if active_id:
                 # Return the active job id: this is an expected busy state, not
@@ -1320,6 +1466,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                    "provider_finished": None, "download_started": None,
                    "download_finished": None, "style_id": style_id, "mode": mode,
                    "sequence_mode": sequence_mode, "generation_backend": generation_backend,
+                   "client_request_id": client_request_id,
+                   "comfy_prompt_id": None, "transfer_index": 0, "transfer_total": 0,
+                   "transfer_started": None, "transfer_finished": None,
                    "selection_snapshot": body.get("selection_snapshot") or {}}
             with _lock_jobs:
                 _jobs[job["id"]] = job

@@ -18,9 +18,9 @@ checks={
  "favorite cards clip images":'.library-scroll .job{overflow:hidden' in MAIN and '.library-scroll .job img{position:static' in MAIN,
  # Two distinct liquid treatments, active only while each button is running.
  "main liquid buttons":all(x in MAIN for x in ['liquid-button cloud','liquid-button local','liquid-label','liquid-wave']),
- "liquid state helpers":all(x in MAIN for x in ['setLiquidLoading','is-loading','--liquid-level']),
+ "liquid state helpers":all(x in MAIN for x in ['setLiquidLoading','setLiquidProgress','is-loading','--liquid-progress']),
  "liquid backend distinction":all(x in MAIN for x in ['--liquid-color:#536cff','--liquid-color:#3c9b82']),
- "cloud idle button exposes fill":'.liquid-button.cloud{background:#fff;color:#4057e8;border-color:#aeb9ff' in MAIN and '.liquid-button.is-loading{--liquid-level:5%;color:#fff' in MAIN,
+ "cloud idle button exposes fill":'.liquid-button.cloud{background:#fff;color:#4057e8;border-color:#aeb9ff' in MAIN and '--liquid-level:calc(100% - var(--liquid-progress))' in MAIN and '.liquid-button.is-loading{--liquid-level:5%' not in MAIN,
  "liquid respects reduced motion":'prefers-reduced-motion:reduce' in MAIN and '.liquid-wave' in MAIN,
  "original liquid buttons":all(all(x in p for x in ['liquid-button cloud','liquid-button local','setLiquidLoading']) for p in [SKETCH,GRAPHIC]),
  # Import generated options-mode prompt into editable manual fields.
