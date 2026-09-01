@@ -8,11 +8,11 @@ GRAPHIC=(ROOT/"static"/"original_graphic.html").read_text(encoding="utf8")
 TPL=(ROOT/"templates"/"anima02_notrans.json").read_text(encoding="utf8")
 checks={
  "main has cloud and local buttons":all(x in MAIN for x in ['id="genCloudBtn"','id="genLocalBtn"','☁ 云端生图','本地生成']),
- "original sketch has two buttons":all(x in SKETCH for x in ['id="cloudGenerateCloud"','id="cloudGenerateLocal"','☁ 云端生图','🖥 本地ComfyUI生图']),
- "original graphic has two buttons":all(x in GRAPHIC for x in ['id="cloudGenerateCloud"','id="cloudGenerateLocal"','☁ 云端生图','🖥 本地ComfyUI生图']),
- "graphic button has fallback colors":'var(--accent,#bf8f86)' in GRAPHIC and 'var(--accent-dark,#9f7169)' in GRAPHIC,
+ "original sketch has two buttons":all(x in SKETCH for x in ['id="cloudGenerateCloud"','id="cloudGenerateLocal"','☁ 云端生图','本地生成']),
+ "original graphic has two buttons":all(x in GRAPHIC for x in ['id="cloudGenerateCloud"','id="cloudGenerateLocal"','☁ 云端生图','本地生成']),
+ "graphic button colors":'--liquid-color:#536cff' in GRAPHIC and '--liquid-color:#3c9b82' in GRAPHIC,
  "browser requests backend":all('generation_backend:backend' in x for x in [MAIN,SKETCH,GRAPHIC]),
- "separate status and result panes":all(all(x in page for x in ['data-result-panel="cloud"','data-result-panel="local"','云端结果','本地结果']) for page in [MAIN]) and all(all(x in page for x in ['data-backend="cloud"','data-backend="local"','云端结果','本地结果']) for page in [SKETCH,GRAPHIC]),
+ "separate status and result panes":all(all(x in page for x in ['data-result-panel="cloud"','data-result-panel="local"','云端结果','本地结果']) for page in [MAIN,SKETCH,GRAPHIC]),
  "parallel frontend state":all("{cloud:false,local:false}" in x for x in [MAIN,SKETCH,GRAPHIC]),
  "history shows backend":all('generation_backend' in x and "==='local'?'本地':'云端'" in x for x in [MAIN,SKETCH,GRAPHIC]),
  "server validates backend":'generation_backend not in ("cloud", "local")' in SERVER and 'unknown generation_backend' in SERVER,

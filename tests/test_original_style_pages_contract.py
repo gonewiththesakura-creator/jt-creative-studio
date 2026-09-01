@@ -27,14 +27,14 @@ for name,c in CASES.items():
   src=config(c['source'],name+'s');out=config(c['built'],name+'b');html=c['built'].read_text(encoding='utf8')
   checks[f'{name} exact original config preserved']=src==out
   checks[f'{name} exact pool counts']=len(out['POOLS'])==c['categories'] and sum(map(len,out['POOLS'].values()))==c['rows']
-  checks[f'{name} fixed backend identity']=f"const CLOUD_STYLE_ID='{c['style']}'" in html and f"const CLOUD_TRIGGER='{c['trigger']}'" in html
+  checks[f'{name} fixed backend identity']=f"CLOUD_STYLE_ID='{c['style']}'" in html and f"CLOUD_TRIGGER='{c['trigger']}'" in html
   checks[f'{name} generation controls']=all(x in html for x in ['id="cloudW"','id="cloudH"','id="cloudBatch"','id="cloudHd"','id="cloudSeedMode"','id="cloudSeed"','id="cloudGenerateCloud"','id="cloudGenerateLocal"'])
-  checks[f'{name} current api request']=all(x in html for x in ["'/api/generate'","negative_prompt:NEGATIVE","prompt_mode:'options'","seed_mode:cloudSeedMode.value",f"style_id:CLOUD_STYLE_ID"])
-  checks[f'{name} native batch explanation']='1个云任务，批量节点一次出N张' in html
-  checks[f'{name} history favorites']=all(x in html for x in ['/api/jobs','/api/favorites','收藏图片、提示词和种子','套用提示词、选项和种子'])
+  checks[f'{name} current api request']=all(x in html for x in ["'/api/generate'","negative_prompt:negative","prompt_mode:cloudPromptMode.value","seed_mode:cloudSeedMode.value","style_id:CLOUD_STYLE_ID"])
+  checks[f'{name} native batch control']='id="cloudBatch"' in html and 'batch:+cloudBatch.value' in html
+  checks[f'{name} history favorites']=all(x in html for x in ['/api/jobs','/api/favorites','cloudHistory','cloudFavorites','套用提示词、选项和种子'])
   checks[f'{name} structured snapshot']=all(x in html for x in ['source_page:CLOUD_PAGE_ID','state:JSON.parse(JSON.stringify(state))','locked:JSON.parse(JSON.stringify(locked))','seed:+cloudSeed.value'])
   checks[f'{name} back home']='href="/promptgen"' in html
-checks['sketch staged controls']=CASES['sketch']['built'].exists() and all(x in CASES['sketch']['built'].read_text(encoding='utf8') for x in ['id="cloudSequence"','每阶段1张，共提交3/4个云任务'])
+checks['sketch staged controls']=CASES['sketch']['built'].exists() and all(x in CASES['sketch']['built'].read_text(encoding='utf8') for x in ['id="cloudSequence"','cloudSequenceMode','cloudBatch.value=1'])
 home=(ROOT/'static'/'promptgen.html').read_text(encoding='utf8');server=(ROOT/'server.py').read_text(encoding='utf8')
 checks['home original links']=all(x in home for x in ['href="/original-sketch"','原始铅绘','href="/original-graphic"','原始古风'])
 checks['server original routes']=all(x in server for x in ['"/original-sketch": "original_sketch.html"','"/original-graphic": "original_graphic.html"'])
