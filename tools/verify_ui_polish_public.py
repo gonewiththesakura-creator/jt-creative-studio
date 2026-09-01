@@ -145,14 +145,15 @@ assert main_state["loading"]["localLevel"] == "5%"
 library_state = evaluate(
     """(async()=>{
       favOpen.click();
-      for(let i=0;i<80&&favList.innerText==='加载中…';i++)await new Promise(r=>setTimeout(r,50));
+      for(let i=0;i<300&&favList.querySelectorAll('.job').length<%s;i++)await new Promise(r=>setTimeout(r,100));
       const panel=favOverlay.querySelector('.library-panel'),head=favOverlay.querySelector('.library-header'),scroll=favOverlay.querySelector('.library-scroll');
       const before=head.getBoundingClientRect();scroll.scrollTop=scroll.scrollHeight;const after=head.getBoundingClientRect(),sr=scroll.getBoundingClientRect();
       const hit=document.elementFromPoint(after.left+30,after.top+30);
       const geometry={panelOverflow:getComputedStyle(panel).overflow,scrollOverflow:getComputedStyle(scroll).overflowY,headerStable:Math.abs(before.top-after.top)<1,edgesMeet:Math.abs(after.bottom-sr.top)<1,headerOwnsHit:head.contains(hit)};
+      const renderedCards=favList.querySelectorAll('.job').length,renderedImages=favList.querySelectorAll('img').length,renderedText=favList.innerText.slice(0,80);
       favOverlay.querySelector('.close').click();const closed=!favOverlay.classList.contains('open');scroll.scrollTop=100;favOpen.click();const reopenedTop=scroll.scrollTop;favOverlay.querySelector('.close').click();
-      return {geometry,closed,reopenedTop,renderedText:favList.innerText.slice(0,80)};
-    })()"""
+      return {geometry,closed,reopenedTop,cards:renderedCards,images:renderedImages,renderedText};
+    })()""" % api_state["favoriteCount"]
 )
 print("PUBLIC_LIBRARY", library_state)
 assert library_state["geometry"] == {
@@ -163,6 +164,8 @@ assert library_state["geometry"] == {
     "headerOwnsHit": True,
 }
 assert library_state["closed"] and library_state["reopenedTop"] == 0
+assert library_state["cards"] == api_state["favoriteCount"]
+assert library_state["images"] == api_state["favoriteCount"]
 
 # Original pages retain import behavior on the live server.
 for route, active in [("/original-sketch", "原始铅绘"), ("/original-graphic", "原始古风")]:
