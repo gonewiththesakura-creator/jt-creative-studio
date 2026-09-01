@@ -2,6 +2,7 @@ import base64
 import itertools
 import json
 import os
+import re
 import time
 import urllib.request
 
@@ -130,12 +131,13 @@ assert api_state["videoWorkflowCount"] == 5
 
 # Exact random/options Prompt import plus distinct liquid states.
 main_state = evaluate(
-    """(()=>{
+    """(async()=>{
       const expected=buildCorePrompt();
       importGeneratedPrompt.click();
       const imported=promptMode.value==='manual'&&manualPositive.value===expected&&manualNegative.value===cfg().negative;
       const idle={cloud:getComputedStyle(genCloudBtn).backgroundColor,local:getComputedStyle(genLocalBtn).backgroundColor};
       setLiquidLoading(genCloudBtn,true);setLiquidProgress(genCloudBtn,63);setLiquidLoading(genLocalBtn,true);setLiquidProgress(genLocalBtn,27);
+      await Promise.all([waitLiquidSettled(genCloudBtn,63),waitLiquidSettled(genLocalBtn,27)]);
       const loading={cloud:getComputedStyle(genCloudBtn).getPropertyValue('--liquid-color').trim(),local:getComputedStyle(genLocalBtn).getPropertyValue('--liquid-color').trim(),cloudLevel:getComputedStyle(genCloudBtn).getPropertyValue('--liquid-level').trim(),localLevel:getComputedStyle(genLocalBtn).getPropertyValue('--liquid-level').trim()};
       setLiquidLoading(genCloudBtn,false);setLiquidLoading(genLocalBtn,false);
       return {imported,idle,loading};
@@ -146,8 +148,13 @@ assert main_state["imported"]
 assert main_state["idle"]["cloud"] == "rgb(255, 255, 255)"
 assert main_state["idle"]["local"] == "rgb(255, 255, 255)"
 assert main_state["loading"]["cloud"] != main_state["loading"]["local"]
-assert main_state["loading"]["cloudLevel"] == "calc(100% - 63%)"
-assert main_state["loading"]["localLevel"] == "calc(100% - 27%)"
+def liquid_level_percent(value):
+    match = re.fullmatch(r"calc\(100% - ([0-9]+(?:\.[0-9]+)?)%\)", value)
+    assert match, value
+    return float(match.group(1))
+
+assert liquid_level_percent(main_state["loading"]["cloudLevel"]) == 63
+assert liquid_level_percent(main_state["loading"]["localLevel"]) == 27
 
 # Real favorites API rendering, fixed header geometry, close, and reopen-at-top.
 library_state = evaluate(
