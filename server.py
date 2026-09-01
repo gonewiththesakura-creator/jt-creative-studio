@@ -11,7 +11,7 @@ Env:
 """
 import json, os, re, sys, time, uuid, threading, urllib.request, urllib.parse
 import http.server, socketserver, pathlib, secrets, hashlib
-import socket, base64, struct, subprocess, io
+import socket, base64, struct, subprocess, io, gzip
 
 BASE = pathlib.Path(__file__).resolve().parent
 COMFY_URL = os.environ.get("COMFY_URL", "http://127.0.0.1:8188").rstrip("/")
@@ -59,6 +59,12 @@ STYLE_PRESETS = {
         "trigger": "jt_style2_v1",
         "LORA1": "02_style2_step900.safetensors",
         "LORA2": "02_style2_step900.safetensors",
+        "strengths": {"LORA1": 0.7, "LORA2": 0.6},
+    },
+    "nff": {
+        "trigger": "jt_nffstyle_v1",
+        "LORA1": "06_nff_style_v1_step2000.safetensors",
+        "LORA2": "06_nff_style_v1_step2000.safetensors",
         "strengths": {"LORA1": 0.7, "LORA2": 0.6},
     },
 }
@@ -995,6 +1001,26 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         if body: self.wfile.write(body)
 
+    def _send_static(self, fp, ctype):
+        """Serve text assets with validator caching and bounded gzip."""
+        raw = fp.read_bytes()
+        etag = '"' + hashlib.sha256(raw).hexdigest()[:24] + '"'
+        cache = "no-cache, must-revalidate" if fp.suffix == ".html" else "public, max-age=3600, must-revalidate"
+        if self.headers.get("If-None-Match") == etag:
+            self.send_response(http.HTTPStatus.NOT_MODIFIED)
+            self.send_header("ETag", etag)
+            self.send_header("Cache-Control", cache)
+            self.send_header("Vary", "Accept-Encoding")
+            self.end_headers()
+            return
+        body = raw
+        response_headers = {"ETag": etag, "Cache-Control": cache, "Vary": "Accept-Encoding"}
+        accepted = self.headers.get("Accept-Encoding", "").lower()
+        if "gzip" in accepted and len(raw) >= 1024 and ctype.startswith(("text/", "application/javascript")):
+            body = gzip.compress(raw, compresslevel=6, mtime=0)
+            response_headers["Content-Encoding"] = "gzip"
+        self._send(200, body, ctype, response_headers)
+
     def _auth(self):
         # 令牌鉴权已取消（用户要求 8189 直接免登录使用）
         return True
@@ -1239,7 +1265,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if not str(fp).startswith(str(root.resolve())) or not fp.exists():
                 return self._send(404, b"not found")
             ctype = "text/html; charset=utf-8" if rel.endswith(".html") else ("application/javascript" if rel.endswith(".js") else "text/css")
-            self._send(200, fp.read_bytes(), ctype)
+            self._send_static(fp, ctype)
         else:
             self._send(404, b'{"error":"not found"}')
 

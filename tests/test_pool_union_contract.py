@@ -12,7 +12,7 @@ if MANIFEST.exists():
         styles=json.loads(m.group(1))
         expected=manifest["union_pools"]
         source_pools=manifest["raw_source_pools"]
-        checks["three profiles present"]=set(styles)=={"cold","sketch","graphic"}
+        checks["four profiles present"]=set(styles)=={"cold","sketch","graphic","nff"}
         for source_id,pools0 in source_pools.items():
             for key,items0 in pools0.items():
                 checks[f"source preserved:{source_id}:{key}"]={tuple(x) for x in items0}.issubset({tuple(x) for x in expected[key]})
@@ -21,6 +21,7 @@ if MANIFEST.exists():
             checks[f"{sid} has every source category"]=set(pools)==set(expected)
             for key,items in expected.items():
                 checks[f"{sid}:{key} preserves full union"]={tuple(x) for x in pools[key]}=={tuple(x) for x in items}
+        checks["nff pools reuse sketch union"]=styles["nff"]["pools"]==styles["sketch"]["pools"]
         checks["manifest records all three sources"]=set(manifest.get("sources",{}))=={"cold","sketch","graphic"}
         checks["no category removed"]=all(manifest["union_counts"][k]>=max(v.get(k,0) for v in manifest["source_counts"].values()) for k in expected)
 for k,v in checks.items(): print(k,v)

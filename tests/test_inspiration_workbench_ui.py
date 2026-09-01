@@ -4,6 +4,8 @@ ROOT=Path(r"D:/LAN-Share/lora/_work/comfy_panel")
 BUILDER=(ROOT/"build_unified_three_styles.py").read_text(encoding="utf8")
 HTML=(ROOT/"static"/"promptgen.html").read_text(encoding="utf8")
 checks={
+ "mobile generation dock is fixed":'position:fixed;left:12px;right:12px;bottom:calc(8px + env(safe-area-inset-bottom))' in HTML and 'padding-bottom:calc(104px + env(safe-area-inset-bottom))' in HTML,
+ "mobile generation dock stays one row":'@media(max-width:480px){.topbar-tools .connection-dot{display:none}.topbar-action{min-width:52px;padding:0 9px;font-size:11px}.generation-actions{grid-template-columns:1fr 1fr}' in HTML,
  "workbench shell":all(x in HTML for x in ['class="app-shell"','class="topbar"','class="studio-grid"']),
  "brand and primary nav":all(x in HTML for x in ['class="brand-mark"','JT 灵感工作台','class="topnav-link active"','创作台']),
  "original and video nav":all(x in HTML for x in ['href="/original-sketch"','原始铅绘','href="/original-graphic"','原始古风','href="/video"','视频']),
@@ -23,7 +25,8 @@ checks={
  "desktop two columns":'grid-template-columns:minmax(360px,460px) minmax(0,1fr)' in HTML,
  "mobile single column":'@media(max-width:820px)' in HTML and 'grid-template-columns:1fr' in HTML,
  "mobile nav scrolls":'.topnav{display:flex' in HTML and 'overflow-x:auto' in HTML,
- "mobile hit targets":'min-height:44px' in HTML and '.item-actions button{width:44px;height:44px' in HTML,
+ "mobile hit targets":'@media(max-width:820px)' in HTML and '.item-actions button{width:44px;height:44px}' in HTML,
+ "mobile random actions hit targets":'.actions .primary{min-height:44px' in HTML,
  "no old floating buttons":'class="floating favorites"' not in HTML and 'class="floating history"' not in HTML,
  "reference palette":all(x in HTML for x in ['--brand:#536cff','--canvas:#f6f7fb','--surface:#ffffff','--text:#20222a']),
  "reduced motion":'@media(prefers-reduced-motion:reduce)' in HTML,

@@ -4,7 +4,7 @@ ROOT=Path(r"D:/LAN-Share/lora/_work/comfy_panel")
 HTML=(ROOT/"static"/"promptgen.html").read_text(encoding="utf-8")
 SERVER=(ROOT/"server.py").read_text(encoding="utf-8")
 checks={
- "three style buttons": all(x in HTML for x in ['data-style="cold"','data-style="sketch"','data-style="graphic"']),
+ "four style buttons": all(x in HTML for x in ['data-style="cold"','data-style="sketch"','data-style="graphic"','data-style="nff"']),
  "two generation modes": all(x in HTML for x in ['data-mode="original"','data-mode="character"']),
  "current style gets character feature": 'character_inspired' in HTML and '角色' in HTML,
  "drawer categories": all(x in HTML for x in ['"id":"character"','"id":"body"','"id":"outfit"','"id":"pose"','"id":"background"']),
@@ -14,7 +14,7 @@ checks={
  "fixed mapping graphic": all(x in HTML for x in ['02_style2_step900.safetensors','jt_style2_v1']),
  "only style3 uses v2": 'jt_style2_v2' not in HTML and 'jt_style1_v2' not in HTML,
  "style hidden fields sent": all(x in HTML for x in ['style_id:currentStyle','mode:currentMode','generation_backend:backend','selection_snapshot:{...snapshotSelections(),generation_backend:backend}']),
- "favorites restore style and mode": all(x in HTML for x in ["currentStyle=snapshot.style||'cold'","currentMode=snapshot.mode||'original'"]),
+ "favorites restore style and mode": all(x in HTML for x in ["currentStyle=STYLE_CONFIGS[snapshot.style]?snapshot.style:'cold'","currentMode=snapshot.mode||'original'"]),
  "server fixed style presets": all(x in SERVER for x in ['STYLE_PRESETS = {','"sketch": {','"graphic": {']),
  "server stores style and mode": all(x in SERVER for x in ['"style_id": style_id','"mode": mode']),
  "server ignores browser lora names for RH": 'loras = {"LORA1": preset["LORA1"], "LORA2": preset["LORA2"]}' in SERVER,

@@ -8,7 +8,7 @@ checks={
  "drawers are collapsed initially": "openDrawers=new Set()" in HTML and ".drawer-body{display:none" in HTML,
  "drawer expands on click": "openDrawers.has(d.id)?openDrawers.delete(d.id):openDrawers.add(d.id)" in HTML,
  "five drawer groups": all(x in HTML for x in ['"id":"character"','"id":"body"','"id":"outfit"','"id":"pose"','"id":"background"']),
- "favorite snapshot restores style": "currentStyle=snapshot.style||'cold'" in HTML,
+ "favorite snapshot restores style": "currentStyle=STYLE_CONFIGS[snapshot.style]?snapshot.style:'cold'" in HTML,
  "favorite snapshot restores mode": "currentMode=snapshot.mode||'original'" in HTML,
  "favorite restores selected values": "snapshot.state[k]" in HTML,
  "favorite has no third-level option cards": "expandedKeys" not in HTML,
