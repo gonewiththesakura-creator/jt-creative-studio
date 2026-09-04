@@ -23,7 +23,11 @@ def command(client,text,timeout=180):
 
 def rollback_release(client):
  for remote in RELEASE_FILES:
-  command(client,f"cp -- {shlex.quote(remote+BACKUP_SUFFIX)} {shlex.quote(remote)}")
+  remote_stat=client.open_sftp().stat(remote+BACKUP_SUFFIX)
+  if remote_stat.st_size == 0:
+   command(client,f"rm -f -- {shlex.quote(remote)}")
+  else:
+   command(client,f"cp -- {shlex.quote(remote+BACKUP_SUFFIX)} {shlex.quote(remote)}")
  command(client,"sudo systemctl restart comfy-panel",timeout=240)
 
 def health():
