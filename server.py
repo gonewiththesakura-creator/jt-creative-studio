@@ -67,6 +67,12 @@ STYLE_PRESETS = {
         "LORA2": "06_nff_style_v1_step2000.safetensors",
         "strengths": {"LORA1": 0.7, "LORA2": 0.6},
     },
+    "hanmanga": {
+        "trigger": "jt_liulistyle_v1",
+        "LORA1": "08_liuli_style_v1_step600.safetensors",
+        "LORA2": "08_liuli_style_v1_step600.safetensors",
+        "strengths": {"LORA1": 0.7, "LORA2": 0.6},
+    },
 }
 
 def local_lora_name(name):
@@ -255,10 +261,10 @@ def download_file_resilient(url, dest, timeout=900):
         part.unlink(missing_ok=True)
         raise RuntimeError("downloaded result is empty")
     with part.open("rb") as f:
-        magic = f.read(8)
-    if magic != b"\x89PNG\r\n\x1a\n":
+        magic = f.read(16)
+    if not image_content_type(magic, dest.name):
         part.unlink(missing_ok=True)
-        raise RuntimeError("downloaded result is not PNG")
+        raise RuntimeError("downloaded result is not a supported image")
     part.replace(dest)
     return dest.stat().st_size
 
@@ -562,6 +568,22 @@ def rh_submit(workflow_id, node_info_list, instance_type="default", use_personal
         raise RuntimeError(f"RH submit rejected: {last}")
     raise RuntimeError(f"RH submit failed: hard deadline exceeded: {last}")
 
+def rh_submit_ai_app(app_id, node_info_list):
+    """Submit a trusted RunningHub AI App through the V2 task API."""
+    url = f"{RH_BASE}/run/ai-app/{app_id}"
+    body = {"nodeInfoList": node_info_list}
+    req = urllib.request.Request(url, data=json.dumps(body).encode(),
+                                 headers={"Content-Type": "application/json",
+                                          "Authorization": f"Bearer {RH_KEY}"},
+                                 method="POST")
+    with _urlopen_bounded(req, None, RH_TIMEOUT_SUBMIT) as resp:
+        result = json.loads(resp.read().decode(errors="replace"))
+    status = str(result.get("status") or "").upper()
+    task_id = result.get("taskId")
+    if task_id and status in ("QUEUED", "RUNNING"):
+        return task_id
+    raise RuntimeError("RH AI App submit rejected: " + json.dumps(result, ensure_ascii=False)[:600])
+
 def rh_query(task_id):
     """查询 RunningHub 任务状态，返回 (status, results)"""
     url = f"{RH_BASE}/query"
@@ -658,7 +680,7 @@ def _rh_wait_task(job, task_id, deadline, progress_base=0, progress_span=100):
 def _rh_results_to_images(results, task_id, stage_id=None, stage_label=None):
     images = []
     for idx, im in enumerate(results, 1):
-        url = im.get("url", "")
+        url = im.get("url") or im.get("fileUrl") or ""
         if not url:
             continue
         images.append({
@@ -670,6 +692,50 @@ def _rh_results_to_images(results, task_id, stage_id=None, stage_label=None):
             "stage_id": stage_id,
             "stage_label": stage_label,
         })
+    return images
+
+def image_content_type(data, filename=""):
+    """Return an allowed image type from magic bytes, never extension only."""
+    if data[:8] == bytes((137, 80, 78, 71, 13, 10, 26, 10)):
+        return "image/png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+def rh_build_ai_app_node_info(job, w):
+    """Build only public editable fields from the trusted server config."""
+    nodes = []
+    for key, mapping in (w.get("rh_media") or {}).items():
+        value = (job.get("media") or {}).get(key)
+        if value:
+            nodes.append({"nodeId": str(mapping["node"]), "fieldName": mapping["field"], "fieldValue": value})
+    for key, mapping in (w.get("rh_params") or {}).items():
+        value = (job.get("params") or {}).get(key)
+        if value is not None:
+            nodes.append({"nodeId": str(mapping["node"]), "fieldName": mapping["field"], "fieldValue": str(value)})
+    return nodes
+
+def rh_run_ai_app(job, w):
+    app_id = w.get("rh_ai_app_id")
+    if not app_id:
+        raise RuntimeError("AI App has no trusted app id")
+    job["submit_started"] = time.time()
+    job["provider_status"] = "SUBMITTING"
+    task_id = rh_submit_ai_app(app_id, rh_build_ai_app_node_info(job, w))
+    job["rh_task_id"] = task_id
+    job["provider_started"] = time.time()
+    job["progress_pct"] = 5
+    results = _rh_wait_task(job, task_id, time.time() + 1800, 12, 88)
+    job["provider_finished"] = time.time()
+    images = _rh_results_to_images(results, task_id)
+    if not images:
+        raise RuntimeError("RH AI App succeeded but returned no downloadable result")
+    job["images"] = images
+    job["provider_status"] = "DONE"
+    job["progress_pct"] = 100
+    job["download_finished"] = time.time()
     return images
 
 def rh_run_sketch_sequence(job, jobdir, w):
@@ -935,7 +1001,9 @@ def run_job(job):
         generation_backend = job.get("generation_backend", "cloud")
         # RunningHub cloud route
         if generation_backend == "cloud":
-            if w.get("kind") == "video":
+            if w.get("kind") == "ai_app":
+                rh_run_ai_app(job, w)
+            elif w.get("kind") == "video":
                 rh_run_video(job, w)
             elif job.get("sequence_mode") in SKETCH_SEQUENCE_STAGES:
                 rh_run_sketch_sequence(job, jobdir, w)
@@ -1083,7 +1151,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             p = pathlib.Path(fav.get("image_path", ""))
             if not p.exists(): return self._send(404, b'{"error":"favorite image missing"}')
             data = p.read_bytes()
-            self._send(200, data, "image/png", {"Cache-Control": "private, max-age=86400"})
+            ctype = fav.get("favorite_media_type") or image_content_type(data, p.name) or "application/octet-stream"
+            self._send(200, data, ctype, {"Cache-Control": "private, max-age=86400"})
         elif path.startswith("/api/job/"):
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
             jid = path.split("/api/job/", 1)[1]
@@ -1249,12 +1318,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self._send(404, b'{"error":"not found"}')
             except Exception as e:
                 self._send(500, json.dumps({"error": str(e)[:200]}).encode())
-        elif path == "/" or path.startswith("/static/") or path in ("/promptgen", "/original-sketch", "/original-graphic", "/video"):
+        elif path == "/" or path.startswith("/static/") or path in ("/promptgen", "/original-sketch", "/original-graphic", "/realcomic", "/video"):
             if not self._auth():
                 # serve shell so user can enter token; API calls still guarded
                 pass
             root = BASE / "static"
-            clean_pages = {"/promptgen": "promptgen.html", "/original-sketch": "original_sketch.html", "/original-graphic": "original_graphic.html"}
+            clean_pages = {"/promptgen": "promptgen.html", "/original-sketch": "original_sketch.html", "/original-graphic": "original_graphic.html", "/realcomic": "realcomic.html"}
             if path in clean_pages:
                 rel = clean_pages[path]
             elif path == "/video":
@@ -1278,6 +1347,70 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urllib.parse.urlparse(self.path).path
+        if path == "/api/realcomic-upload":
+            if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
+            try:
+                body = self._read_json()
+                filename = re.split(r"[\\\\/]", str(body.get("filename") or "source.png"))[-1]
+                raw = base64.b64decode(body.get("data", ""), validate=True)
+            except Exception:
+                return self._send(400, json.dumps({"error": "图片数据无效"}, ensure_ascii=False).encode())
+            if not raw:
+                return self._send(400, json.dumps({"error": "请选择二次元图片"}, ensure_ascii=False).encode())
+            if len(raw) > 30 * 1024 * 1024:
+                return self._send(400, json.dumps({"error": "图片超过30MB限制"}, ensure_ascii=False).encode())
+            ctype = image_content_type(raw, filename)
+            if not ctype:
+                return self._send(400, json.dumps({"error": "只支持有效的PNG、JPEG或WebP图片"}, ensure_ascii=False).encode())
+            try:
+                remote_name = rh_upload_file(raw, filename, ctype)
+            except Exception as e:
+                return self._send(502, json.dumps({"error": f"RunningHub上传失败：{str(e)[:200]}"}, ensure_ascii=False).encode())
+            return self._send(200, json.dumps({"fileName": remote_name, "filename": filename, "mediaType": ctype}, ensure_ascii=False).encode())
+        if path == "/api/ai-app-generate":
+            if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
+            try: body = self._read_json()
+            except Exception: return self._send(400, b'{"error":"bad json"}')
+            wf = str(body.get("workflow") or "realcomic")
+            w = WORKFLOWS.get(wf)
+            if not w or w.get("kind") != "ai_app" or w.get("backend") != "runninghub":
+                return self._send(400, b'{"error":"unknown AI App"}')
+            media = body.get("media") or {}
+            params = body.get("params") or {}
+            if not isinstance(media, dict) or not isinstance(params, dict):
+                return self._send(400, b'{"error":"media and params must be objects"}')
+            required = [k for k, mapping in (w.get("rh_media") or {}).items() if mapping.get("required")]
+            missing = [k for k in required if not media.get(k)]
+            if missing:
+                return self._send(400, json.dumps({"error": f"缺少必传素材：{', '.join(missing)}"}, ensure_ascii=False).encode())
+            trusted_media = {k: str(media[k]) for k in (w.get("rh_media") or {}) if media.get(k)}
+            defaults = w.get("params_defaults") or {}
+            trusted_params = {k: str(params.get(k, defaults.get(k, "")))[:1000] for k in (w.get("rh_params") or {})}
+            client_request_id = str(body.get("client_request_id") or "").strip()[:96]
+            with _submit_locks["cloud"]:
+                existing_job = existing_job_for_request(client_request_id, "cloud")
+                if existing_job:
+                    return self._send(200, json.dumps({"job_id": existing_job["id"], "existing_job": existing_job["id"], "deduplicated": True, "message": "same request already accepted"}).encode())
+                active_id = self._running_job_id("cloud")
+                if active_id:
+                    return self._send(429, json.dumps({"error": "云端已有任务正在运行，请等待完成后再提交", "running_job": active_id}, ensure_ascii=False).encode())
+                job = {"id": uuid.uuid4().hex[:12], "workflow": wf,
+                       "prompt": trusted_params.get("requirements", ""), "negative_prompt": "", "prompt_mode": "manual",
+                       "media": trusted_media, "params": trusted_params,
+                       "width": 0, "height": 0, "batch": 1, "hd": 0, "seed": 0, "seed_mode": "random",
+                       "loras": {}, "lora_strengths": {}, "trigger": None, "translate": False,
+                       "status": "running", "progress": 0, "progress_pct": 0, "images": [],
+                       "prompt_ids": [], "error": None, "elapsed": None, "created": time.time(), "wf_name": w["name"],
+                       "submit_started": None, "provider_started": None, "provider_finished": None,
+                       "download_started": None, "download_finished": None,
+                       "style_id": "realcomic", "mode": "original", "generation_backend": "cloud",
+                       "sequence_mode": "off", "selection_snapshot": body.get("selection_snapshot") or {},
+                       "client_request_id": client_request_id, "provider_attribution": w.get("provider_attribution")}
+                with _lock_jobs:
+                    _jobs[job["id"]] = job
+                    save_jobs()
+                threading.Thread(target=run_job, args=(job,), daemon=True).start()
+                return self._send(200, json.dumps({"job_id": job["id"]}).encode())
         if path == "/api/upload":
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
             # Browser posts raw bytes: body = {filename, data_base64} JSON (small files)
@@ -1372,7 +1505,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             images = job.get("images") or []
             if idx < 0 or idx >= len(images): return self._send(400, b'{"error":"bad image index"}')
             im = images[idx]; fid = uuid.uuid4().hex[:12]
-            dest = FAVORITES_DIR / f"{fid}.png"
+            remote_suffix = pathlib.PurePosixPath(urllib.parse.urlparse(im.get("url", "")).path).suffix.lower()
+            suffix = remote_suffix if remote_suffix in (".png", ".jpg", ".jpeg", ".webp") else ".png"
+            dest = FAVORITES_DIR / f"{fid}{suffix}"
             try:
                 if im.get("remote"):
                     download_file_resilient(im["url"], dest, timeout=120)
@@ -1381,11 +1516,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     dest.write_bytes(src.read_bytes())
             except Exception as e:
                 return self._send(502, json.dumps({"error": f"收藏图片失败：{str(e)[:200]}"}, ensure_ascii=False).encode())
+            favorite_data = dest.read_bytes()
+            favorite_media_type = image_content_type(favorite_data, dest.name) or "image/png"
             fav = {
                 "id": fid, "created": time.time(), "job_id": jid, "image_index": idx,
                 "image_url": f"/api/favorite-image/{fid}",
                 "preview_url": f"/api/favorite-preview/{fid}", "original_url": im.get("url"),
-                "image_path": str(dest), "prompt": job.get("prompt", ""),
+                "image_path": str(dest), "favorite_media_type": favorite_media_type,
+                "prompt": job.get("prompt", ""),
                 "negative_prompt": job.get("negative_prompt", ""),
                 "prompt_mode": job.get("prompt_mode", "options"),
                 "seed": job.get("seed"), "seed_mode": job.get("seed_mode"),

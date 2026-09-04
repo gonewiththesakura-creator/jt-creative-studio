@@ -1,0 +1,1667 @@
+{
+  "name": "古漫·东方淡彩漫画线稿",
+  "short": "古漫",
+  "trigger": "",
+  "lora1": "",
+  "lora2": "",
+  "backendStyleId": "sketch",
+  "prefix": "masterpiece, best quality, highres, very aesthetic",
+  "head": "1girl, solo, clearly adult East Asian woman, age 20+, elegant mature feminine anime character, slender oval face, delicate refined facial features, small delicate nose, small lips, pale smooth skin, narrow almond-shaped eyes, fine long eyelashes, subtle blush, graceful adult proportions",
+  "style": "Japanese manga illustration, fine delicate lineart, thin clean black-gray linework, subtle hand-drawn ink feeling, precise separated hair strands, delicate garment-fold lines, minimal facial lines, selective coloring, limited muted pastel palette, mostly monochrome drawing with restrained color accents, soft flat coloring, minimal cel shading, very subtle soft shadows, matte paper-like finish, low contrast, refined restrained aesthetic, elegant ancient Chinese fashion illustration, generous clean negative space, grayscale manga scenery when background is present, character remains selectively colored while scenery stays largely monochrome",
+  "negative": "worst quality, low quality, lowres, blurry, jpeg artifacts, watermark, signature, text, logo, photorealistic, realistic photography, realistic skin pores, 3d, cgi, render, oil painting, thick painting, impasto, heavy watercolor, thick outlines, bold outlines, rough thick lineart, messy sketch, chaotic lines, dirty linework, strong cel shading, dramatic cinematic lighting, harsh shadows, rim light, volumetric lighting, glossy skin, strong specular highlights, oversaturated colors, vivid neon colors, rainbow palette, chibi, child, teen, teenage, underage, loli, baby face, huge round eyes, exaggerated sparkling eyes, bad anatomy, bad hands, bad fingers, extra fingers, missing fingers, fused fingers, extra limbs, malformed limbs, long neck, cross-eyed, asymmetrical eyes, distorted face, modern streetwear, school uniform, sci-fi armor, fantasy plate armor, busy colorful background",
+  "pools": {
+    "character": [
+      [
+        "无（不添加此部分）",
+        ""
+      ],
+      [
+        "修长古典型",
+        "slender adult woman, elegant elongated proportions, graceful classical silhouette"
+      ],
+      [
+        "娇小成熟型",
+        "petite adult woman, compact mature proportions, delicate but clearly adult silhouette"
+      ],
+      [
+        "高挑清雅型",
+        "tall slender adult woman, long elegant limbs, poised refined posture"
+      ],
+      [
+        "柔和丰润型",
+        "soft curvy adult woman, gentle feminine proportions, elegant natural silhouette"
+      ],
+      [
+        "匀称端庄型",
+        "balanced adult feminine figure, poised upright posture, refined proportions"
+      ],
+      [
+        "轻盈纤细型",
+        "light slender adult figure, narrow shoulders, graceful flowing silhouette"
+      ],
+      [
+        "成熟华贵型",
+        "mature elegant adult woman, composed posture, dignified feminine proportions"
+      ],
+      [
+        "文静书卷型",
+        "slender scholarly adult woman, calm posture, restrained classical presence"
+      ],
+      [
+        "英气修长型",
+        "tall lean adult woman, subtly athletic elegant proportions, composed bearing"
+      ],
+      [
+        "温婉圆润型",
+        "softly rounded adult feminine figure, gentle mature silhouette, graceful posture"
+      ]
+    ],
+    "hair": [
+      [
+        "无（不添加此部分）",
+        ""
+      ],
+      [
+        "灰棕双丸子 + 碎刘海",
+        "ash-brown double hair buns, soft blunt wispy bangs, two loose face-framing strands"
+      ],
+      [
+        "灰棕高盘发 + 侧发丝",
+        "ash-brown high traditional Chinese updo, loose side strands framing the face"
+      ],
+      [
+        "低盘发 + 中分长鬓发",
+        "low coiled bun, center-parted long face-framing strands"
+      ],
+      [
+        "单高髻 + 轻薄齐刘海",
+        "single high bun, light straight bangs, delicate loose strands"
+      ],
+      [
+        "半扎长直发 + 小发髻",
+        "half-up long straight ash-brown hair with a small traditional bun"
+      ],
+      [
+        "长直发 + 齐刘海",
+        "long straight taupe-brown hair, blunt soft bangs"
+      ],
+      [
+        "长直发 + 中分",
+        "long straight ash-brown hair, center part, two long framing strands"
+      ],
+      [
+        "侧盘发 + 斜刘海",
+        "elegant side bun, side-swept bangs, loose wispy strands"
+      ],
+      [
+        "双环髻",
+        "traditional Chinese double-loop buns, delicate smooth hair sections"
+      ],
+      [
+        "灵蛇髻",
+        "traditional coiled snake-like Chinese updo, refined layered hair coils"
+      ],
+      [
+        "垂鬟分肖髻",
+        "traditional Chinese hanging-loop updo, neat symmetrical silhouette"
+      ],
+      [
+        "低马尾古风束发",
+        "low tied long hair, traditional ribbon binding, soft face-framing strands"
+      ],
+      [
+        "乌黑高髻",
+        "ink-black hair in a polished high Chinese bun, fine glossy strand lines"
+      ],
+      [
+        "银灰低髻",
+        "silver-gray hair in a low elegant bun, delicate loose side strands"
+      ],
+      [
+        "栗棕长发半披",
+        "muted chestnut-brown long hair, half pinned back, fine separated strands"
+      ],
+      [
+        "灰棕短发古风改良",
+        "short ash-brown bob, soft wispy bangs, subtle traditional hairpin accent"
+      ]
+    ],
+    "eyes": [
+      [
+        "无（不添加此部分）",
+        ""
+      ],
+      [
+        "浅黄绿色杏眼",
+        "pale yellow-green almond-shaped eyes, narrow elegant gaze, fine long eyelashes"
+      ],
+      [
+        "鼠尾草绿杏眼",
+        "soft sage-green almond eyes, restrained calm gaze, delicate eyelashes"
+      ],
+      [
+        "灰绿色细长眼",
+        "muted gray-green narrow eyes, subtle half-lidded elegance"
+      ],
+      [
+        "橄榄绿温柔眼",
+        "muted olive-green eyes, soft gentle gaze, fine upper eyelashes"
+      ],
+      [
+        "浅茶金杏眼",
+        "pale tea-gold almond eyes, soft muted irises, delicate lashes"
+      ],
+      [
+        "雾灰褐眼",
+        "misty gray-brown eyes, narrow refined gaze, subtle lower lashes"
+      ],
+      [
+        "墨绿色清冷眼",
+        "deep desaturated green eyes, calm cool gaze, delicate eyelashes"
+      ],
+      [
+        "浅灰蓝杏眼",
+        "pale gray-blue almond eyes, quiet restrained gaze"
+      ]
+    ],
+    "emotion": [
+      [
+        "无（不添加此部分）",
+        ""
+      ],
+      [
+        "温柔平静",
+        "gentle calm mood, quiet composed presence"
+      ],
+      [
+        "清冷疏离",
+        "cool restrained mood, slightly distant elegant presence"
+      ],
+      [
+        "含蓄羞涩",
+        "subtly shy mood, restrained warmth, faint blush"
+      ],
+      [
+        "安静沉思",
+        "quiet thoughtful mood, introspective atmosphere"
+      ],
+      [
+        "淡淡忧郁",
+        "soft melancholic mood, delicate subdued emotion"
+      ],
+      [
+        "从容自信",
+        "calm confident mood, composed mature presence"
+      ],
+      [
+        "恬淡闲适",
+        "peaceful relaxed mood, gentle unhurried atmosphere"
+      ],
+      [
+        "轻微困倦",
+        "slightly sleepy mood, soft half-lidded calmness"
+      ]
+    ],
+    "interaction": [
+      [
+        "无（不添加此部分）",
+        ""
+      ],
+      [
+        "直视镜头",
+        "looking directly at viewer, restrained eye contact"
+      ],
+      [
+        "轻轻侧看镜头",
+        "soft side glance toward viewer"
+      ],
+      [
+        "低头看手中物",
+        "looking down at the object in her hands"
+      ],
+      [
+        "回眸看镜头",
+        "looking back over shoulder toward viewer"
+      ],
+      [
+        "望向画外左侧",
+        "gazing softly off-frame to the left"
+      ],
+      [
+        "望向画外右侧",
+        "gazing softly off-frame to the right"
+      ],
+      [
+        "垂眸含笑",
+        "eyes lowered with a restrained gentle smile"
+      ],
+      [
+        "微仰头远望",
+        "slightly lifting chin and gazing into the distance"
+      ]
+    ],
+    "holiday": [
+      [
+        "无（不添加此部分）",
+        ""
+      ],
+      [
+        "日常无节日",
+        "no specific holiday theme, quiet everyday ancient-Chinese atmosphere"
+      ],
+      [
+        "七夕",
+        "Qixi festival atmosphere, subtle lantern and ribbon motifs, restrained romance"
+      ],
+      [
+        "中秋",
+        "Mid-Autumn festival atmosphere, moon-viewing courtyard, subtle osmanthus details"
+      ],
+      [
+        "上元灯会",
+        "Lantern Festival evening, traditional lanterns rendered mostly in grayscale"
+      ],
+      [
+        "端午",
+        "Dragon Boat Festival seasonal details, mugwort and small sachet ornaments"
+      ],
+      [
+        "花朝节",
+        "traditional flower festival atmosphere, delicate blossoms and spring garments"
+      ],
+      [
+        "初雪",
+        "first-snow seasonal atmosphere, quiet courtyard, sparse snow accents"
+      ]
+    ],
+    "story": [
+      [
+        "无（不添加此部分）",
+        ""
+      ],
+      [
+        "庭院散步",
+        "walking slowly through a quiet traditional courtyard"
+      ],
+      [
+        "茶楼等人",
+        "waiting quietly in a traditional teahouse, subtle anticipation"
+      ],
+      [
+        "读信",
+        "reading a folded letter with a restrained thoughtful expression"
+      ],
+      [
+        "翻书",
+        "quietly reading an old book, scholarly atmosphere"
+      ],
+      [
+        "寺院游览",
+        "visiting an old temple courtyard, contemplative quiet mood"
+      ],
+      [
+        "雨后石阶",
+        "standing on damp stone steps after rain, restrained reflective mood"
+      ],
+      [
+        "花下停步",
+        "pausing beneath flowering branches, soft spring atmosphere"
+      ],
+      [
+        "月下凭栏",
+        "standing by a railing under moonlight, quiet nocturnal mood"
+      ],
+      [
+        "清晨梳妆后",
+        "just after finishing a traditional hairstyle, calm morning atmosphere"
+      ],
+      [
+        "赴宴前整理衣袖",
+        "adjusting sleeves before attending a formal gathering"
+      ],
+      [
+        "旅行途中小憩",
+        "resting briefly during a journey beside an old wooden building"
+      ],
+      [
+        "独坐发呆",
+        "sitting alone in quiet thought, minimal narrative atmosphere"
+      ]
+    ],
+    "accessory": [
+      [
+        "无（不添加此部分）",
+        ""
+      ],
+      [
+        "粉色小花发饰",
+        "small pale-pink flower hair ornaments"
+      ],
+      [
+        "白色珍珠花簪",
+        "delicate pearl-and-flower hairpin"
+      ],
+      [
+        "青玉发簪",
+        "muted jade-green Chinese hairpin"
+      ],
+      [
+        "金簪 + 红色细流苏",
+        "slender gold hairpin with a small muted-red tassel"
+      ],
+      [
+        "银簪 + 白玉坠",
+        "silver hairpin with a small white-jade pendant"
+      ],
+      [
+        "木簪",
+        "minimal natural wooden hairpin"
+      ],
+      [
+        "梅花簪",
+        "small plum-blossom hairpin, restrained floral detail"
+      ],
+      [
+        "绿流苏发饰",
+        "small muted-green tassel hair ornament"
+      ],
+      [
+        "粉色细丝带",
+        "thin dusty-pink hair ribbons"
+      ],
+      [
+        "素白绢花",
+        "small ivory silk flower ornaments"
+      ],
+      [
+        "玉耳坠",
+        "small jade drop earrings"
+      ],
+      [
+        "珍珠耳坠",
+        "small pearl drop earrings"
+      ],
+      [
+        "细玉镯",
+        "slender pale jade bracelet"
+      ],
+      [
+        "香囊",
+        "small embroidered traditional sachet at the waist"
+      ]
+    ],
+    "top": [
+      [
+        "无（不添加此部分）",
+        ""
+      ],
+      [
+        "素白交领上襦",
+        "ivory-white cross-collar hanfu top, clean simple neckline"
+      ],
+      [
+        "樱粉抹胸上襦",
+        "dusty sakura-pink hanfu upper garment, modest square neckline, delicate floral embroidery"
+      ],
+      [
+        "浅青交领上襦",
+        "pale celadon cross-collar upper garment, minimal decoration"
+      ],
+      [
+        "米白立领内衫",
+        "warm ivory inner blouse with restrained traditional collar"
+      ],
+      [
+        "淡藕粉短襦",
+        "pale lotus-pink short ru top, simple delicate folds"
+      ]
+    ],
+    "outerwear": [
+      [
+        "无（不添加此部分）",
+        ""
+      ],
+      [
+        "素白宽袖外衫",
+        "ivory-white loose outer robe with very wide flowing sleeves"
+      ],
+      [
+        "淡粉大袖衫",
+        "pale dusty-pink large-sleeved outer robe, delicate floral hem embroidery"
+      ],
+      [
+        "墨绿长外袍",
+        "dark desaturated forest-green long outer robe, wide sleeves"
+      ],
+      [
+        "青灰褙子",
+        "muted blue-gray beizi-style long outer layer, restrained silhouette"
+      ],
+      [
+        "浅青披帛",
+        "pale celadon flowing pibo shawl, light elegant drape"
+      ],
+      [
+        "米白薄披风",
+        "light ivory traveling cloak, minimal fastening"
+      ],
+      [
+        "灰粉长罩衫",
+        "dusty gray-pink long open robe, soft flowing folds"
+      ]
+    ],
+    "bottoms": [
+      [
+        "无（不添加此部分）",
+        ""
+      ],
+      [
+        "樱粉长裙",
+        "dusty sakura-pink long flowing skirt, fine vertical folds"
+      ],
+      [
+        "象牙白长裙",
+        "ivory-white long skirt, soft fine pleats"
+      ],
+      [
+        "浅青褶裙",
+        "pale celadon pleated long skirt"
+      ],
+      [
+        "灰粉马面裙",
+        "muted gray-pink mamianqun-inspired long skirt, subtle structured pleats"
+      ],
+      [
+        "豆绿长裙",
+        "muted sage-green long skirt, restrained flowing folds"
+      ],
+      [
+        "粉白渐层长裙",
+        "pale pink and ivory long skirt with extremely subtle color transition"
+      ]
+    ],
+    "legwear": [
+      [
+        "无（不添加此部分）",
+        ""
+      ],
+      [
+        "裙摆完全遮腿",
+        "long skirt fully covering the legs, modest traditional silhouette"
+      ],
+      [
+        "行走时微露脚踝",
+        "long skirt lifting slightly while walking, only ankles subtly visible"
+      ],
+      [
+        "坐姿裙摆自然堆叠",
+        "long skirt pooling naturally around seated legs"
+      ]
+    ],
+    "footwear": [
+      [
+        "无（不添加此部分）",
+        ""
+      ],
+      [
+        "木底布履",
+        "simple traditional cloth shoes with light wooden soles"
+      ],
+      [
+        "浅棕布鞋",
+        "light-brown traditional cloth shoes"
+      ],
+      [
+        "白色绣鞋",
+        "ivory embroidered traditional shoes with minimal floral motif"
+      ],
+      [
+        "淡粉绣鞋",
+        "pale dusty-pink embroidered shoes"
+      ],
+      [
+        "青色绣鞋",
+        "muted celadon embroidered shoes"
+      ],
+      [
+        "木屐式便鞋",
+        "simple wooden-soled traditional sandals, restrained design"
+      ]
+    ],
+    "body_modifier": [
+      [
+        "无（不添加此部分）",
+        ""
+      ],
+      [
+        "细长颈肩线",
+        "slender elegant neck and shoulder line"
+      ],
+      [
+        "自然直肩",
+        "soft straight shoulders, poised posture"
+      ],
+      [
+        "轻微含胸的文静姿态",
+        "slightly reserved inward posture, gentle scholarly demeanor"
+      ],
+      [
+        "腰身修长",
+        "elongated waistline, graceful adult proportions"
+      ],
+      [
+        "手指纤细",
+        "long delicate fingers, graceful hand shape"
+      ],
+      [
+        "淡粉耳尖",
+        "faint pink tint on ear tips"
+      ],
+      [
+        "脸颊轻红",
+        "subtle pale blush across cheeks"
+      ],
+      [
+        "眼下极淡阴影",
+        "very faint soft shadow beneath eyes"
+      ],
+      [
+        "发丝贴脸",
+        "one or two loose hair strands resting against the cheek"
+      ],
+      [
+        "衣料细褶明显",
+        "fine natural fabric folds emphasized by delicate linework"
+      ]
+    ],
+    "tattoo_color": [
+      [
+        "无（不添加此部分）",
+        ""
+      ],
+      [
+        "白色花纹刺绣",
+        "small ivory floral embroidery accents"
+      ],
+      [
+        "淡粉花纹刺绣",
+        "small pale-pink floral embroidery accents"
+      ],
+      [
+        "青绿色花纹刺绣",
+        "small muted jade-green floral embroidery accents"
+      ],
+      [
+        "暗红梅花纹",
+        "small muted dark-red plum-blossom motif"
+      ],
+      [
+        "金线极少量点缀",
+        "very sparse muted-gold thread accents"
+      ]
+    ],
+    "special_prompt": [
+      [
+        "无（不添加此部分）",
+        ""
+      ],
+      [
+        "人物彩色、背景灰阶",
+        "character selectively colored while the background remains grayscale manga line art"
+      ],
+      [
+        "仅衣服局部上色",
+        "only selected garment areas receive muted color, most of the illustration remains monochrome"
+      ],
+      [
+        "仅眼睛与衣服有色",
+        "only eyes and clothing carry restrained color accents, everything else near-monochrome"
+      ],
+      [
+        "大面积纯白留白",
+        "very large clean white negative space around the character"
+      ],
+      [
+        "不规则漫画留白边缘",
+        "irregular unfinished white border shapes around background scenery"
+      ],
+      [
+        "背景线条比人物更浅",
+        "background linework substantially lighter and softer than character linework"
+      ],
+      [
+        "纸面哑光感",
+        "subtle matte paper texture, no glossy rendering"
+      ],
+      [
+        "极弱阴影",
+        "extremely minimal shading, nearly flat tonal treatment"
+      ],
+      [
+        "发丝超细线分束",
+        "very fine separated hair-strand linework"
+      ],
+      [
+        "衣褶以线代面",
+        "garment folds described primarily by fine lines rather than heavy shading"
+      ]
+    ],
+    "special_outfit": [
+      [
+        "无（不添加此部分）",
+        ""
+      ],
+      [
+        "春日樱粉汉服套装",
+        "complete spring hanfu ensemble in dusty sakura pink and ivory, delicate blossom embroidery"
+      ],
+      [
+        "青玉色清雅汉服套装",
+        "complete muted jade-and-celadon hanfu ensemble, restrained scholarly elegance"
+      ],
+      [
+        "墨绿外袍 + 浅青内裙",
+        "dark forest-green outer robe over a pale celadon inner dress"
+      ],
+      [
+        "粉白齐胸襦裙",
+        "pale pink and ivory qixiong ruqun-inspired ensemble, modest elegant styling"
+      ],
+      [
+        "素白祭礼风长袍",
+        "ivory ceremonial-inspired long robe, minimal decorative trim"
+      ],
+      [
+        "旅行披风汉服",
+        "traditional traveling hanfu with a light cloak and practical layered robe"
+      ],
+      [
+        "书院女先生风",
+        "scholarly adult-woman hanfu, restrained dark outer robe and pale inner collar"
+      ],
+      [
+        "茶楼雅服",
+        "refined teahouse hanfu, soft muted palette and minimal embroidery"
+      ],
+      [
+        "秋日灰粉长袍",
+        "autumn muted gray-pink long robe, layered warm fabric folds"
+      ]
+    ],
+    "fashion_extra": [
+      [
+        "无（不添加此部分）",
+        ""
+      ],
+      [
+        "腰间细绳结",
+        "small neat traditional waist-knot detail"
+      ],
+      [
+        "垂落长腰带",
+        "long narrow sash ends hanging softly from the waist"
+      ],
+      [
+        "袖口小花刺绣",
+        "small floral embroidery concentrated at sleeve cuffs"
+      ],
+      [
+        "裙摆稀疏花纹",
+        "sparse floral embroidery near the skirt hem"
+      ],
+      [
+        "领口白色花纹",
+        "small ivory blossom pattern around the neckline"
+      ],
+      [
+        "极简玉佩",
+        "minimal pale-jade pendant hanging at the waist"
+      ],
+      [
+        "细流苏腰坠",
+        "small restrained tassel pendant at the waist"
+      ]
+    ],
+    "seductive_pose": [
+      [
+        "无（不添加此部分）",
+        ""
+      ],
+      [
+        "袖口掩唇",
+        "one wide sleeve lightly raised near the lips, elegant restrained pose"
+      ],
+      [
+        "轻拢衣襟",
+        "one hand gently gathering the outer robe at the chest, modest graceful pose"
+      ],
+      [
+        "微侧身强调长袖线条",
+        "slight body turn emphasizing flowing sleeve silhouette"
+      ],
+      [
+        "双手叠于腰前",
+        "both hands gently overlapped at the waist"
+      ],
+      [
+        "一手扶发簪",
+        "one hand lightly touching the hairpin, refined portrait pose"
+      ]
+    ],
+    "special_pose": [
+      [
+        "无（不添加此部分）",
+        ""
+      ],
+      [
+        "坐于木椅交叠双手",
+        "sitting elegantly on a wooden chair, hands folded in the lap"
+      ],
+      [
+        "坐在窗边低头读信",
+        "seated beside a wooden window, looking down at a folded letter"
+      ],
+      [
+        "石阶上停步回眸",
+        "pausing on stone steps and glancing back over the shoulder"
+      ],
+      [
+        "宽袖自然垂落的站姿",
+        "standing still with wide sleeves hanging naturally"
+      ],
+      [
+        "双手捧书靠近胸前",
+        "holding a closed book gently near the chest"
+      ],
+      [
+        "一手扶栏一手垂落",
+        "one hand resting on a railing, the other relaxed at the side"
+      ],
+      [
+        "轻提裙摆慢步",
+        "walking slowly while lightly lifting the skirt hem just enough to step"
+      ],
+      [
+        "跪坐茶席旁",
+        "formal kneeling seated pose beside a tea setting, calm posture"
+      ],
+      [
+        "侧坐木凳望向窗外",
+        "sitting sideways on a wooden stool, gazing out a window"
+      ]
+    ],
+    "pose": [
+      [
+        "无（不添加此部分）",
+        ""
+      ],
+      [
+        "正面自然站立",
+        "natural front-facing standing pose, arms relaxed"
+      ],
+      [
+        "缓步向前",
+        "walking slowly toward the viewer, flowing skirt movement"
+      ],
+      [
+        "微侧身站立",
+        "standing with a gentle three-quarter body turn"
+      ],
+      [
+        "双手交叠腰前",
+        "hands folded gently in front of the waist"
+      ],
+      [
+        "一手扶下巴",
+        "one hand lightly touching the chin, thoughtful pose"
+      ],
+      [
+        "抱臂站立",
+        "arms loosely crossed, composed posture"
+      ],
+      [
+        "整理袖口",
+        "one hand adjusting the opposite sleeve cuff"
+      ],
+      [
+        "整理发簪",
+        "one hand lightly adjusting a traditional hairpin"
+      ],
+      [
+        "手持折扇",
+        "holding a closed folding fan gracefully"
+      ],
+      [
+        "手持书卷",
+        "holding a book or scroll with both hands"
+      ],
+      [
+        "手持信笺",
+        "holding a folded letter delicately"
+      ],
+      [
+        "坐姿双手放膝上",
+        "seated pose with both hands resting softly on the knees"
+      ],
+      [
+        "坐姿交叠双手",
+        "seated pose, hands gently folded in the lap"
+      ],
+      [
+        "侧坐回头",
+        "sitting sideways and turning the head back toward viewer"
+      ],
+      [
+        "倚栏站立",
+        "standing beside a railing, one hand lightly resting on it"
+      ],
+      [
+        "低头行走",
+        "walking with gaze lowered, calm quiet posture"
+      ],
+      [
+        "抬头看远处",
+        "standing and gently looking upward into the distance"
+      ],
+      [
+        "双手藏于宽袖中",
+        "hands hidden together inside the wide sleeves, formal restrained pose"
+      ],
+      [
+        "轻扶腰带",
+        "one hand lightly touching the waist sash"
+      ],
+      [
+        "回眸站姿",
+        "standing with torso slightly turned, looking back over shoulder"
+      ]
+    ],
+    "view_direction": [
+      [
+        "无（不添加此部分）",
+        ""
+      ],
+      [
+        "正面正视",
+        "front view, facing viewer directly"
+      ],
+      [
+        "左三分之二侧脸",
+        "three-quarter face view toward the left"
+      ],
+      [
+        "右三分之二侧脸",
+        "three-quarter face view toward the right"
+      ],
+      [
+        "左侧面",
+        "left profile view"
+      ],
+      [
+        "右侧面",
+        "right profile view"
+      ],
+      [
+        "微低头",
+        "head slightly lowered"
+      ],
+      [
+        "微仰头",
+        "chin slightly raised"
+      ],
+      [
+        "回头看镜头",
+        "head turned back toward viewer"
+      ]
+    ],
+    "camera": [
+      [
+        "无（不添加此部分）",
+        ""
+      ],
+      [
+        "平视半身",
+        "eye-level waist-up portrait, restrained composition"
+      ],
+      [
+        "平视三分之二身",
+        "eye-level three-quarter-body composition"
+      ],
+      [
+        "平视全身",
+        "eye-level full-body composition, complete garment silhouette visible"
+      ],
+      [
+        "轻微俯拍半身",
+        "slight high angle, waist-up portrait"
+      ],
+      [
+        "轻微俯拍三分之二身",
+        "slight high angle, three-quarter-body framing"
+      ],
+      [
+        "轻微仰拍全身",
+        "subtle low angle, full-body elegant silhouette"
+      ],
+      [
+        "近景头像",
+        "close portrait from upper chest, delicate facial linework emphasized"
+      ],
+      [
+        "胸像正面",
+        "front-facing bust portrait, centered composition"
+      ],
+      [
+        "膝上构图",
+        "knees-up composition, natural garment folds visible"
+      ],
+      [
+        "竖版人物海报构图",
+        "vertical character-poster composition, large negative space"
+      ],
+      [
+        "人物居中留白",
+        "centered character with generous clean white margins"
+      ],
+      [
+        "人物偏右留白",
+        "character placed slightly right with broad negative space on the left"
+      ],
+      [
+        "人物偏左留白",
+        "character placed slightly left with broad negative space on the right"
+      ]
+    ],
+    "scene": [
+      [
+        "无（不添加此部分）",
+        ""
+      ],
+      [
+        "纯白人物立绘",
+        "pure white background, isolated character, no scenery"
+      ],
+      [
+        "古寺庭院",
+        "traditional Chinese temple courtyard, grayscale manga architectural sketch"
+      ],
+      [
+        "古镇石板街",
+        "ancient Chinese stone-paved street, grayscale tiled-roof buildings"
+      ],
+      [
+        "木质茶楼内",
+        "traditional wooden teahouse interior, sparse grayscale manga shading"
+      ],
+      [
+        "古宅回廊",
+        "traditional mansion corridor, wooden pillars and tiled roof, monochrome linework"
+      ],
+      [
+        "山门石阶",
+        "old temple gate and stone steps, grayscale line-art scenery"
+      ],
+      [
+        "临水长廊",
+        "traditional waterside corridor, pale grayscale architectural sketch"
+      ],
+      [
+        "庭院花树",
+        "quiet courtyard with one flowering tree, background mostly grayscale"
+      ],
+      [
+        "书房木窗",
+        "traditional study with wooden lattice window, minimal grayscale interior"
+      ],
+      [
+        "远山古城",
+        "distant mountains and ancient town roofs, pale monochrome manga scenery"
+      ]
+    ],
+    "accent": [
+      [
+        "无（不添加此部分）",
+        ""
+      ],
+      [
+        "樱粉 + 象牙白",
+        "dusty sakura pink and ivory-white selective color palette"
+      ],
+      [
+        "豆绿 + 浅青",
+        "muted sage green and pale celadon selective palette"
+      ],
+      [
+        "墨绿 + 浅青 + 白",
+        "dark desaturated forest green, pale celadon, and ivory"
+      ],
+      [
+        "灰粉 + 象牙白",
+        "muted gray-pink and ivory palette"
+      ],
+      [
+        "藕粉 + 米白",
+        "pale lotus pink and warm off-white palette"
+      ],
+      [
+        "青灰 + 豆绿",
+        "muted blue-gray and sage-green palette"
+      ],
+      [
+        "黑白灰 + 少量樱粉",
+        "mostly black, white and gray with tiny dusty-pink accents"
+      ],
+      [
+        "黑白灰 + 少量青绿",
+        "mostly grayscale with restrained jade-green accents"
+      ],
+      [
+        "象牙白 + 暗红小点缀",
+        "ivory-white with very sparse muted dark-red accents"
+      ],
+      [
+        "银灰 + 浅青",
+        "silver-gray and pale celadon restrained palette"
+      ]
+    ],
+    "character_inspired": [
+      [
+        "无（原创人物）",
+        ""
+      ],
+      [
+        "芙莉莲（成年形态）",
+        "adult Frieren, recognizable elven mage heroine, very long silver-white hair, green eyes, pointed elf ears, age 20+ adult reinterpretation"
+      ],
+      [
+        "申鹤",
+        "adult Shenhe, recognizable elegant adeptus disciple, long white hair, pale cyan eyes, age 20+"
+      ],
+      [
+        "雷电影",
+        "adult Raiden Shogun, recognizable long dark-purple hair, violet eyes, composed ruler aura, age 20+"
+      ],
+      [
+        "八重神子",
+        "adult Yae Miko, recognizable long pink hair, shrine-maiden aura, age 20+"
+      ],
+      [
+        "2B",
+        "adult-coded 2B android, recognizable white bob hair, black visor and black combat dress"
+      ],
+      [
+        "纲手",
+        "adult Tsunade, recognizable blonde hair, forehead diamond mark, powerful mature woman"
+      ],
+      [
+        "18号",
+        "adult Android 18, recognizable blonde bob, pale-blue eyes, cool composed fighter"
+      ],
+      [
+        "布尔玛（成年）",
+        "adult Bulma, recognizable blue hair, genius scientist and inventor, age 20+"
+      ],
+      [
+        "Makima",
+        "adult Makima, recognizable auburn braided hair, golden ringed eyes, composed authority figure"
+      ],
+      [
+        "C.C.",
+        "adult C.C., recognizable long mint-green hair, golden eyes, mysterious elegant aura"
+      ],
+      [
+        "妮可·罗宾",
+        "adult Nico Robin, recognizable long black hair, mature elegant archaeologist"
+      ],
+      [
+        "娜美（成年）",
+        "adult Nami, recognizable long orange hair, confident navigator, age 20+"
+      ],
+      [
+        "博雅·汉库克",
+        "adult Boa Hancock, recognizable very long black hair, regal pirate-empress aura"
+      ],
+      [
+        "祢豆子（成年再演绎）",
+        "adult reinterpretation of Nezuko Kamado, clearly age 20+, recognizable adult Nezuko-inspired design, gentle protective demon heroine, long black hair with orange-red gradient, pink eyes, bamboo gag aesthetic, fully covered signature kimono styling, non-explicit"
+      ],
+      [
+        "关闭角色模式",
+        "no specific character, original character design"
+      ],
+      [
+        "日向雏田",
+        "Hyuga Hinata, adult Hinata, recognizable Hyuga Hinata design, Konohagakure kunoichi of the Hyuga clan, Byakugan user, gentle shy personality, long dark indigo hair with straight bangs, pale lavender Byakugan eyes, signature ninja heroine identity, classic Hinata-inspired outfit styling"
+      ],
+      [
+        "春野樱",
+        "Haruno Sakura, adult Sakura, recognizable Haruno Sakura design, Konohagakure kunoichi, elite medical ninja, super-strength fighter, determined and intelligent personality, short pink hair, green eyes, signature ninja heroine identity, classic Sakura-inspired outfit styling"
+      ],
+      [
+        "纲手",
+        "Tsunade, recognizable Tsunade design, legendary Sannin, Fifth Hokage, elite medical ninja, powerful mature woman, blonde hair with twin front bangs, amber-brown eyes, forehead diamond mark, voluptuous figure, commanding presence, classic Tsunade outfit styling"
+      ],
+      [
+        "山中井野",
+        "Yamanaka Ino, adult Ino, recognizable Yamanaka Ino design, Konohagakure kunoichi of the Yamanaka clan, sensory-type ninja, stylish confident personality, long blonde ponytail, bright eyes, classic Ino outfit styling"
+      ],
+      [
+        "天天",
+        "Tenten, adult Tenten, recognizable Tenten design, Konohagakure kunoichi, weapons specialist, energetic disciplined personality, dark hair in twin buns, warm brown eyes, Chinese-inspired ninja styling"
+      ],
+      [
+        "手鞠",
+        "Temari, adult Temari, recognizable Temari design, Sunagakure kunoichi, wind-style fighter, strong confident strategist personality, blonde hair in four ponytails, teal eyes, classic Temari outfit styling"
+      ],
+      [
+        "蝴蝶忍",
+        "Shinobu Kocho, recognizable Shinobu Kocho design, Demon Slayer Corps Hashira, Insect Hashira, calm smiling but sharp personality, black hair with purple tips, violet eyes, butterfly hair ornaments, butterfly-themed haori, signature swordswoman identity"
+      ],
+      [
+        "甘露寺蜜璃",
+        "Mitsuri Kanroji, recognizable Mitsuri Kanroji design, Demon Slayer Corps Hashira, Love Hashira, sweet emotional personality, long pink-and-green braided hair, bright green eyes, curvy cheerful heroine, signature Mitsuri uniform styling"
+      ],
+      [
+        "雷姆",
+        "Rem, recognizable Rem design, oni maid heroine, blue-haired twin maid from a fantasy mansion, devoted gentle personality, short light-blue hair, blue eyes, classic maid uniform styling"
+      ],
+      [
+        "拉姆",
+        "Ram, recognizable Ram design, oni maid heroine, pink-haired twin maid from a fantasy mansion, teasing confident personality, short pink hair, red-pink eyes, classic maid uniform styling"
+      ],
+      [
+        "爱蜜莉雅",
+        "Emilia, recognizable Emilia design, half-elf fantasy heroine, silver-haired royal-candidate heroine, gentle kind personality, long silver hair, violet eyes, white-and-lilac fantasy outfit styling"
+      ],
+      [
+        "2B",
+        "2B, YoRHa No.2 Type B, recognizable 2B design, female android soldier, cool disciplined personality, white bob hair, black visor, black gothic battle dress, signature elegant combat android identity"
+      ],
+      [
+        "18号",
+        "Android 18, recognizable Android 18 design, cool female android fighter, composed detached personality, blonde bob haircut, pale blue eyes, signature casual fighter styling"
+      ],
+      [
+        "布尔玛",
+        "Bulma, adult Bulma, recognizable Bulma design, genius scientist and inventor, stylish modern woman, blue hair, bright expressive eyes, capsule-corporation sci-fi heroine identity"
+      ],
+      [
+        "时崎狂三",
+        "Kurumi Tokisaki, recognizable Kurumi Tokisaki design, gothic time-manipulating heroine, dangerous flirtatious personality, long black hair, red-and-black gothic dress styling, intense heterochromia-inspired gaze"
+      ],
+      [
+        "阿库娅",
+        "Aqua, recognizable Aqua design, goddess heroine, lively vain comedic personality, long sky-blue hair in high ponytail, blue eyes, signature fantasy goddess styling"
+      ],
+      [
+        "惠惠",
+        "Megumin, recognizable Megumin design, explosion mage heroine, chuunibyou personality, dark brown bob hair, red eyes, iconic mage-girl identity, classic fantasy mage outfit styling"
+      ],
+      [
+        "达克妮斯",
+        "Darkness, recognizable Darkness design, female knight heroine, blonde masochistic crusader, long blonde hair, blue eyes, armored knight-woman identity"
+      ],
+      [
+        "明日香",
+        "Asuka Langley, recognizable Asuka design, red-haired pilot heroine, competitive fiery personality, auburn hair, twin-tail styling, blue eyes, signature pilot-girl identity"
+      ],
+      [
+        "绫波丽",
+        "Rei Ayanami, recognizable Rei Ayanami design, quiet enigmatic pilot heroine, short pale blue hair, red eyes, minimal stoic expression, signature pilot-girl identity"
+      ],
+      [
+        "米卡莎",
+        "Mikasa Ackerman, recognizable Mikasa design, serious fighter heroine, skilled soldier identity, short black hair, gray eyes, restrained strong personality, classic survey-corps styling"
+      ],
+      [
+        "祢豆子",
+        "Nezuko Kamado, recognizable Nezuko design, demon girl heroine, gentle protective personality, long black hair with orange-red gradient, pink eyes, bamboo gag aesthetic, signature kimono styling"
+      ],
+      [
+        "雪之下雪乃",
+        "Yukinoshita Yukino, recognizable Yukino design, elegant honor-student heroine, intelligent aloof personality, long black hair, blue eyes, refined schoolgirl identity"
+      ],
+      [
+        "宝多六花",
+        "Takarada Rikka, recognizable Rikka Takarada design, modern schoolgirl heroine, calm understated beauty, straight dark hair, contemporary schoolgirl styling"
+      ],
+      [
+        "Makima",
+        "Makima, recognizable Makima design, mysterious authority figure, long auburn-red braided hair, golden ringed eyes, composed unsettling elegance, signature office-like styling"
+      ],
+      [
+        "Zero Two",
+        "Zero Two, recognizable Zero Two design, horned sci-fi heroine, teasing bold personality, long pink hair, small red horns, confident sensual energy, signature pilot-suit-inspired identity"
+      ],
+      [
+        "C.C.",
+        "C.C., recognizable C.C. design, immortal mysterious heroine, long mint-green hair, golden eyes, calm elegant expression, signature dark refined styling"
+      ],
+      [
+        "Saber",
+        "Saber, Artoria Pendragon, recognizable Saber design, female knight heroine, blonde hair, blue-green eyes, noble disciplined personality, signature knight identity and blue dress/armor styling"
+      ],
+      [
+        "远坂凛",
+        "Tohsaka Rin, recognizable Rin Tohsaka design, tsundere mage heroine, long dark twin tails, blue eyes, confident refined personality, signature red-and-black mage styling"
+      ],
+      [
+        "间桐樱",
+        "Matou Sakura, recognizable Sakura Matou design, gentle reserved mage heroine, long purple hair, violet eyes, soft shy personality, signature modest schoolgirl / mage styling"
+      ],
+      [
+        "妮可·罗宾",
+        "Nico Robin, recognizable Nico Robin design, archaeologist heroine, mature elegant calm beauty, long black hair, blue eyes, poised intellectual aura"
+      ],
+      [
+        "娜美",
+        "Nami, recognizable Nami design, navigator heroine, stylish clever personality, long orange hair, confident lively expression, signature fashionable adventurer styling"
+      ],
+      [
+        "薇薇",
+        "Nefertari Vivi, recognizable Vivi design, princess heroine, long light-blue hair, noble gentle personality, elegant royal aura"
+      ],
+      [
+        "博雅·汉库克",
+        "Boa Hancock, recognizable Boa Hancock design, pirate empress heroine, very long black hair, striking mature beauty, regal proud personality, glamorous signature styling"
+      ],
+      [
+        "芙莉莲",
+        "Frieren, Sousou no Frieren, recognizable Frieren design, elven mage heroine, very long silver-white hair, green eyes, pointed elf ears, signature mage identity"
+      ],
+      [
+        "胡桃",
+        "Hu Tao, Genshin Impact, recognizable Hu Tao design, dark brown hair, red eyes, black hat with talisman, playful funeral director aura"
+      ],
+      [
+        "申鹤",
+        "Shenhe, Genshin Impact, recognizable Shenhe design, long white hair, pale cyan eyes, elegant adeptus disciple aura"
+      ],
+      [
+        "刻晴",
+        "Keqing, Genshin Impact, recognizable Keqing design, lavender twin tails, purple eyes, refined liyue swordswoman aura"
+      ],
+      [
+        "神里绫华",
+        "Kamisato Ayaka, recognizable Ayaka design, white hair tied high, pale blue eyes, noble swordswoman identity"
+      ],
+      [
+        "雷电影",
+        "Raiden Shogun, recognizable Raiden Shogun design, long dark purple hair, violet eyes"
+      ],
+      [
+        "八重神子",
+        "Yae Miko, recognizable Yae Miko design, long pink hair, shrine maiden aura"
+      ],
+      [
+        "2B",
+        "2B, NieR Automata, recognizable 2B design, white bob hair, visor, black combat dress"
+      ],
+      [
+        "宝多六花",
+        "Takarada Rikka, recognizable Rikka design, dark straight hair, calm modern schoolgirl aura"
+      ],
+      [
+        "时崎狂三",
+        "Kurumi Tokisaki, recognizable Kurumi design, long black hair, gothic red-black styling"
+      ],
+      [
+        "蝴蝶忍",
+        "Shinobu Kocho, recognizable Shinobu design, black hair with purple tips, butterfly motif"
+      ],
+      [
+        "雷姆",
+        "Rem, recognizable Rem design, short light blue hair, maid heroine identity"
+      ],
+      [
+        "C.C.",
+        "C.C., recognizable C.C. design, long mint-green hair, golden eyes, mysterious elegant aura"
+      ]
+    ],
+    "expression": [
+      [
+        "无（不添加此部分）",
+        ""
+      ],
+      [
+        "克制微笑",
+        "small restrained smile, soft relaxed lips"
+      ],
+      [
+        "含蓄浅笑",
+        "subtle gentle smile, faint blush"
+      ],
+      [
+        "平静无表情",
+        "calm neutral expression, relaxed eyelids"
+      ],
+      [
+        "若有所思",
+        "thoughtful restrained expression, gaze slightly lowered"
+      ],
+      [
+        "害羞微红",
+        "shy restrained expression, slightly stronger cheek blush"
+      ],
+      [
+        "轻微惊讶",
+        "subtle surprised expression, eyes only slightly widened"
+      ],
+      [
+        "淡淡忧郁",
+        "soft melancholic expression, lowered gaze"
+      ],
+      [
+        "微微蹙眉",
+        "slightly furrowed brows, composed serious expression"
+      ],
+      [
+        "温柔闭眼笑",
+        "eyes gently closed with a very small peaceful smile"
+      ],
+      [
+        "似笑非笑",
+        "faint ambiguous half-smile, restrained mature expression"
+      ]
+    ],
+    "prop": [
+      [
+        "无（不添加此部分）",
+        ""
+      ],
+      [
+        "折扇",
+        "holding a closed traditional folding fan"
+      ],
+      [
+        "团扇",
+        "holding a round silk fan with minimal floral pattern"
+      ],
+      [
+        "旧书",
+        "holding an old bound book"
+      ],
+      [
+        "线装书",
+        "holding a traditional thread-bound book"
+      ],
+      [
+        "信笺",
+        "holding a folded handwritten letter"
+      ],
+      [
+        "书卷",
+        "holding a rolled scroll"
+      ],
+      [
+        "茶盏",
+        "holding a small traditional teacup"
+      ],
+      [
+        "油纸伞",
+        "holding a plain traditional oil-paper umbrella"
+      ],
+      [
+        "竹篮",
+        "carrying a small woven bamboo basket"
+      ],
+      [
+        "梅枝",
+        "holding a thin plum-blossom branch"
+      ],
+      [
+        "玉佩",
+        "small pale-jade pendant held lightly in one hand"
+      ],
+      [
+        "灯笼",
+        "holding a small traditional lantern, rendered in muted tones"
+      ]
+    ],
+    "background": [
+      [
+        "无（不添加此部分）",
+        ""
+      ],
+      [
+        "纯白留白",
+        "pure white background, isolated character, large clean negative space"
+      ],
+      [
+        "纯白 + 不规则灰阶残景",
+        "mostly white background with irregular fragments of grayscale manga scenery"
+      ],
+      [
+        "灰阶古建筑街道",
+        "grayscale ancient Chinese architecture and street, fine manga linework"
+      ],
+      [
+        "灰阶寺院庭院",
+        "grayscale temple courtyard with tiled roofs and stone paving"
+      ],
+      [
+        "灰阶木质室内",
+        "dark grayscale wooden interior, sparse furniture, fine line shading"
+      ],
+      [
+        "灰阶石阶山门",
+        "grayscale stone stairway and temple gate, distant pale mountain lines"
+      ],
+      [
+        "灰阶远山古镇",
+        "pale grayscale mountains and ancient-town rooftops"
+      ],
+      [
+        "灰阶回廊",
+        "grayscale traditional corridor with pillars, strong perspective but light detail"
+      ],
+      [
+        "灰阶人群背景",
+        "lightly sketched grayscale crowd behind the selectively colored character"
+      ],
+      [
+        "灰阶花树庭院",
+        "grayscale flowering-tree courtyard, only character remains softly colored"
+      ],
+      [
+        "墨灰木墙背景",
+        "charcoal-gray wooden wall interior, subdued line texture"
+      ],
+      [
+        "浅灰漫画分镜残景",
+        "fragmented pale-gray manga-panel background with broad irregular white margins"
+      ]
+    ],
+    "species": [
+      [
+        "无（不添加此部分）",
+        ""
+      ],
+      [
+        "普通人类",
+        "adult human woman, no animal ears, no fantasy features"
+      ],
+      [
+        "狐灵",
+        "adult fox-spirit woman, subtle fox ears, elegant restrained fantasy details"
+      ],
+      [
+        "白狐灵",
+        "adult white-fox spirit woman, pale fox ears, refined non-chibi design"
+      ],
+      [
+        "花妖",
+        "adult flower-spirit woman, extremely subtle botanical ornament details"
+      ],
+      [
+        "鹤灵",
+        "adult crane-spirit woman, subtle feather-inspired hair ornament, human silhouette"
+      ],
+      [
+        "精灵古风改良",
+        "adult elf woman, delicate pointed ears, traditional Chinese styling"
+      ]
+    ],
+    "outfit": [
+      [
+        "无（不添加此部分）",
+        ""
+      ],
+      [
+        "樱粉长裙 + 素白宽袖外衫",
+        "dusty sakura-pink long hanfu dress with an ivory-white wide-sleeved outer robe, sparse white blossom embroidery"
+      ],
+      [
+        "浅青内裙 + 墨绿长外袍",
+        "pale celadon inner hanfu with a dark desaturated green long outer robe"
+      ],
+      [
+        "豆绿交领汉服",
+        "muted sage-green cross-collar hanfu, restrained wide sleeves and waist sash"
+      ],
+      [
+        "粉白齐胸襦裙",
+        "pale pink and ivory qixiong ruqun-inspired hanfu, delicate floral upper detail"
+      ],
+      [
+        "灰粉交领长裙",
+        "muted gray-pink cross-collar long hanfu dress, minimal embroidery"
+      ],
+      [
+        "素白长袍 + 淡粉腰带",
+        "ivory long hanfu robe with a pale dusty-pink waist sash"
+      ],
+      [
+        "青灰长袍 + 浅青内衫",
+        "muted blue-gray long robe over pale celadon inner garment"
+      ],
+      [
+        "墨绿书院风汉服",
+        "dark forest-green scholarly hanfu with pale inner collar and restrained sash"
+      ],
+      [
+        "藕粉短襦 + 米白长裙",
+        "pale lotus-pink short ru top with a warm ivory long skirt"
+      ],
+      [
+        "象牙白祭礼风汉服",
+        "ivory ceremonial-inspired hanfu, clean flowing silhouette, sparse pale-gold detail"
+      ],
+      [
+        "青玉色大袖衫",
+        "muted jade-green large-sleeved hanfu with pale inner layer"
+      ],
+      [
+        "秋日灰褐汉服",
+        "warm gray-brown autumn hanfu with ivory inner collar and subtle muted-red accent"
+      ]
+    ],
+    "theme": [
+      [
+        "无（不添加此部分）",
+        ""
+      ],
+      [
+        "古镇日常",
+        "quiet everyday life in an ancient Chinese town"
+      ],
+      [
+        "书院雅士",
+        "scholarly academy theme, refined adult female scholar"
+      ],
+      [
+        "茶楼闲坐",
+        "traditional teahouse theme, quiet refined atmosphere"
+      ],
+      [
+        "寺院参访",
+        "temple visit theme, contemplative classical atmosphere"
+      ],
+      [
+        "春日赏花",
+        "spring blossom viewing theme, restrained floral elegance"
+      ],
+      [
+        "秋日庭院",
+        "autumn courtyard theme, muted seasonal mood"
+      ],
+      [
+        "夜游灯会",
+        "night lantern-festival stroll, most scenery kept grayscale"
+      ],
+      [
+        "山中旅人",
+        "traveler in mountain temple surroundings, traditional layered clothing"
+      ],
+      [
+        "古宅闺阁",
+        "traditional residence interior, quiet private reading atmosphere"
+      ],
+      [
+        "江南水巷",
+        "Jiangnan waterside lane, grayscale architecture and selective pastel character colors"
+      ]
+    ]
+  },
+  "labels": {
+    "character": "身材 / 体型",
+    "hair": "发型",
+    "eyes": "眼睛",
+    "emotion": "气质 / 情绪",
+    "interaction": "视线 / 互动",
+    "holiday": "节气 / 节日",
+    "story": "轻剧情",
+    "accessory": "发饰 / 配饰",
+    "top": "上襦 / 内搭",
+    "outerwear": "外衫 / 外袍",
+    "bottoms": "裙装",
+    "legwear": "裙摆 / 腿部",
+    "footwear": "鞋履",
+    "body_modifier": "人物细节",
+    "tattoo_color": "纹样 / 刺绣",
+    "special_prompt": "画面工艺",
+    "special_outfit": "成套古装",
+    "fashion_extra": "服装细节",
+    "seductive_pose": "姿态修饰",
+    "special_pose": "特殊姿势",
+    "pose": "姿势",
+    "view_direction": "人物朝向",
+    "camera": "镜头 / 构图",
+    "scene": "场景",
+    "accent": "选择性配色",
+    "character_inspired": "角色",
+    "expression": "表情",
+    "prop": "道具",
+    "background": "背景处理",
+    "species": "人物属性",
+    "outfit": "主服装",
+    "theme": "主题"
+  },
+  "originalOnly": [],
+  "characterOnly": [
+    "character_inspired"
+  ],
+  "multi": [
+    "special_outfit",
+    "body_modifier",
+    "special_prompt",
+    "seductive_pose",
+    "special_pose"
+  ],
+  "defaultMode": "original",
+  "defaultSelections": {
+    "character": "修长古典型",
+    "hair": "灰棕双丸子 + 碎刘海",
+    "eyes": "浅黄绿色杏眼",
+    "expression": "克制微笑",
+    "interaction": "直视镜头",
+    "outfit": "樱粉长裙 + 素白宽袖外衫",
+    "accessory": "粉色小花发饰",
+    "pose": "正面自然站立",
+    "camera": "平视三分之二身",
+    "background": "纯白留白",
+    "accent": "樱粉 + 象牙白",
+    "special_prompt": "人物彩色、背景灰阶",
+    "species": "普通人类"
+  }
+}

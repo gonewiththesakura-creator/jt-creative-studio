@@ -389,6 +389,36 @@
     "duration": 5,
     "max_side": 1024
    }
+  },
+  {
+   "id": "realcomic",
+   "name": "漫画转真人 · Anime to Live-Action V6 Speed",
+   "kind": "ai_app",
+   "backend": "runninghub",
+   "rh_ai_app_id": "2025090022289973249",
+   "desc": "第三方 RunningHub AI 应用：将二次元、动漫或漫画人物图转换为真人风格图像。",
+   "rh_media": {
+    "source_image": {
+     "node": "504",
+     "field": "image",
+     "type": "image",
+     "label": "二次元图",
+     "required": true
+    }
+   },
+   "rh_params": {
+    "requirements": {
+     "node": "491",
+     "field": "text",
+     "type": "text",
+     "label": "别的要求"
+    }
+   },
+   "params_defaults": {
+    "requirements": "去除水印"
+   },
+   "provider_name": "Anime to Live-Action V6 Speed",
+   "provider_attribution": "第三方 RunningHub AI 应用"
   }
  ],
  "default_prompt_reset": true

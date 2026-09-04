@@ -10,6 +10,7 @@ if not COLD_SRC.exists():
     COLD_SRC.write_bytes((STATIC/"promptgen.html").read_bytes())
 GRAPHIC=Path(r"C:/Users/JT/AppData/Local/hermes/attachments/graphic_anime_style2_dual_mode_generator.html")
 SKETCH=Path(r"C:/Users/JT/AppData/Local/hermes/attachments/sketch_anime_dual_mode_generator.html")
+HANMANGA_PROFILE=SRC/"hanmanga_profile.source.json"
 
 def js_config(path, start, end, names):
     text=path.read_text(encoding="utf-8")
@@ -26,6 +27,15 @@ def js_config(path, start, end, names):
 cold=js_config(COLD_SRC,"const FIXED_HEAD","const DROPDOWN_KEYS",["FIXED_HEAD","FIXED_STYLE","NEGATIVE","POOLS","LABELS"])
 sketch=js_config(SKETCH,"const DEFAULT_PREFIX","const ORDER",["DEFAULT_PREFIX","FIXED_HEAD","FIXED_STYLE","NEGATIVE","POOLS","LABELS"])
 graphic=js_config(GRAPHIC,"const DEFAULT_PREFIX","const ORDER",["DEFAULT_PREFIX","FIXED_HEAD","FIXED_STYLE","NEGATIVE","POOLS","LABELS"])
+hanmanga_source=json.loads(HANMANGA_PROFILE.read_text(encoding="utf-8"))
+hanmanga=copy.deepcopy(hanmanga_source)
+# The supplied page intentionally used the sketch backend as a temporary shim.
+# Production metadata is trusted here and on the server; the browser never
+# chooses LoRA filenames or trigger tokens.
+hanmanga["trigger"]="jt_liulistyle_v1"
+hanmanga["lora1"]="08_liuli_style_v1_step600.safetensors"
+hanmanga["lora2"]="08_liuli_style_v1_step600.safetensors"
+hanmanga.pop("backendStyleId",None)
 # The attachment's jt_style2_v1 token does not match the trained delivery token.
 graphic["FIXED_STYLE"]=re.sub(r"\bjt_style2_v1\s*,?\s*","",graphic["FIXED_STYLE"])
 
@@ -263,6 +273,7 @@ profiles={
   "originalOnly":[],"characterOnly":["character_inspired"],
   "multi":["special_outfit","body_modifier","special_prompt","seductive_pose","special_pose"],
  },
+ "hanmanga":hanmanga,
  "nff":{
   "name":"NFF·半写实动漫画风","short":"NFF","trigger":"jt_nffstyle_v1",
   "lora1":"06_nff_style_v1_step2000.safetensors","lora2":"06_nff_style_v1_step2000.safetensors",
@@ -312,10 +323,10 @@ html=r'''<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta nam
 :root{--bg:#f4f7f8;--card:#fff;--ink:#2f3b40;--muted:#82949c;--line:#e1eaed;--accent:#769fb2;--accent2:#eaf3f6;--shadow:0 12px 34px rgba(67,89,99,.08)}*{box-sizing:border-box}body{margin:0;background:linear-gradient(#f9fbfc,var(--bg));font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;color:var(--ink)}button,input,select{font:inherit}.wrap{width:min(1100px,calc(100% - 24px));margin:auto;padding:22px 0 80px}.hero h1{margin:0;font-size:clamp(28px,4vw,40px)}.panel,.drawer{background:rgba(255,255,255,.96);border:1px solid var(--line);border-radius:20px;box-shadow:var(--shadow)}.switch{padding:14px;margin:12px 0;display:flex;gap:8px;flex-wrap:wrap}.switch button,.switch .original-link{border:1px solid var(--line);background:#fff;border-radius:13px;padding:10px 14px;color:#667c86;font-weight:800;cursor:pointer;text-decoration:none}.switch button.active{background:var(--accent);color:#fff;border-color:transparent}.switch .original-link{background:#f0f6f8;color:#557888}.note{width:100%;font-size:12px;color:var(--muted);line-height:1.6}.drawer{margin:10px 0;overflow:hidden}.drawer-head{width:100%;border:0;background:#fff;padding:16px 18px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;font-weight:850;color:#566c76}.drawer-body{display:none;padding:0 14px 14px}.drawer.open .drawer-body{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.item{border:1px solid var(--line);border-radius:15px;padding:12px;background:#fbfdfe}.item-head{display:flex;justify-content:space-between;align-items:center;gap:8px}.item-name{font-size:12px;color:#8b9da5;font-weight:800}.item-actions{display:flex;gap:5px}.item-actions button{border:0;border-radius:9px;width:31px;height:31px;background:#edf4f7;color:#668b9b;cursor:pointer}.picker-wrap{display:block;margin-top:9px}.picker{width:100%;border:1px solid var(--line);border-radius:10px;padding:10px;background:#fff}.actions{display:flex;gap:10px;margin:14px 0}.primary{flex:1;border:0;border-radius:18px;padding:16px;background:linear-gradient(135deg,#86b3c6,#6f9eb2);color:#fff;font-weight:850;cursor:pointer}.settings{padding:15px;display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.settings label{font-size:11px;color:var(--muted);font-weight:800}.settings input,.settings select{width:100%;margin-top:5px;border:1px solid var(--line);border-radius:10px;padding:9px}.prompt{margin-top:14px;overflow:hidden}.prompt-head{padding:14px 16px;display:flex;justify-content:space-between;align-items:center}.prompt-body{display:none}.prompt.open .prompt-body{display:block}.prompt textarea{width:100%;min-height:300px;border:0;border-top:1px solid var(--line);padding:15px;font:12px/1.6 monospace}.result img,.job img{width:100%;max-height:640px;object-fit:contain;border-radius:12px;background:#f4f4f4}.dl{display:block;width:100%;border:0;text-align:center;margin-top:7px;padding:10px;border-radius:10px;background:#edf4f7;color:#5f8290;font-weight:750;text-decoration:none;cursor:pointer}.floating{position:fixed;right:14px;z-index:50;border:1px solid var(--line);border-radius:16px;padding:10px 13px;background:#fff;box-shadow:var(--shadow);cursor:pointer}.history{bottom:18px}.favorites{bottom:66px}.overlay{display:none;position:fixed;inset:0;z-index:80;background:rgba(244,247,248,.98);overflow:auto;padding:15px}.overlay.open{display:block}.overlay-inner{max-width:680px;margin:auto}.overlay-head{display:flex;justify-content:space-between;align-items:center}.job{border:1px solid var(--line);background:#fff;border-radius:15px;padding:12px;margin:10px 0}.close{border:0;background:none;font-size:25px;cursor:pointer}.status{font-size:13px;color:#607985;font-weight:750;margin:10px 0}@media(max-width:700px){.drawer.open .drawer-body{grid-template-columns:1fr}.settings{grid-template-columns:1fr 1fr}.wrap{padding-top:14px}.floating{position:static;display:inline-block;margin:8px 4px 0 0}.favorites,.history{bottom:auto;right:auto}}
 __WORKBENCH_CSS__
 </style></head><body><div class="app-shell">
-<header class="topbar"><a class="brand" href="/"><span class="brand-mark">JT</span><span>JT 灵感工作台</span></a><nav class="topnav"><a class="topnav-link active" href="/">创作台</a><a class="topnav-link" href="/original-sketch">原始铅绘</a><a class="topnav-link" href="/original-graphic">原始古风</a><a class="topnav-link" href="/video">视频</a></nav><div class="topbar-tools"><span class="connection-dot" title="服务在线"></span><button class="topbar-action" id="favOpen">♥ 收藏</button><button class="topbar-action" id="histOpen">⌛ 历史</button></div></header>
+<header class="topbar"><a class="brand" href="/"><span class="brand-mark">JT</span><span>JT 灵感工作台</span></a><nav class="topnav"><a class="topnav-link active" href="/">创作台</a><a class="topnav-link" href="/original-sketch">原始铅绘</a><a class="topnav-link" href="/original-graphic">原始古风</a><a class="topnav-link" href="/realcomic">漫画转真人</a><a class="topnav-link" href="/video">视频</a></nav><div class="topbar-tools"><span class="connection-dot" title="服务在线"></span><button class="topbar-action" id="favOpen">♥ 收藏</button><button class="topbar-action" id="histOpen">⌛ 历史</button></div></header>
 <main class="studio-grid">
 <aside class="creation-pane"><div class="creation-scroll"><div class="pane-heading"><div><span class="eyebrow">AI CREATION</span><h1>创作设置</h1></div></div>
-<span class="section-label">画风</span><section class="switch" id="styleSwitch"><button data-style="cold">冷脸萌</button><button data-style="sketch">铅绘</button><button data-style="graphic">古风</button><button data-style="nff">NFF</button></section>
+<span class="section-label">画风</span><section class="switch" id="styleSwitch"><button data-style="cold">冷脸萌</button><button data-style="sketch">铅绘</button><button data-style="graphic">古风</button><button data-style="hanmanga">古漫</button><button data-style="nff">NFF</button></section>
 <span class="section-label">人物模式</span><section class="switch" id="modeSwitch"><button data-mode="original">原创人物</button><button data-mode="character">角色模式</button></section>
 <div id="drawers"></div><div class="actions"><button class="primary" id="randomAll">随机选项</button><button class="primary" id="clearAll">全部清空</button></div>
 <span class="section-label">提示词</span><section class="switch" id="promptModePanel"><label><input type="radio" name="promptModeRadio" value="options" checked> 选项组合</label><label><input type="radio" name="promptModeRadio" value="manual"> 手动提示词</label><select id="promptMode" style="display:none"><option value="options">选项组合</option><option value="manual">手动提示词</option></select></section><button class="dl" id="importGeneratedPrompt" type="button">导入并编辑</button>
@@ -329,7 +340,7 @@ __WORKBENCH_CSS__
 </div>
 <script>const STYLE_CONFIGS=__DATA__;const DRAWERS=__DRAWERS__;
 const api=async(path,opt={})=>{const r=await fetch(path,opt);let d={};try{d=await r.json()}catch{}if(!r.ok)throw new Error(d.error||('HTTP '+r.status));return d};
-const CREATOR_ROUTES=['/','/original-sketch','/original-graphic','/video'];
+const CREATOR_ROUTES=['/','/original-sketch','/original-graphic','/realcomic','/video'];
 function scheduleRoutePrefetch(){const connection=navigator.connection||{};if(connection.saveData||/2g/.test(connection.effectiveType||''))return;const loaded=new Set();const load=href=>{if(!CREATOR_ROUTES.includes(href)||href===location.pathname||loaded.has(href))return;loaded.add(href);const link=document.createElement('link');link.rel='prefetch';link.as='document';link.href=href;document.head.appendChild(link)};document.querySelectorAll('.topnav-link').forEach(a=>{const href=a.getAttribute('href');a.addEventListener('pointerenter',()=>load(href),{once:true});a.addEventListener('focus',()=>load(href),{once:true})});const idle=()=>CREATOR_ROUTES.filter(x=>x!==location.pathname).slice(0,2).forEach(load);'requestIdleCallback'in window?requestIdleCallback(idle,{timeout:2500}):setTimeout(idle,1800)}
 const activeJobKey=backend=>'jt-active-main-'+backend;function rememberActiveJob(backend,jobId){sessionStorage.setItem(activeJobKey(backend),jobId)}function forgetActiveJob(backend){sessionStorage.removeItem(activeJobKey(backend))}
 let currentStyle='sketch',currentMode='character',stateByStyle={},lockedByStyle={},openDrawers=new Set(),genRunning={cloud:false,local:false};
