@@ -36,6 +36,16 @@ tools/sshev/
 # Large downloaded/provider workflow archives (regenerable)
 video_wf/
 
+# Local evaluation evidence (summaries/scripts are tracked explicitly)
+audit/browser_e2e/
+audit/test_suite_report.json
+audit/cold_style_ab/contact_sheets.json
+audit/cold_style_ab/local_vlm_blind_eval.json
+audit/cold_style_ab/local_vlm_style_scores.json
+audit/cold_style_ab/manifest.json
+audit/cold_style_ab/panel_style_only_smoke.json
+audit/cold_style_ab/run_local_vlm_blind_eval.py
+
 # OS/editor
 .DS_Store
 Thumbs.db

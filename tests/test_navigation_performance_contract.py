@@ -11,7 +11,7 @@ checks={
  "immutable media cache preserved":'private, max-age=86400' in SERVER and 'public, max-age=86400' in SERVER,
  "html cache revalidates":'no-cache' in SERVER and 'must-revalidate' in SERVER,
  "conditional route prefetch":all(all(x in page for x in ['scheduleRoutePrefetch','navigator.connection','saveData','effectiveType','requestIdleCallback']) for page in PAGES),
- "prefetch only creator routes":all("['/','/original-sketch','/original-graphic','/realcomic','/video']" in page for page in PAGES),
+ "prefetch only creator routes":all("['/','/original-sketch','/original-graphic','/realcomic','/realism','/video']" in page for page in PAGES),
  "active job persisted by backend":all(all(x in page for x in ['sessionStorage','activeJobKey','generation_backend']) for page in PAGES[:3]),
  "resume polls without resubmit":all('resumeActiveJobs' in page and "'/api/job/'" in page and 'submitGenerateResilient' in page for page in PAGES[:3]),
  "cloud local resume concurrently":all("Promise.all(['cloud','local'].map(resumeActiveJob))" in page for page in PAGES[:3]),

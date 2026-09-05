@@ -1,0 +1,44 @@
+{
+  "decision": "keep_as_low_identity_leakage_style_candidate",
+  "ui_label": "仅画风候选",
+  "certified_pure_style": false,
+  "candidate": {
+    "lora": "05_style3_v2_step1600.safetensors",
+    "trigger": "jt_style3_v2",
+    "effective_strength": 0.6,
+    "compatibility_second_node_strength": 0.0,
+    "forbidden_lora": "04_style3_step800.safetensors",
+    "forbidden_trigger": "jt_style3_v1"
+  },
+  "matrix": {
+    "total": 36,
+    "success": 36,
+    "existing_outputs": 36,
+    "unique_outputs": 36,
+    "failed": 0,
+    "seeds": [314159, 271828, 161803],
+    "arms": {
+      "A": "no_lora",
+      "B": "05_strength_0.4",
+      "C": "05_strength_0.6"
+    }
+  },
+  "explicit_identity_anchor_findings": {
+    "adult_man": "0/9 clear target-identity anchors",
+    "two_adults": "0/9 clear target-identity anchors",
+    "empty_town": "0/9 leakage; 9/9 no-human",
+    "different_adult_woman": "B/C did not add silver bob, blue flower, clear mole, or half-lidded ice-blue-eye anchors relative to no-LoRA A"
+  },
+  "style_scores": {
+    "314159": {"A": 5, "B": 6, "C": 7},
+    "271828": {"A": 5, "B": 7, "C": 8},
+    "161803": {"A": 5, "B": 6, "C": 7}
+  },
+  "panel_smoke": {
+    "status": "success",
+    "output_bytes": 1059193,
+    "node70_strength": 0.6,
+    "node71_strength": 0.0
+  },
+  "caveat": "The training set contains one recurring character; this is not evidence of full disentanglement."
+}

@@ -9,7 +9,7 @@ Env:
   PANEL_TOKEN required (auth)
   PANEL_DIR   default ./panel_data (jobs + images)
 """
-import json, os, re, sys, time, uuid, threading, urllib.request, urllib.parse
+import json, os, re, sys, time, uuid, threading, urllib.request, urllib.parse, math
 import http.server, socketserver, pathlib, secrets, hashlib
 import socket, base64, struct, subprocess, io, gzip
 
@@ -31,6 +31,8 @@ RH_KEY = os.environ.get("RUNNINGHUB_API_KEY", "")
 RH_TIMEOUT_SUBMIT = 60
 RH_TIMEOUT_QUERY = 30
 RH_SUBMIT_HARD_TIMEOUT = 120  # wall-clock cap for the whole submit (all retries)
+MAX_JSON_BYTES = 42 * 1024 * 1024  # 30 MiB image after base64 + bounded metadata
+MAX_UPLOAD_JSON_BYTES = 82 * 1024 * 1024  # existing 60 MiB video after base64
 # V2 query exposes only real task states, not a stable percentage. Keep these
 # conservative and fixed; never manufacture progress from elapsed/poll count.
 RH_STAGE_PROGRESS = {"QUEUED": 0.02, "RUNNING": 0.10}
@@ -48,6 +50,28 @@ STYLE_PRESETS = {
         "LORA1": "05_style3_v2_step1600.safetensors",
         "LORA2": "04_style3_step800.safetensors",
         "strengths": {"LORA1": 0.7, "LORA2": 0.6},
+        "default_variant": "character_bound",
+        "variants": {
+            "character_bound": {
+                "id": "character_bound",
+                "trigger": "jt_style3_v2",
+                "LORA1": "05_style3_v2_step1600.safetensors",
+                "LORA2": "04_style3_step800.safetensors",
+                "strengths": {"LORA1": 0.7, "LORA2": 0.6},
+            },
+            # The v2 run was trained as a style candidate and passed the
+            # available male/no-human leakage probes. Its source set still
+            # contains one recurring character, so this remains explicitly a
+            # low-leakage candidate rather than a claim of full disentanglement.
+            # Node 2 stays in the fixed RH/local graph at zero strength.
+            "style_only": {
+                "id": "style_only",
+                "trigger": "jt_style3_v2",
+                "LORA1": "05_style3_v2_step1600.safetensors",
+                "LORA2": "05_style3_v2_step1600.safetensors",
+                "strengths": {"LORA1": 0.6, "LORA2": 0.0},
+            },
+        },
     },
     "sketch": {
         "trigger": "jt_style1_v1",
@@ -78,6 +102,35 @@ STYLE_PRESETS = {
 def local_lora_name(name):
     """Map a trusted LoRA basename to the local ComfyUI model path."""
     return "Anima_JT\\" + pathlib.PurePath(str(name)).name
+
+
+def resolve_style_preset(style_id, style_variant=None):
+    """Resolve a trusted style mapping without accepting client LoRA data."""
+    preset = STYLE_PRESETS.get(style_id)
+    if not preset:
+        raise ValueError("unknown style_id")
+    variants = preset.get("variants")
+    if variants:
+        variant_id = str(style_variant or preset.get("default_variant") or "")
+        variant = variants.get(variant_id)
+        if not variant:
+            raise ValueError("unknown style_variant")
+        return {
+            "id": variant["id"],
+            "trigger": variant["trigger"],
+            "LORA1": variant["LORA1"],
+            "LORA2": variant["LORA2"],
+            "strengths": dict(variant["strengths"]),
+        }
+    if style_variant not in (None, "", "default"):
+        raise ValueError("unknown style_variant")
+    return {
+        "id": "default",
+        "trigger": preset["trigger"],
+        "LORA1": preset["LORA1"],
+        "LORA2": preset["LORA2"],
+        "strengths": dict(preset["strengths"]),
+    }
 
 SKETCH_SEQUENCE_STAGES = {
     "sketch4": [
@@ -455,6 +508,59 @@ def existing_job_for_request(client_request_id, generation_backend):
                      if j.get("client_request_id") == client_request_id
                      and j.get("generation_backend", "cloud") == generation_backend), None)
 
+
+def _json_safe_integer_metadata(value):
+    """Encode integers outside JavaScript's exact range as decimal strings."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int) and abs(value) > 9007199254740991:
+        return str(value)
+    if isinstance(value, list):
+        return [_json_safe_integer_metadata(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _json_safe_integer_metadata(item) for key, item in value.items()}
+    return value
+
+
+def public_workflow(w):
+    """Return the browser-visible workflow schema without provider identifiers."""
+    result = {
+        "id": w["id"], "name": w["name"], "desc": w["desc"],
+        "speed": w.get("speed", "—"), "ref": w.get("ref", "—"),
+        "prompt_default": w.get("prompt_default", ""),
+        "size_mode": w.get("size_mode", "native"),
+        "size_presets": w.get("size_presets", []),
+        "batch_max": w.get("batch_max", 1), "hd": w.get("hd", []),
+        "needs_ollama": w.get("needs_ollama", False),
+        "loras": w.get("loras", []), "trigger_default": w.get("trigger_default"),
+        "translate_default": w.get("translate_default", True),
+        "backend": w.get("backend"), "kind": w.get("kind", "image"),
+        "rh_media": w.get("rh_media", {}), "rh_params": w.get("rh_params", {}),
+        "params_defaults": w.get("params_defaults", {}),
+        "prompt_placeholder": w.get("prompt_placeholder"),
+        "prompt_hint": w.get("prompt_hint"),
+    }
+    return _json_safe_integer_metadata(result)
+
+
+def normalize_realism_snapshot(w, trusted_media, trusted_params, snapshot):
+    """Persist only server-validated fields in generic workflow history."""
+    raw = snapshot if isinstance(snapshot, dict) else {}
+    raw_names = raw.get("media_names") if isinstance(raw.get("media_names"), dict) else {}
+    media_names = {}
+    for key in trusted_media:
+        name = re.split(r"[\\/]", str(raw_names.get(key) or ""))[-1].strip()
+        if name:
+            media_names[key] = name[:255]
+    return {
+        "source_page": "realism",
+        "workflow": w["id"],
+        "params": _json_safe_integer_metadata(dict(trusted_params)),
+        "media": dict(trusted_media),
+        "media_names": media_names,
+    }
+
+
 def substitute(template_text, mapping):
     return re.sub(r"\{\{[A-Z0-9_]+\}\}", lambda m: str(mapping.get(m.group(0), m.group(0))), template_text)
 
@@ -472,7 +578,7 @@ def subst_obj(obj, mapping):
         return {k: subst_obj(v, mapping) for k, v in obj.items()}
     return obj
 
-def build_api(workflow, prompt, width, height, batch, hd, seed, loras=None, trigger=None, translate=True, negative_prompt="", prefix=None):
+def build_api(workflow, prompt, width, height, batch, hd, seed, loras=None, trigger=None, translate=True, negative_prompt="", prefix=None, lora_strengths=None):
     w = WORKFLOWS[workflow]
     tname = w["template"]
     if not translate:
@@ -492,6 +598,16 @@ def build_api(workflow, prompt, width, height, batch, hd, seed, loras=None, trig
         mapping["{{" + l["key"] + "}}"] = (loras or {}).get(l["key"], l["default"])
     if w.get("trigger_default"):
         mapping["{{TRIGGER}}"] = trigger if trigger is not None else w["trigger_default"]
+    # Apply strengths while the template still carries distinct LORA1/LORA2
+    # placeholders. Comparing names after substitution is ambiguous when both
+    # slots intentionally reference the same file.
+    for node in tpl.values():
+        inputs = node.get("inputs") or {}
+        lora_placeholder = inputs.get("lora_name")
+        if isinstance(lora_placeholder, str) and lora_placeholder.startswith("{{LORA"):
+            key = lora_placeholder.strip("{}")
+            if key in (lora_strengths or {}):
+                inputs["strength_model"] = float(lora_strengths[key])
     api = subst_obj(tpl, mapping)
     if w["size_mode"] == "resize" and (int(width) > 0 and int(height) > 0):
         # node id layout per workflow: (switch_id, save_id)
@@ -518,7 +634,7 @@ def submit_job(payload):
 
 # ---------- RunningHub 适配层 ----------
 def rh_submit(workflow_id, node_info_list, instance_type="default", use_personal_queue="false"):
-    """Submit a RunningHub task. Retry only transient/busy responses.
+    """Submit a RunningHub task without retrying an ambiguous POST transport failure.
 
     Bounded by a hard wall-clock deadline so a stuck DNS/socket can never
     leave a job "running" forever and hold the global lock."""
@@ -544,11 +660,13 @@ def rh_submit(workflow_id, node_info_list, instance_type="default", use_personal
                 raw = resp.read().decode(errors="replace")
                 r = json.loads(raw)
         except Exception as e:
-            last = f"transport: {e}"
-            if attempt < 2 and time.time() < deadline:
-                time.sleep(2 * (attempt + 1))
-                continue
-            raise RuntimeError(f"RH submit failed after {attempt + 1} attempt(s): {last}")
+            # The POST may have reached RunningHub even when its response was
+            # lost. Retrying that ambiguous outcome can create a second billed
+            # task, so only explicit provider BUSY/RATE responses below retry.
+            raise RuntimeError(
+                "RH submit outcome unknown after transport failure; not retried "
+                f"to avoid duplicate charge: {e}"
+            ) from e
         status = str(r.get("status") or "").upper()
         task_id = r.get("taskId")
         # RunningHub may acknowledge a valid submission as QUEUED before a
@@ -561,7 +679,13 @@ def rh_submit(workflow_id, node_info_list, instance_type="default", use_personal
         last = json.dumps(r, ensure_ascii=False)[:600]
         code = str(r.get("errorCode") or r.get("code") or "").upper()
         msg = str(r.get("errorMessage") or r.get("message") or "").lower()
-        transient = any(x in (code + " " + msg) for x in ("BUSY", "RATE", "TOO MANY", "TEMPORARY", "TIMEOUT"))
+        if task_id:
+            # A provider-side task already exists. Never submit a second billed
+            # task, even when that response also carries TIMEOUT/BUSY wording.
+            raise RuntimeError(f"RH submit rejected for taskId {task_id}: {last}")
+        # Provider TIMEOUT is ambiguous: the task may exist despite a failed
+        # response. Retry only explicit capacity/rate rejections.
+        transient = any(x in (code + " " + msg) for x in ("BUSY", "RATE", "TOO MANY", "TEMPORARY"))
         if transient and attempt < 2 and time.time() < deadline:
             time.sleep(2 * (attempt + 1))
             continue
@@ -683,6 +807,12 @@ def _rh_results_to_images(results, task_id, stage_id=None, stage_label=None):
         url = im.get("url") or im.get("fileUrl") or ""
         if not url:
             continue
+        if not isinstance(url, str) or any(ord(ch) < 32 or ch in "\"'<>`" for ch in url):
+            continue
+        parsed = urllib.parse.urlsplit(url)
+        if (parsed.scheme.lower() not in ("http", "https") or not parsed.netloc
+                or parsed.username is not None or parsed.password is not None):
+            continue
         images.append({
             "url": url,
             "preview_url": url + ("&" if "?" in url else "?") + "imageMogr2/thumbnail/640x640",
@@ -716,6 +846,149 @@ def rh_build_ai_app_node_info(job, w):
         if value is not None:
             nodes.append({"nodeId": str(mapping["node"]), "fieldName": mapping["field"], "fieldValue": str(value)})
     return nodes
+
+
+def _coerce_rh_control(value, mapping):
+    """Validate one declared workflow control and preserve its native type."""
+    label = str(mapping.get("label") or mapping.get("field") or "参数")
+    control_type = str(mapping.get("type") or "text").lower()
+    if control_type in ("text", "string", "textarea"):
+        result = str(value)
+        max_length = int(mapping.get("max_length", 10000))
+        if len(result) > max_length:
+            raise ValueError(f"{label}超过最大长度")
+        return result
+    if control_type in ("boolean", "bool", "switch"):
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, int) and value in (0, 1):
+            return bool(value)
+        normalized = str(value).strip().lower()
+        if normalized in ("true", "1"):
+            return True
+        if normalized in ("false", "0"):
+            return False
+        raise ValueError(f"{label}必须是开或关")
+    if control_type in ("select", "enum", "combo"):
+        result = str(value)
+        options = []
+        for option in mapping.get("options", []):
+            if not isinstance(option, dict):
+                option_value = option
+            elif "value" in option:
+                option_value = option["value"]
+            elif "index" in option:
+                option_value = option["index"]
+            else:
+                option_value = option.get("name", "")
+            options.append(str(option_value))
+        if options and result not in options:
+            raise ValueError(f"{label}选项无效")
+        return result
+    if control_type in ("int", "integer"):
+        if isinstance(value, bool):
+            raise ValueError(f"{label}必须是整数")
+        if isinstance(value, int):
+            result = value
+        elif isinstance(value, float):
+            if not math.isfinite(value) or not value.is_integer():
+                raise ValueError(f"{label}必须是整数")
+            result = int(value)
+        elif isinstance(value, str) and re.fullmatch(r"[+-]?\d+", value.strip()):
+            result = int(value.strip(), 10)
+        else:
+            raise ValueError(f"{label}必须是整数")
+    elif control_type in ("float", "number"):
+        if isinstance(value, bool):
+            raise ValueError(f"{label}必须是数字")
+        try:
+            result = float(value)
+            if not math.isfinite(result):
+                raise ValueError
+        except (TypeError, ValueError, OverflowError):
+            raise ValueError(f"{label}必须是数字") from None
+    else:
+        raise ValueError(f"{label}控件类型不受支持")
+    if mapping.get("min") is not None and result < mapping["min"]:
+        raise ValueError(f"{label}低于最小值")
+    if mapping.get("max") is not None and result > mapping["max"]:
+        raise ValueError(f"{label}超过最大值")
+    return result
+
+
+def normalize_rh_workflow_inputs(w, media, params):
+    """Whitelist and type-check inputs using one trusted workflow schema."""
+    if not isinstance(media, dict) or not isinstance(params, dict):
+        raise ValueError("media and params must be objects")
+    trusted_media = {}
+    for key, mapping in (w.get("rh_media") or {}).items():
+        value = media.get(key)
+        if value in (None, ""):
+            if mapping.get("required"):
+                raise ValueError(f"缺少必传素材：{mapping.get('label') or key}")
+            continue
+        trusted_media[key] = str(value)[:1000]
+    trusted_params = {}
+    for key, mapping in (w.get("rh_params") or {}).items():
+        if key in params:
+            value = params[key]
+        elif "default" in mapping:
+            value = mapping["default"]
+        elif key in (w.get("params_defaults") or {}):
+            value = w["params_defaults"][key]
+        elif mapping.get("required"):
+            raise ValueError(f"缺少必填参数：{mapping.get('label') or key}")
+        else:
+            continue
+        if value is None or (isinstance(value, str) and not value.strip()):
+            if mapping.get("required"):
+                raise ValueError(f"{mapping.get('label') or key}不能为空")
+            continue
+        result = _coerce_rh_control(value, mapping)
+        if mapping.get("required") and isinstance(result, str) and not result.strip():
+            raise ValueError(f"{mapping.get('label') or key}不能为空")
+        trusted_params[key] = result
+    return trusted_media, trusted_params
+
+
+def rh_build_generic_node_info(job, w):
+    """Serialize every declared generic control, including explicit false/0."""
+    nodes = []
+    for key, mapping in (w.get("rh_media") or {}).items():
+        value = (job.get("media") or {}).get(key)
+        if value not in (None, ""):
+            nodes.append({"nodeId": str(mapping["node"]),
+                          "fieldName": mapping["field"], "fieldValue": value})
+    for key, mapping in (w.get("rh_params") or {}).items():
+        params = job.get("params") or {}
+        if key not in params:
+            continue
+        nodes.append({"nodeId": str(mapping["node"]),
+                      "fieldName": mapping["field"], "fieldValue": params[key]})
+    return nodes
+
+
+def rh_run_generic(job, w):
+    """Run one trusted schema-driven RunningHub workflow."""
+    workflow_id = w.get("rh_workflow_id")
+    if not workflow_id:
+        raise RuntimeError("workflow has no trusted rh_workflow_id")
+    job["submit_started"] = time.time()
+    job["provider_status"] = "SUBMITTING"
+    task_id = rh_submit(workflow_id, rh_build_generic_node_info(job, w))
+    job["rh_task_id"] = task_id
+    job["provider_started"] = time.time()
+    job["progress_pct"] = 5
+    results = _rh_wait_task(job, task_id, time.time() + 2400, 12, 88)
+    job["provider_finished"] = time.time()
+    images = _rh_results_to_images(results, task_id)
+    if not images:
+        raise RuntimeError("RH workflow succeeded but returned no downloadable result")
+    job["images"] = images
+    job["provider_status"] = "DONE"
+    job["progress_pct"] = 100
+    job["download_finished"] = time.time()
+    return images
 
 def rh_run_ai_app(job, w):
     app_id = w.get("rh_ai_app_id")
@@ -826,6 +1099,7 @@ def local_run_image(job, jobdir, w, prompt=None, negative_prompt=None,
         trigger=job.get("trigger"), translate=False,
         negative_prompt=job.get("negative_prompt", "") if negative_prompt is None else negative_prompt,
         prefix=f"comfy_panel/local/{job['id']}/{stage_id or 'image'}",
+        lora_strengths=job.get("lora_strengths") or {},
     )
     pid = submit_job({"prompt": api})
     job["prompt_ids"].append(pid)
@@ -1005,6 +1279,8 @@ def run_job(job):
                 rh_run_ai_app(job, w)
             elif w.get("kind") == "video":
                 rh_run_video(job, w)
+            elif w.get("kind") == "rh_workflow":
+                rh_run_generic(job, w)
             elif job.get("sequence_mode") in SKETCH_SEQUENCE_STAGES:
                 rh_run_sketch_sequence(job, jobdir, w)
             else:
@@ -1057,6 +1333,22 @@ def _wait_progress(job, pid, img_index, total, timeout=1800):
         time.sleep(2)
     raise TimeoutError(f"comfyui timeout after {timeout}s")
 
+
+def json_body_limit(path):
+    return MAX_UPLOAD_JSON_BYTES if path == "/api/upload" else MAX_JSON_BYTES
+
+
+def safe_child_path(root, *parts):
+    """Resolve a path and prove it remains below root, not a prefix sibling."""
+    root = pathlib.Path(root).resolve()
+    candidate = root.joinpath(*map(pathlib.Path, parts)).resolve()
+    try:
+        candidate.relative_to(root)
+    except ValueError:
+        raise ValueError("bad path") from None
+    return candidate
+
+
 class Handler(http.server.BaseHTTPRequestHandler):
     def log_message(self, *a): pass
 
@@ -1093,8 +1385,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
         # 令牌鉴权已取消（用户要求 8189 直接免登录使用）
         return True
 
-    def _read_json(self):
+    def _read_json(self, limit=MAX_JSON_BYTES):
         n = int(self.headers.get("Content-Length", 0))
+        if n < 0 or n > limit:
+            raise OverflowError("request body too large")
         return json.loads(self.rfile.read(n).decode())
 
     def do_GET(self):
@@ -1110,14 +1404,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._send(200, json.dumps({"comfy_ok": ok, "control_ok": control_ok, "detail": detail}).encode())
         elif path == "/api/workflows":
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
-            lst = [{"id": w["id"], "name": w["name"], "desc": w["desc"], "speed": w.get("speed", "—"), "ref": w.get("ref", "—"),
-                    "prompt_default": w.get("prompt_default", ""), "size_mode": w.get("size_mode", "native"), "size_presets": w.get("size_presets", []),
-                    "batch_max": w.get("batch_max", 1), "hd": w.get("hd", []), "needs_ollama": w.get("needs_ollama", False),
-                    "loras": w.get("loras", []), "trigger_default": w.get("trigger_default"),
-                    "translate_default": w.get("translate_default", True),
-                    "kind": w.get("kind", "image"), "rh_media": w.get("rh_media", {}),
-                    "rh_params": w.get("rh_params", {}), "params_defaults": w.get("params_defaults", {}),
-                    "prompt_placeholder": w.get("prompt_placeholder"), "prompt_hint": w.get("prompt_hint")} for w in CONFIG["workflows"]]
+            lst = [public_workflow(w) for w in WORKFLOWS.values()]
             self._send(200, json.dumps(lst, ensure_ascii=False).encode())
         elif path == "/api/loras":
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
@@ -1132,7 +1419,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             fid = path.split("/api/favorite-preview/", 1)[1]
             with _lock_jobs: fav = _favorites.get(fid)
             if not fav: return self._send(404, b'{"error":"favorite not found"}')
-            src = pathlib.Path(fav.get("image_path", ""))
+            try:
+                src = safe_child_path(FAVORITES_DIR, pathlib.Path(fav.get("image_path", "")))
+            except ValueError:
+                return self._send(403, b'{"error":"bad path"}')
             if not src.exists(): return self._send(404, b'{"error":"favorite image missing"}')
             preview = FAVORITES_DIR / f"{fid}_preview.jpg"
             if not preview.exists() or preview.stat().st_mtime < src.stat().st_mtime:
@@ -1148,7 +1438,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             fid = path.split("/api/favorite-image/", 1)[1]
             with _lock_jobs: fav = _favorites.get(fid)
             if not fav: return self._send(404, b'{"error":"favorite not found"}')
-            p = pathlib.Path(fav.get("image_path", ""))
+            try:
+                p = safe_child_path(FAVORITES_DIR, pathlib.Path(fav.get("image_path", "")))
+            except ValueError:
+                return self._send(403, b'{"error":"bad path"}')
             if not p.exists(): return self._send(404, b'{"error":"favorite image missing"}')
             data = p.read_bytes()
             ctype = fav.get("favorite_media_type") or image_content_type(data, p.name) or "application/octet-stream"
@@ -1166,7 +1459,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "width", "height", "batch", "hd", "images",
                     "submit_started", "provider_started", "provider_finished",
                     "download_started", "download_finished", "selection_snapshot",
-                    "prompt", "negative_prompt", "prompt_mode", "seed", "seed_mode", "style_id", "mode",
+                    "prompt", "negative_prompt", "prompt_mode", "seed", "seed_mode", "style_id", "style_variant", "mode",
                     "sequence_mode", "sequence_seed", "rh_task_ids", "stage_status", "generation_backend",
                     "media", "params",
                     "client_request_id", "comfy_prompt_id", "prompt_ids",
@@ -1188,7 +1481,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         "width", "height", "batch", "hd", "images",
                         "submit_started", "provider_started", "provider_finished",
                         "download_started", "download_finished", "selection_snapshot",
-                        "style_id", "mode", "seed", "seed_mode", "prompt_mode",
+                        "style_id", "style_variant", "mode", "seed", "seed_mode", "prompt_mode",
                         "sequence_mode", "sequence_seed", "rh_task_ids", "stage_status", "generation_backend",
                         "client_request_id", "comfy_prompt_id",
                         "transfer_index", "transfer_total", "transfer_started", "transfer_finished",
@@ -1201,11 +1494,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             try:
                 rest = path.split("/api/local-preview/", 1)[1]
                 jobid, fname = rest.split("/", 1)
-                p = (JOBS_DIR / jobid / fname).resolve()
-                if not str(p).startswith(str((JOBS_DIR / jobid).resolve())):
-                    return self._send(403, b'{"error":"bad path"}')
+                p = safe_child_path(JOBS_DIR / jobid, fname)
                 data = p.read_bytes()
                 self._send(200, data, "image/webp", {"Cache-Control": "private, max-age=86400"})
+            except ValueError:
+                self._send(403, b'{"error":"bad path"}')
             except FileNotFoundError:
                 self._send(404, b'{"error":"preview not found"}')
             except (BrokenPipeError, ConnectionResetError):
@@ -1217,10 +1510,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             try:
                 rest = path.split("/api/preview/", 1)[1]
                 jobid, fname = rest.split("/", 1)
-                src = (JOBS_DIR / jobid / fname).resolve()
                 jobroot = (JOBS_DIR / jobid).resolve()
-                if not str(src).startswith(str(jobroot)):
-                    return self._send(403, b'{"error":"bad path"}')
+                src = safe_child_path(jobroot, fname)
                 if not src.exists():
                     return self._send(404, b'{"error":"not found"}')
                 preview = jobroot / ("preview_" + pathlib.Path(fname).stem + ".jpg")
@@ -1235,6 +1526,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     tmp.replace(preview)
                 data = preview.read_bytes()
                 self._send(200, data, "image/jpeg", {"Cache-Control": "private, max-age=86400"})
+            except ValueError:
+                self._send(403, b'{"error":"bad path"}')
             except ImportError:
                 self._send(501, b'{"error":"preview backend unavailable"}')
             except (BrokenPipeError, ConnectionResetError):
@@ -1281,9 +1574,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             try:
                 rest = path.split("/api/image/", 1)[1]
                 jobid, fname = rest.split("/", 1)
-                p = (JOBS_DIR / jobid / fname).resolve()
-                if not str(p).startswith(str((JOBS_DIR / jobid).resolve())):
-                    return self._send(403, b'{"error":"bad path"}')
+                p = safe_child_path(JOBS_DIR / jobid, fname)
                 if not p.exists():
                     with _lock_jobs:
                         job = _jobs.get(jobid)
@@ -1310,6 +1601,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         if not chunk:
                             break
                         self.wfile.write(chunk)
+            except ValueError:
+                self._send(403, b'{"error":"bad path"}')
             except (BrokenPipeError, ConnectionResetError):
                 # Browser canceled an image request (navigation/refresh). The file
                 # is intact; do not attempt to write a second 404 response.
@@ -1318,20 +1611,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self._send(404, b'{"error":"not found"}')
             except Exception as e:
                 self._send(500, json.dumps({"error": str(e)[:200]}).encode())
-        elif path == "/" or path.startswith("/static/") or path in ("/promptgen", "/original-sketch", "/original-graphic", "/realcomic", "/video"):
+        elif path == "/" or path.startswith("/static/") or path in ("/promptgen", "/original-sketch", "/original-graphic", "/realcomic", "/realism", "/video"):
             if not self._auth():
                 # serve shell so user can enter token; API calls still guarded
                 pass
             root = BASE / "static"
-            clean_pages = {"/promptgen": "promptgen.html", "/original-sketch": "original_sketch.html", "/original-graphic": "original_graphic.html", "/realcomic": "realcomic.html"}
+            clean_pages = {"/promptgen": "promptgen.html", "/original-sketch": "original_sketch.html", "/original-graphic": "original_graphic.html", "/realcomic": "realcomic.html", "/realism": "realism.html"}
             if path in clean_pages:
                 rel = clean_pages[path]
             elif path == "/video":
                 rel = "video.html"
             else:
                 rel = "index.html" if path == "/" else path.split("/static/", 1)[1]
-            fp = (root / rel).resolve()
-            if not str(fp).startswith(str(root.resolve())) or not fp.exists():
+            try:
+                fp = safe_child_path(root, rel)
+            except ValueError:
+                return self._send(404, b"not found")
+            if not fp.exists():
                 return self._send(404, b"not found")
             ctype = "text/html; charset=utf-8" if rel.endswith(".html") else ("application/javascript" if rel.endswith(".js") else "text/css")
             self._send_static(fp, ctype)
@@ -1347,6 +1643,106 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urllib.parse.urlparse(self.path).path
+        try:
+            content_length = int(self.headers.get("Content-Length", 0))
+        except ValueError:
+            return self._send(400, b'{"error":"invalid content length"}')
+        body_limit = json_body_limit(path)
+        if content_length < 0 or content_length > body_limit:
+            return self._send(413, b'{"error":"request body too large"}')
+        if path == "/api/workflow-upload":
+            if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
+            try:
+                body = self._read_json()
+                workflow_id = str(body.get("workflow") or "")
+                input_key = str(body.get("input_key") or "")
+                w = WORKFLOWS.get(workflow_id)
+                mapping = (w or {}).get("rh_media", {}).get(input_key)
+                if not w or w.get("backend") != "runninghub" or w.get("kind") not in ("rh_workflow", "ai_app"):
+                    return self._send(400, b'{"error":"unknown workflow"}')
+                if not mapping or mapping.get("type") not in ("image", "IMAGE"):
+                    return self._send(400, json.dumps({"error": "未知或不支持的素材字段"}, ensure_ascii=False).encode())
+                filename = re.split(r"[\\\\/]", str(body.get("filename") or "source.png"))[-1]
+                raw = base64.b64decode(body.get("data", ""), validate=True)
+            except Exception:
+                return self._send(400, json.dumps({"error": "图片数据无效"}, ensure_ascii=False).encode())
+            if not raw:
+                return self._send(400, json.dumps({"error": "请选择图片"}, ensure_ascii=False).encode())
+            if len(raw) > 30 * 1024 * 1024:
+                return self._send(400, json.dumps({"error": "图片超过30MB限制"}, ensure_ascii=False).encode())
+            ctype = image_content_type(raw, filename)
+            if not ctype:
+                return self._send(400, json.dumps({"error": "只支持有效的PNG、JPEG或WebP图片"}, ensure_ascii=False).encode())
+            try:
+                remote_name = rh_upload_file(raw, filename, ctype)
+            except Exception as error:
+                return self._send(502, json.dumps({"error": f"RunningHub上传失败：{str(error)[:200]}"}, ensure_ascii=False).encode())
+            return self._send(200, json.dumps({
+                "fileName": remote_name, "filename": filename,
+                "mediaType": ctype, "input_key": input_key,
+            }, ensure_ascii=False).encode())
+        if path == "/api/workflow-generate":
+            if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
+            try:
+                body = self._read_json()
+            except Exception:
+                return self._send(400, b'{"error":"bad json"}')
+            workflow_id = str(body.get("workflow") or "")
+            w = WORKFLOWS.get(workflow_id)
+            if not w or w.get("backend") != "runninghub" or w.get("kind") not in ("rh_workflow", "ai_app"):
+                return self._send(400, b'{"error":"unknown workflow"}')
+            try:
+                trusted_media, trusted_params = normalize_rh_workflow_inputs(
+                    w, body.get("media") or {}, body.get("params") or {})
+            except ValueError as error:
+                return self._send(400, json.dumps({"error": str(error)}, ensure_ascii=False).encode())
+            client_request_id = str(body.get("client_request_id") or "").strip()[:96]
+            if not client_request_id:
+                return self._send(400, b'{"error":"client_request_id is required"}')
+            selection_snapshot = normalize_realism_snapshot(
+                w, trusted_media, trusted_params, body.get("selection_snapshot"))
+            with _submit_locks["cloud"]:
+                existing_job = existing_job_for_request(client_request_id, "cloud")
+                if existing_job:
+                    return self._send(200, json.dumps({
+                        "job_id": existing_job["id"], "existing_job": existing_job["id"],
+                        "deduplicated": True, "message": "same request already accepted",
+                    }).encode())
+                active_id = self._running_job_id("cloud")
+                if active_id:
+                    return self._send(429, json.dumps({
+                        "error": "云端已有任务正在运行，请等待完成后再提交",
+                        "running_job": active_id, "running_jobs": [active_id],
+                    }, ensure_ascii=False).encode())
+                prompt = ""
+                for key in ("prompt", "instruction", "requirements", "text", "positive"):
+                    if trusted_params.get(key) not in (None, ""):
+                        prompt = str(trusted_params[key])
+                        break
+                job = {
+                    "id": uuid.uuid4().hex[:12], "workflow": workflow_id,
+                    "prompt": prompt, "negative_prompt": str(trusted_params.get("negative") or ""),
+                    "prompt_mode": "manual", "media": trusted_media, "params": trusted_params,
+                    "width": int(trusted_params.get("width") or 0),
+                    "height": int(trusted_params.get("height") or 0),
+                    "batch": int(trusted_params.get("batch") or 1),
+                    "hd": trusted_params.get("hd", 0), "seed": trusted_params.get("seed", 0),
+                    "seed_mode": "fixed" if trusted_params.get("seed") else "random",
+                    "loras": {}, "lora_strengths": {}, "trigger": None, "translate": False,
+                    "status": "running", "progress": 0, "progress_pct": 0, "images": [],
+                    "prompt_ids": [], "error": None, "elapsed": None, "created": time.time(),
+                    "wf_name": w["name"], "submit_started": None, "provider_started": None,
+                    "provider_finished": None, "download_started": None, "download_finished": None,
+                    "style_id": "realism", "style_variant": "default", "mode": "original",
+                    "generation_backend": "cloud", "sequence_mode": "off",
+                    "selection_snapshot": selection_snapshot,
+                    "client_request_id": client_request_id,
+                }
+                with _lock_jobs:
+                    _jobs[job["id"]] = job
+                    save_jobs()
+                threading.Thread(target=run_job, args=(job,), daemon=True).start()
+                return self._send(200, json.dumps({"job_id": job["id"]}).encode())
         if path == "/api/realcomic-upload":
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
             try:
@@ -1416,7 +1812,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             # Browser posts raw bytes: body = {filename, data_base64} JSON (small files)
             # or multipart. Use JSON base64 for simplicity and reliability.
             try:
-                body = self._read_json()
+                body = self._read_json(MAX_UPLOAD_JSON_BYTES)
                 filename = str(body.get("filename", "upload.bin"))
                 raw = base64.b64decode(body.get("data", ""))
             except Exception:
@@ -1527,6 +1923,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 "negative_prompt": job.get("negative_prompt", ""),
                 "prompt_mode": job.get("prompt_mode", "options"),
                 "seed": job.get("seed"), "seed_mode": job.get("seed_mode"),
+                "style_id": job.get("style_id"), "style_variant": job.get("style_variant"),
+                "mode": job.get("mode"),
                 "generation_backend": job.get("generation_backend", "cloud"),
                 "selection_snapshot": job.get("selection_snapshot") or {},
                 "width": job.get("width"), "height": job.get("height"), "batch": job.get("batch"),
@@ -1605,7 +2003,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._send(400, b'{"error":"unknown style_id"}')
             if mode not in ("original", "character"):
                 return self._send(400, b'{"error":"unknown mode"}')
-            preset = STYLE_PRESETS[style_id]
+            style_variant = str(body.get("style_variant") or "") or None
+            try:
+                preset = resolve_style_preset(style_id, style_variant)
+            except ValueError as error:
+                return self._send(400, json.dumps({"error": str(error)}).encode())
             sequence_raw = str(body.get("sequence_mode") or "off")
             sequence_mode = {"3": "sketch3", "4": "sketch4"}.get(sequence_raw, sequence_raw)
             if sequence_mode not in ("off", "sketch3", "sketch4"):
@@ -1628,7 +2030,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                    "created": time.time(), "wf_name": w["name"],
                    "submit_started": None, "provider_started": None,
                    "provider_finished": None, "download_started": None,
-                   "download_finished": None, "style_id": style_id, "mode": mode,
+                   "download_finished": None, "style_id": style_id,
+                   "style_variant": preset["id"], "mode": mode,
                    "sequence_mode": sequence_mode, "generation_backend": generation_backend,
                    "client_request_id": client_request_id,
                    "comfy_prompt_id": None, "transfer_index": 0, "transfer_total": 0,
