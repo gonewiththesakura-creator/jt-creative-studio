@@ -161,6 +161,7 @@ _progress = {}                    # prompt_id -> (value, max) from ComfyUI WebSo
 _favorites = {}
 _archive_locks = {}
 _archive_locks_guard = threading.Lock()
+_favorite_operation_lock = threading.Lock()
 
 # ---------- minimal WebSocket client (stdlib only) for real sampling progress ----------
 def _ws_connect(host, port, path):
@@ -2023,49 +2024,48 @@ class Handler(http.server.BaseHTTPRequestHandler):
             try: body = self._read_json()
             except Exception: return self._send(400, b'{"error":"bad json"}')
             jid = str(body.get("job_id", "")); idx = int(body.get("image_index", -1))
-            with _lock_jobs: job = _jobs.get(jid)
-            if not job or job.get("status") != "done": return self._send(404, b'{"error":"completed job not found"}')
-            images = job.get("images") or []
-            if idx < 0 or idx >= len(images): return self._send(400, b'{"error":"bad image index"}')
-            with _lock_jobs:
-                existing_favorite = next((fav for fav in _favorites.values()
-                    if fav.get("job_id") == jid and fav.get("image_index") == idx), None)
-            if existing_favorite:
-                return self._send(200, json.dumps(existing_favorite, ensure_ascii=False).encode())
-            im = images[idx]; fid = uuid.uuid4().hex[:12]
-            remote_suffix = pathlib.PurePosixPath(urllib.parse.urlparse(im.get("url", "")).path).suffix.lower()
-            suffix = remote_suffix if remote_suffix in (".png", ".jpg", ".jpeg", ".webp") else ".png"
-            dest = FAVORITES_DIR / f"{fid}{suffix}"
-            try:
-                if im.get("remote"):
-                    download_file_resilient(im["url"], dest, timeout=120)
-                else:
-                    src = ensure_local_original(job, im)
-                    dest.write_bytes(src.read_bytes())
-            except Exception as e:
-                return self._send(502, json.dumps({"error": f"收藏图片失败：{str(e)[:200]}"}, ensure_ascii=False).encode())
-            favorite_data = dest.read_bytes()
-            favorite_media_type = image_content_type(favorite_data, dest.name) or "image/png"
-            fav = {
-                "id": fid, "created": time.time(), "job_id": jid, "image_index": idx,
-                "image_url": f"/api/favorite-image/{fid}",
-                "preview_url": f"/api/favorite-preview/{fid}", "original_url": im.get("url"),
-                "image_path": str(dest), "favorite_media_type": favorite_media_type,
-                "prompt": job.get("prompt", ""),
-                "negative_prompt": job.get("negative_prompt", ""),
-                "prompt_mode": job.get("prompt_mode", "options"),
-                "seed": job.get("seed"), "seed_mode": job.get("seed_mode"),
-                "style_id": job.get("style_id"), "style_variant": job.get("style_variant"),
-                "mode": job.get("mode"),
-                "generation_backend": job.get("generation_backend", "cloud"),
-                "selection_snapshot": job.get("selection_snapshot") or {},
-                "width": job.get("width"), "height": job.get("height"), "batch": job.get("batch"),
-            }
-            with _lock_jobs:
-                _favorites[fid] = fav
-                prune_favorites()
-                save_favorites()
-            return self._send(200, json.dumps(fav, ensure_ascii=False).encode())
+            with _favorite_operation_lock:
+                with _lock_jobs:
+                    job = _jobs.get(jid)
+                    existing_favorite = next((fav for fav in _favorites.values()
+                        if fav.get("job_id") == jid and fav.get("image_index") == idx), None)
+                if existing_favorite:
+                    return self._send(200, json.dumps(existing_favorite, ensure_ascii=False).encode())
+                if not job or job.get("status") != "done": return self._send(404, b'{"error":"completed job not found"}')
+                images = job.get("images") or []
+                if idx < 0 or idx >= len(images): return self._send(400, b'{"error":"bad image index"}')
+                im = images[idx]; fid = uuid.uuid4().hex[:12]
+                remote_suffix = pathlib.PurePosixPath(urllib.parse.urlparse(im.get("url", "")).path).suffix.lower()
+                suffix = remote_suffix if remote_suffix in (".png", ".jpg", ".jpeg", ".webp") else ".png"
+                dest = FAVORITES_DIR / f"{fid}{suffix}"
+                try:
+                    if im.get("remote"):
+                        download_file_resilient(im["url"], dest, timeout=120)
+                    else:
+                        src = ensure_local_original(job, im)
+                        dest.write_bytes(src.read_bytes())
+                except Exception as e:
+                    return self._send(502, json.dumps({"error": f"收藏图片失败：{str(e)[:200]}"}, ensure_ascii=False).encode())
+                favorite_data = dest.read_bytes()
+                favorite_media_type = image_content_type(favorite_data, dest.name) or "image/png"
+                fav = {
+                    "id": fid, "created": time.time(), "job_id": jid, "image_index": idx,
+                    "image_url": f"/api/favorite-image/{fid}",
+                    "preview_url": f"/api/favorite-preview/{fid}", "original_url": im.get("url"),
+                    "image_path": str(dest), "favorite_media_type": favorite_media_type,
+                    "prompt": job.get("prompt", ""), "negative_prompt": job.get("negative_prompt", ""),
+                    "prompt_mode": job.get("prompt_mode", "options"),
+                    "seed": job.get("seed"), "seed_mode": job.get("seed_mode"),
+                    "style_id": job.get("style_id"), "style_variant": job.get("style_variant"),
+                    "mode": job.get("mode"), "generation_backend": job.get("generation_backend", "cloud"),
+                    "selection_snapshot": job.get("selection_snapshot") or {},
+                    "width": job.get("width"), "height": job.get("height"), "batch": job.get("batch"),
+                }
+                with _lock_jobs:
+                    _favorites[fid] = fav
+                    prune_favorites()
+                    save_favorites()
+                return self._send(200, json.dumps(fav, ensure_ascii=False).encode())
         if path == "/api/comfy/start":
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
             started, msg = start_comfy_remote()

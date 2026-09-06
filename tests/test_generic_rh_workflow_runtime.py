@@ -428,6 +428,47 @@ def test_favorites_are_deduplicated_and_bounded():
     assert "prune_favorites" in source
 
 
+def test_concurrent_favorite_requests_download_and_persist_once(tmp_path, monkeypatch):
+    import http.client
+    import http.server
+    import threading
+
+    server.DATA_DIR = tmp_path
+    server.JOBS_DIR = tmp_path / "jobs"; server.JOBS_DIR.mkdir()
+    server.FAVORITES_DIR = tmp_path / "favorites"; server.FAVORITES_DIR.mkdir()
+    server.JOBS_FILE = tmp_path / "jobs.json"
+    server.FAVORITES_FILE = tmp_path / "favorites.json"
+    server._favorites = {}
+    server._jobs = {"same-job": {"id": "same-job", "status": "done", "prompt": "<img id=pwn onerror=alert(1)>",
+        "images": [{"url": "https://example.test/result.png", "remote": True}]}}
+    downloads = []
+    def fake_download(url, dest, timeout=120):
+        downloads.append(url)
+        Path(dest).write_bytes(b"\x89PNG\r\n\x1a\n" + b"x" * 32)
+    monkeypatch.setattr(server, "download_file_resilient", fake_download)
+    monkeypatch.setattr(server, "image_content_type", lambda *_: "image/png")
+    httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True); thread.start()
+    barrier = threading.Barrier(3); results = []
+    def post():
+        barrier.wait()
+        conn = http.client.HTTPConnection("127.0.0.1", httpd.server_port, timeout=10)
+        body = json.dumps({"job_id": "same-job", "image_index": 0}).encode()
+        conn.request("POST", "/api/favorites", body, {"Content-Type": "application/json"})
+        response = conn.getresponse(); results.append((response.status, json.loads(response.read())))
+        conn.close()
+    workers = [threading.Thread(target=post) for _ in range(2)]
+    for worker in workers: worker.start()
+    barrier.wait()
+    for worker in workers: worker.join(timeout=10)
+    httpd.shutdown(); httpd.server_close(); thread.join(timeout=3)
+    assert [status for status, _ in results] == [200, 200]
+    assert len({payload["id"] for _, payload in results}) == 1
+    assert len(downloads) == 1
+    assert len(server._favorites) == 1
+    assert len(list(server.FAVORITES_DIR.glob("*"))) == 1
+
+
 def test_public_schema_preserves_large_integers_as_decimal_strings():
     workflow = fixture_workflow()
     exact = 9223372036854775807
