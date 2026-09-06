@@ -45,6 +45,7 @@ audit/cold_style_ab/local_vlm_style_scores.json
 audit/cold_style_ab/manifest.json
 audit/cold_style_ab/panel_style_only_smoke.json
 audit/cold_style_ab/run_local_vlm_blind_eval.py
+audit/private_realism_workflows/local_vlm_results.json
 
 # OS/editor
 .DS_Store

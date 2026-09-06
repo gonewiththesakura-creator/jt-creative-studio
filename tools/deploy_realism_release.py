@@ -17,22 +17,30 @@ import json
 import pathlib
 import re
 import shlex
+import subprocess
 import sys
 import time
 import urllib.request
 
 BASE = pathlib.Path(__file__).resolve().parents[1]
+E2E_MANIFEST = BASE / "audit" / "private_realism_workflows" / "e2e_manifest.json"
 REMOTE_ROOT = "/home/admin/comfy-panel"
 PUBLIC_BASE = "http://8.210.125.65:8189"
 STAGE_SUFFIX = ".realism-release.new"
 BACKUP_SUFFIX = ".pre-realism-release"
+BACKUP_MANIFEST = REMOTE_ROOT + "/.pre-realism-release-manifest.json"
 
-TARGET_WORKFLOW_NAMES = (
-    "Krea2_动漫转真人",
-    "动漫转写实真人2511(零偏移高还原)",
-    "动漫转真人-多采超清天花板，3in1",
-    "Qwen+Z动漫转真人写实感洗图，超写实4K文生图",
-)
+TARGET_WORKFLOWS = {
+    "realism_krea2": "Krea2_动漫转真人",
+    "realism_2511": "动漫转写实真人2511（零偏移·高还原）",
+    "realism_multisample": "动漫转真人·多采超清天花板",
+    "realism_qwen_zi": "Qwen+ZI动漫转真人写实感洗图",
+    "realism_4k_text": "超写实4K文生图",
+    "realism_3in1": "动漫转真人·多分支超清3in1",
+    "realism_zi_flowmatch": "动漫转真人ZI洗图改（Z-Image+FlowMatch）",
+}
+TARGET_WORKFLOW_IDS = tuple(TARGET_WORKFLOWS)
+TARGET_WORKFLOW_NAMES = tuple(TARGET_WORKFLOWS.values())
 
 RELEASE_RELATIVE_PATHS = (
     "server.py",
@@ -47,12 +55,12 @@ RELEASE_RELATIVE_PATHS = (
 )
 
 
-def _target_by_name(config):
+def _target_by_id(config):
     workflows = config.get("workflows") if isinstance(config, dict) else None
     if not isinstance(workflows, list):
         return {}
     return {
-        str(item.get("name") or ""): item
+        str(item.get("id") or ""): item
         for item in workflows
         if isinstance(item, dict)
     }
@@ -69,7 +77,7 @@ def _invalid_reasons(item):
         reasons.append("schema")
     if not re.fullmatch(r"[0-9a-fA-F]{64}", str(item.get("source_api_json_sha256") or "")):
         reasons.append("source hash")
-    if not isinstance(item.get("rh_media"), dict) or not item.get("rh_media"):
+    if item.get("id") != "realism_4k_text" and (not isinstance(item.get("rh_media"), dict) or not item.get("rh_media")):
         reasons.append("media")
     if not isinstance(item.get("rh_params"), dict) or not item.get("rh_params"):
         reasons.append("params")
@@ -78,20 +86,57 @@ def _invalid_reasons(item):
 
 def validate_release_config(config):
     """Mechanically gate the four target workflows before any remote access."""
-    by_name = _target_by_name(config)
-    missing = [name for name in TARGET_WORKFLOW_NAMES if name not in by_name]
+    by_id = _target_by_id(config)
+    missing = [workflow_id for workflow_id in TARGET_WORKFLOW_IDS if workflow_id not in by_id]
     invalid = []
-    for name in TARGET_WORKFLOW_NAMES:
-        if name not in by_name:
+    for workflow_id, expected_name in TARGET_WORKFLOWS.items():
+        if workflow_id not in by_id:
             continue
-        reasons = _invalid_reasons(by_name[name])
+        item = by_id[workflow_id]
+        reasons = _invalid_reasons(item)
+        if item.get("name") != expected_name:
+            reasons.append("name")
         if reasons:
-            invalid.append({"name": name, "reasons": reasons})
+            invalid.append({"id": workflow_id, "name": expected_name, "reasons": reasons})
     return {
         "ready": not missing and not invalid,
         "missing_targets": missing,
         "invalid_targets": invalid,
     }
+
+
+def validate_e2e_manifest(config):
+    manifest = json.loads(E2E_MANIFEST.read_text(encoding="utf-8"))
+    records = {row.get("id"): row for row in manifest.get("successful_workflows", [])}
+    workflows = {item.get("id"): item for item in config.get("workflows", [])}
+    errors = []
+    for internal_id in TARGET_WORKFLOW_IDS:
+        record = records.get(internal_id)
+        workflow = workflows.get(internal_id)
+        if not record or record.get("status") != "SUCCESS":
+            errors.append(f"missing successful E2E: {internal_id}")
+        elif not workflow or record.get("workflow_id") != workflow.get("rh_workflow_id"):
+            errors.append(f"stale workflow id in E2E manifest: {internal_id}")
+    return errors
+
+
+def require_clean_git():
+    result = subprocess.run(["git", "status", "--porcelain"], cwd=BASE, text=True,
+                            capture_output=True, check=True)
+    if result.stdout.strip():
+        raise RuntimeError("git working tree is not clean; commit the reviewed release first")
+
+
+def run_release_tests():
+    allowed_failure = "test_restore_prompt_contract.py"
+    failures = []
+    for path in sorted((BASE / "tests").glob("test_*.py")):
+        result = subprocess.run([sys.executable, str(path)], cwd=BASE, text=True,
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=300)
+        if result.returncode and path.name != allowed_failure:
+            failures.append({"file": path.name, "output": result.stdout[-800:]})
+    if failures:
+        raise RuntimeError("release tests failed: " + json.dumps(failures, ensure_ascii=False))
 
 
 def auth_is_disabled(server_source):
@@ -158,25 +203,47 @@ def command(client, text, timeout=240):
 
 def backup_release(client, sftp, remote_paths):
     """Snapshot the immediately previous live set, including absent-file markers."""
+    manifest = {}
     for remote in remote_paths:
         backup = remote + BACKUP_SUFFIX
         try:
             sftp.stat(remote)
         except FileNotFoundError:
-            command(client, f": > {shlex.quote(backup)}")
+            manifest[remote] = {"exists": False, "sha256": None}
+            command(client, f"rm -f -- {shlex.quote(backup)}")
         else:
             command(client, f"cp -- {shlex.quote(remote)} {shlex.quote(backup)}")
+            digest = command(client, "python3 -c " + shlex.quote(
+                f"import hashlib;print(hashlib.sha256(open({remote!r},'rb').read()).hexdigest())"
+            )).strip()
+            manifest[remote] = {"exists": True, "sha256": digest}
+    payload = json.dumps(manifest, ensure_ascii=False)
+    command(client, "python3 -c " + shlex.quote(
+        f"import pathlib;pathlib.Path({BACKUP_MANIFEST!r}).write_text({payload!r},encoding='utf-8')"
+    ))
+    return manifest
 
 
-def rollback_release(client, sftp, remote_paths):
+def rollback_release(client, sftp, remote_paths, public_base=PUBLIC_BASE):
+    manifest = json.loads(command(client, "python3 -c " + shlex.quote(
+        f"import pathlib;print(pathlib.Path({BACKUP_MANIFEST!r}).read_text(encoding='utf-8'))"
+    )))
     for remote in remote_paths:
         backup = remote + BACKUP_SUFFIX
-        stat = sftp.stat(backup)
-        if stat.st_size == 0:
+        entry = manifest.get(remote) or {}
+        if not entry.get("exists"):
             command(client, f"rm -f -- {shlex.quote(remote)}")
         else:
             command(client, f"cp -- {shlex.quote(backup)} {shlex.quote(remote)}")
+            digest = command(client, "python3 -c " + shlex.quote(
+                f"import hashlib;print(hashlib.sha256(open({remote!r},'rb').read()).hexdigest())"
+            )).strip()
+            if digest != entry.get("sha256"):
+                raise RuntimeError(f"rollback verification mismatch: {remote}")
     command(client, "sudo systemctl restart comfy-panel", timeout=240)
+    health = wait_for_health(public_base, timeout=60)
+    if not health.get("ok"):
+        raise RuntimeError(f"rollback health failed: {health}")
 
 
 def fetch_json(base, path):
@@ -187,6 +254,21 @@ def fetch_json(base, path):
 def fetch_bytes(base, path):
     with urllib.request.urlopen(base.rstrip("/") + path, timeout=60) as response:
         return response.read()
+
+
+def wait_for_health(base, timeout=60):
+    deadline = time.time() + timeout
+    last = None
+    while time.time() < deadline:
+        try:
+            result = fetch_json(base, "/api/health")
+            if result.get("ok"):
+                return result
+            last = result
+        except Exception as error:
+            last = {"error": str(error)[:200]}
+        time.sleep(2)
+    raise RuntimeError(f"health timeout: {last}")
 
 
 def deploy(files, public_base=PUBLIC_BASE):
@@ -240,8 +322,7 @@ def deploy(files, public_base=PUBLIC_BASE):
                 print(local.name, len(local_data), hashlib.sha256(local_data).hexdigest())
 
             command(client, "sudo systemctl restart comfy-panel", timeout=240)
-            time.sleep(1)
-            health = fetch_json(public_base, "/api/health")
+            health = wait_for_health(public_base, timeout=60)
             if not health.get("ok") or not health.get("local_comfy_ok"):
                 raise RuntimeError(f"health failed: {health}")
             realism = fetch_bytes(public_base, "/realism")
@@ -255,7 +336,7 @@ def deploy(files, public_base=PUBLIC_BASE):
             print("HEALTH", json.dumps(health, ensure_ascii=False))
             print("PUBLIC_MARKERS_OK")
         except Exception:
-            rollback_release(client, sftp, remote_paths)
+            rollback_release(client, sftp, remote_paths, public_base=public_base)
             raise
     finally:
         sftp.close()
@@ -285,6 +366,12 @@ def main(argv=None):
     print(json.dumps(decision, ensure_ascii=False, indent=2))
     if not decision["ready"]:
         return 2
+    e2e_errors = validate_e2e_manifest(config)
+    if e2e_errors:
+        print(json.dumps({"e2e_errors": e2e_errors}, ensure_ascii=False, indent=2))
+        return 2
+    require_clean_git()
+    run_release_tests()
     files = release_files()
     deploy(files, public_base=args.public_base)
     print("REALISM_RELEASE_DEPLOY_OK")

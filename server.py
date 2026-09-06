@@ -33,6 +33,9 @@ RH_TIMEOUT_QUERY = 30
 RH_SUBMIT_HARD_TIMEOUT = 120  # wall-clock cap for the whole submit (all retries)
 MAX_JSON_BYTES = 42 * 1024 * 1024  # 30 MiB image after base64 + bounded metadata
 MAX_UPLOAD_JSON_BYTES = 82 * 1024 * 1024  # existing 60 MiB video after base64
+MAX_HTTP_WORKERS = 2
+REALISM_HISTORY_LIMIT = 50
+MAX_FAVORITES = 200
 # V2 query exposes only real task states, not a stable percentage. Keep these
 # conservative and fixed; never manufacture progress from elapsed/poll count.
 RH_STAGE_PROGRESS = {"QUEUED": 0.02, "RUNNING": 0.10}
@@ -149,7 +152,7 @@ SKETCH_SEQUENCE_STAGES = {
 # Cloud and local image generation have independent resources. Keep each
 # backend serial, but allow one RunningHub job and one local-ComfyUI job to run
 # at the same time. Video jobs are async cloud tasks and may run concurrently.
-_submit_locks = {"cloud": threading.Lock(), "local": threading.Lock()}
+_submit_locks = {"cloud": threading.Lock(), "local": threading.Lock(), "video": threading.Lock()}
 VIDEO_MAX_CONCURRENT = 3   # max simultaneous RH video tasks (RH queues the rest)
 _jobs = {}                        # job_id -> job dict
 _lock_jobs = threading.Lock()
@@ -233,18 +236,32 @@ def load_jobs():
     if JOBS_FILE.exists():
         try: _jobs = json.loads(JOBS_FILE.read_text(encoding="utf-8"))
         except Exception: _jobs = {}
-    # On startup no worker threads exist: any job left "running" was interrupted
-    # by a restart. Mark it error so it does not hold the global lock forever.
+    # Cloud jobs with a provider task id are resumable without another submit.
     for j in _jobs.values():
         if j.get("status") == "running":
-            j["status"] = "error"
-            j["error"] = "服务重启，任务中断（未出图）"
+            if j.get("sequence_mode") in SKETCH_SEQUENCE_STAGES:
+                j["status"] = "error"
+                j["error"] = "服务重启中断多阶段任务；已保留阶段与RunningHub任务号，请核对后再运行"
+            elif j.get("generation_backend", "cloud") == "cloud" and j.get("rh_task_id"):
+                j["status"] = "recovering"
+                j["provider_status"] = "RECOVERING"
+            else:
+                j["status"] = "error"
+                j["error"] = "服务重启，任务提交状态未确认；请核对历史后再运行"
     save_jobs()
 
 def save_jobs():
     tmp = JOBS_FILE.with_suffix(".tmp")
     tmp.write_text(json.dumps(_jobs, ensure_ascii=False, indent=1), encoding="utf-8")
     tmp.replace(JOBS_FILE)
+
+
+def persist_provider_task(job, task_id):
+    """Durably checkpoint provider acceptance before any status polling."""
+    job["rh_task_id"] = task_id
+    job["provider_started"] = time.time()
+    with _lock_jobs:
+        save_jobs()
 
 def load_favorites():
     global _favorites
@@ -256,6 +273,21 @@ def save_favorites():
     tmp = FAVORITES_FILE.with_suffix(".tmp")
     tmp.write_text(json.dumps(_favorites, ensure_ascii=False, indent=1), encoding="utf-8")
     tmp.replace(FAVORITES_FILE)
+
+
+def prune_favorites():
+    ordered = sorted(_favorites.values(), key=lambda item: item.get("created", 0), reverse=True)
+    for old in ordered[MAX_FAVORITES:]:
+        _favorites.pop(old.get("id"), None)
+        for key in ("image_path",):
+            try:
+                safe_child_path(FAVORITES_DIR, pathlib.Path(old.get(key, ""))).unlink(missing_ok=True)
+            except (ValueError, OSError):
+                pass
+        try:
+            safe_child_path(FAVORITES_DIR, f"{old.get('id')}_preview.jpg").unlink(missing_ok=True)
+        except (ValueError, OSError):
+            pass
 
 def http_json(url, data=None, timeout=300):
     req = urllib.request.Request(url, method="POST" if data is not None else "GET")
@@ -424,7 +456,7 @@ def gen_images(prompt_id, timeout=1800):
 def fetch_and_save(im, dest_dir):
     q = urllib.parse.urlencode({"filename": im["filename"], "subfolder": im.get("subfolder", ""), "type": im.get("type", "output")})
     data = http_bytes(f"{COMFY_URL}/view?{q}", timeout=120)
-    p = dest_dir / im["filename"]
+    p = dest_dir / safe_output_filename(im["filename"])
     p.write_bytes(data)
     return p
 
@@ -458,7 +490,7 @@ def _archive_lock(job_id, filename):
 
 def ensure_local_original(job, image):
     """Return a durable original, fetching it once when not archived yet."""
-    dest = JOBS_DIR / job["id"] / image["file"]
+    dest = safe_child_path(JOBS_DIR / job["id"], safe_output_filename(image["file"]))
     if dest.exists():
         image["archive_status"] = "ready"
         image["size"] = dest.stat().st_size
@@ -541,6 +573,13 @@ def public_workflow(w):
         "prompt_hint": w.get("prompt_hint"),
     }
     return _json_safe_integer_metadata(result)
+
+
+def realism_history_jobs(jobs):
+    ids = {key for key, workflow in WORKFLOWS.items()
+           if workflow.get("kind") in ("rh_workflow", "ai_app")}
+    return [job for job in sorted(jobs, key=lambda row: row.get("created", 0), reverse=True)
+            if job.get("workflow") in ids or job.get("style_id") == "realism"][:REALISM_HISTORY_LIMIT]
 
 
 def normalize_realism_snapshot(w, trusted_media, trusted_params, snapshot):
@@ -708,6 +747,27 @@ def rh_submit_ai_app(app_id, node_info_list):
         return task_id
     raise RuntimeError("RH AI App submit rejected: " + json.dumps(result, ensure_ascii=False)[:600])
 
+def rh_failed_task_detail(task_id):
+    """Read a failed task's actionable node reason without resubmitting it."""
+    body = json.dumps({"apiKey": RH_KEY, "taskId": task_id}).encode()
+    req = urllib.request.Request(
+        "https://www.runninghub.cn/task/openapi/outputs", data=body,
+        headers={"Content-Type": "application/json"}, method="POST")
+    try:
+        with _urlopen_bounded(req, None, RH_TIMEOUT_QUERY) as resp:
+            result = json.loads(resp.read().decode(errors="replace"))
+    except Exception:
+        return ""
+    failed = ((result.get("data") or {}).get("failedReason") or {})
+    if not isinstance(failed, dict):
+        return ""
+    node_id = str(failed.get("node_id") or "?")[:80]
+    node_name = str(failed.get("node_name") or "未知节点")[:160]
+    error_type = str(failed.get("exception_type") or "")[:160]
+    message = str(failed.get("exception_message") or "")[:500]
+    return f"节点{node_id} {node_name}: {error_type} {message}".strip()
+
+
 def rh_query(task_id):
     """查询 RunningHub 任务状态，返回 (status, results)"""
     url = f"{RH_BASE}/query"
@@ -723,7 +783,9 @@ def rh_query(task_id):
         raise RuntimeError(f"RH query failed: {e}")
     status = r.get("status", "")
     if status == "FAILED":
-        raise RuntimeError(f"RH task failed: {r.get('errorCode')} {r.get('errorMessage')}")
+        detail = rh_failed_task_detail(task_id)
+        suffix = f"；{detail}" if detail else ""
+        raise RuntimeError(f"RH task failed: {r.get('errorCode')} {r.get('errorMessage')}{suffix}")
     return status, r.get("results") or []
 
 def rh_build_node_info(job):
@@ -941,6 +1003,9 @@ def normalize_rh_workflow_inputs(w, media, params):
         else:
             continue
         if value is None or (isinstance(value, str) and not value.strip()):
+            if mapping.get("allow_blank") and isinstance(value, str):
+                trusted_params[key] = value
+                continue
             if mapping.get("required"):
                 raise ValueError(f"{mapping.get('label') or key}不能为空")
             continue
@@ -975,9 +1040,9 @@ def rh_run_generic(job, w):
         raise RuntimeError("workflow has no trusted rh_workflow_id")
     job["submit_started"] = time.time()
     job["provider_status"] = "SUBMITTING"
-    task_id = rh_submit(workflow_id, rh_build_generic_node_info(job, w))
-    job["rh_task_id"] = task_id
-    job["provider_started"] = time.time()
+    task_id = rh_submit(workflow_id, rh_build_generic_node_info(job, w),
+                        instance_type=w.get("rh_instance_type", "default"))
+    persist_provider_task(job, task_id)
     job["progress_pct"] = 5
     results = _rh_wait_task(job, task_id, time.time() + 2400, 12, 88)
     job["provider_finished"] = time.time()
@@ -990,6 +1055,26 @@ def rh_run_generic(job, w):
     job["download_finished"] = time.time()
     return images
 
+def resume_cloud_job(job):
+    """Resume polling a persisted RunningHub task; never submit another task."""
+    task_id = job.get("rh_task_id")
+    if not task_id:
+        raise RuntimeError("recovering cloud job has no provider task id")
+    try:
+        results = _rh_wait_task(job, task_id, time.time() + 2400, 12, 88)
+        images = _rh_results_to_images(results, task_id)
+        if not images:
+            raise RuntimeError("recovered task returned no downloadable result")
+        job.update({"images": images, "status": "done", "provider_status": "DONE",
+                    "progress_pct": 100, "provider_finished": time.time(),
+                    "download_finished": time.time(), "error": None})
+    except Exception as error:
+        job["status"] = "error"
+        job["error"] = f"恢复云任务失败：{str(error)[:450]}"
+    with _lock_jobs:
+        save_jobs()
+
+
 def rh_run_ai_app(job, w):
     app_id = w.get("rh_ai_app_id")
     if not app_id:
@@ -997,8 +1082,7 @@ def rh_run_ai_app(job, w):
     job["submit_started"] = time.time()
     job["provider_status"] = "SUBMITTING"
     task_id = rh_submit_ai_app(app_id, rh_build_ai_app_node_info(job, w))
-    job["rh_task_id"] = task_id
-    job["provider_started"] = time.time()
+    persist_provider_task(job, task_id)
     job["progress_pct"] = 5
     results = _rh_wait_task(job, task_id, time.time() + 1800, 12, 88)
     job["provider_finished"] = time.time()
@@ -1029,7 +1113,7 @@ def rh_run_sketch_sequence(job, jobdir, w):
         node_list = rh_build_node_info(stage_job)
         task_id = rh_submit(w["rh_workflow_id"], node_list)
         job["rh_task_ids"].append(task_id)
-        job["rh_task_id"] = task_id
+        persist_provider_task(job, task_id)
         job["stage_status"].append({"stage_id": stage_id, "stage_label": stage_label, "status": "RUNNING", "task_id": task_id})
         job["provider_status"] = stage_label
         results = _rh_wait_task(job, task_id, deadline, int(stage_index / len(stages) * 100), max(8, int(100 / len(stages))))
@@ -1052,8 +1136,7 @@ def rh_run(job, jobdir, w):
     job["submit_started"] = time.time()
     job["provider_status"] = "SUBMITTING"
     task_id = rh_submit(wfid, node_list)
-    job["rh_task_id"] = task_id
-    job["provider_started"] = time.time()
+    persist_provider_task(job, task_id)
     job["progress"] = 0
     job["progress_pct"] = 5
     images = []
@@ -1245,8 +1328,7 @@ def rh_run_video(job, w):
     job["submit_started"] = time.time()
     job["provider_status"] = "SUBMITTING"
     task_id = rh_submit(wfid, node_list)
-    job["rh_task_id"] = task_id
-    job["provider_started"] = time.time()
+    persist_provider_task(job, task_id)
     job["progress_pct"] = 5
     images = []
     deadline = time.time() + 2400
@@ -1347,6 +1429,40 @@ def safe_child_path(root, *parts):
     except ValueError:
         raise ValueError("bad path") from None
     return candidate
+
+
+def safe_output_filename(value):
+    """Accept one plain ComfyUI basename, never a path supplied downstream."""
+    value = str(value or "")
+    if not value or value in (".", "..") or pathlib.PurePath(value).name != value:
+        raise ValueError("bad output filename")
+    if "/" in value or "\\" in value or re.match(r"^[A-Za-z]:", value):
+        raise ValueError("bad output filename")
+    return value
+
+
+class BoundedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
+    daemon_threads = True
+    allow_reuse_address = True
+    max_workers = MAX_HTTP_WORKERS
+
+    def __init__(self, *args, **kwargs):
+        self._worker_slots = threading.BoundedSemaphore(self.max_workers)
+        super().__init__(*args, **kwargs)
+
+    def process_request(self, request, client_address):
+        self._worker_slots.acquire()
+        try:
+            super().process_request(request, client_address)
+        except Exception:
+            self._worker_slots.release()
+            raise
+
+    def process_request_thread(self, request, client_address):
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._worker_slots.release()
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -1474,7 +1590,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 # history/status UI. Omitting them cuts /api/jobs from ~60KB to
                 # a few KB and prevents slow mobile polling/timeouts.
                 items = []
-                for src in sorted(_jobs.values(), key=lambda j: j.get("created", 0), reverse=True)[:12]:
+                query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                sources = realism_history_jobs(list(_jobs.values())) if query.get("scope") == ["realism"] else sorted(_jobs.values(), key=lambda j: j.get("created", 0), reverse=True)[:12]
+                for src in sources:
                     allowed = (
                         "id", "workflow", "status", "provider_status", "rh_task_id",
                         "progress_pct", "error", "elapsed", "created", "wf_name",
@@ -1859,20 +1977,28 @@ class Handler(http.server.BaseHTTPRequestHandler):
             params = body.get("params") or {}
             if not isinstance(params, dict):
                 return self._send(400, b'{"error":"params must be object"}')
+            client_request_id = str(body.get("client_request_id") or "").strip()[:96]
+            if not client_request_id:
+                return self._send(400, b'{"error":"client_request_id is required"}')
             # Video jobs are async cloud tasks: allow a small concurrent pool
             # (RH queues them itself). Image jobs stay serial via /api/generate.
-            with _lock_jobs:
-                running_videos = [j for j in _jobs.values()
-                                  if j.get("generation_backend") == "cloud"
-                                  and j.get("workflow") in WORKFLOWS
-                                  and WORKFLOWS[j["workflow"]].get("kind") == "video"
-                                  and j.get("status") == "running"]
-            if len(running_videos) >= VIDEO_MAX_CONCURRENT:
-                return self._send(429, json.dumps({
-                    "error": f"视频任务已达并发上限（{VIDEO_MAX_CONCURRENT}个），请等待其中一个完成",
-                    "running_jobs": [j["id"] for j in running_videos],
-                }, ensure_ascii=False).encode())
-            job = {"id": uuid.uuid4().hex[:12], "workflow": wf, "prompt": prompt,
+            with _submit_locks["video"]:
+                existing_job = existing_job_for_request(client_request_id, "cloud")
+                if existing_job:
+                    return self._send(200, json.dumps({"job_id": existing_job["id"],
+                        "deduplicated": True, "message": "same request already accepted"}).encode())
+                with _lock_jobs:
+                    running_videos = [j for j in _jobs.values()
+                                      if j.get("generation_backend") == "cloud"
+                                      and j.get("workflow") in WORKFLOWS
+                                      and WORKFLOWS[j["workflow"]].get("kind") == "video"
+                                      and j.get("status") in ("running", "recovering")]
+                if len(running_videos) >= VIDEO_MAX_CONCURRENT:
+                    return self._send(429, json.dumps({
+                        "error": f"视频任务已达并发上限（{VIDEO_MAX_CONCURRENT}个），请等待其中一个完成",
+                        "running_jobs": [j["id"] for j in running_videos],
+                    }, ensure_ascii=False).encode())
+                job = {"id": uuid.uuid4().hex[:12], "workflow": wf, "prompt": prompt,
                    "negative_prompt": negative_prompt, "prompt_mode": "manual",
                    "media": media, "params": params,
                    "width": 0, "height": 0, "batch": 1, "hd": 0,
@@ -1885,12 +2011,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                    "provider_finished": None, "download_started": None,
                    "download_finished": None, "style_id": "video", "mode": "original",
                    "generation_backend": "cloud",
-                   "sequence_mode": "off", "selection_snapshot": body.get("selection_snapshot") or {}}
-            with _lock_jobs:
-                _jobs[job["id"]] = job
-                save_jobs()
-            threading.Thread(target=run_job, args=(job,), daemon=True).start()
-            self._send(200, json.dumps({"job_id": job["id"]}).encode())
+                   "sequence_mode": "off", "selection_snapshot": body.get("selection_snapshot") or {},
+                   "client_request_id": client_request_id}
+                with _lock_jobs:
+                    _jobs[job["id"]] = job
+                    save_jobs()
+                threading.Thread(target=run_job, args=(job,), daemon=True).start()
+                return self._send(200, json.dumps({"job_id": job["id"]}).encode())
         if path == "/api/favorites":
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
             try: body = self._read_json()
@@ -1900,6 +2027,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if not job or job.get("status") != "done": return self._send(404, b'{"error":"completed job not found"}')
             images = job.get("images") or []
             if idx < 0 or idx >= len(images): return self._send(400, b'{"error":"bad image index"}')
+            with _lock_jobs:
+                existing_favorite = next((fav for fav in _favorites.values()
+                    if fav.get("job_id") == jid and fav.get("image_index") == idx), None)
+            if existing_favorite:
+                return self._send(200, json.dumps(existing_favorite, ensure_ascii=False).encode())
             im = images[idx]; fid = uuid.uuid4().hex[:12]
             remote_suffix = pathlib.PurePosixPath(urllib.parse.urlparse(im.get("url", "")).path).suffix.lower()
             suffix = remote_suffix if remote_suffix in (".png", ".jpg", ".jpeg", ".webp") else ".png"
@@ -1930,7 +2062,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 "width": job.get("width"), "height": job.get("height"), "batch": job.get("batch"),
             }
             with _lock_jobs:
-                _favorites[fid] = fav; save_favorites()
+                _favorites[fid] = fav
+                prune_favorites()
+                save_favorites()
             return self._send(200, json.dumps(fav, ensure_ascii=False).encode())
         if path == "/api/comfy/start":
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
@@ -2050,13 +2184,13 @@ def main():
         print(f"[panel] no PANEL_TOKEN set, generated: {TOKEN}", flush=True)
     load_jobs()
     load_favorites()
+    for job in list(_jobs.values()):
+        if job.get("status") == "recovering" and job.get("rh_task_id"):
+            threading.Thread(target=resume_cloud_job, args=(job,), daemon=True).start()
     ok, msg = comfy_ok()
     print(f"[panel] comfy {COMFY_URL}: ok={ok} {msg}", flush=True)
     print(f"[panel] listening 0.0.0.0:{PORT} data={DATA_DIR}", flush=True)
-    class S(socketserver.ThreadingMixIn, http.server.HTTPServer):
-        daemon_threads = True
-        allow_reuse_address = True
-    S(("0.0.0.0", PORT), Handler).serve_forever()
+    BoundedHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
 
 if __name__ == "__main__":
     main()

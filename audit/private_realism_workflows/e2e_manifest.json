@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "verified_at": "2026-09-06",
+  "source_input": {
+    "file": "style3_style/holdout/3_102.png",
+    "bytes": 1076340,
+    "dimensions": [1048, 1536],
+    "contains_visible_watermark": true
+  },
+  "successful_workflows": [
+    {"id": "realism_krea2", "workflow_id": "2096139245572726785", "task_id": "2096442809591558145", "status": "SUCCESS", "result_type": "png", "result_bytes": 8578419},
+    {"id": "realism_2511", "workflow_id": "2096138870382723074", "task_id": "2096445452946796545", "status": "SUCCESS", "result_type": "png", "result_bytes": 1581193},
+    {"id": "realism_multisample", "workflow_id": "2096103615374155777", "task_id": "2096448361467539457", "status": "SUCCESS", "instance_type": "plus", "result_type": "png", "result_bytes": 3313549},
+    {"id": "realism_qwen_zi", "workflow_id": "2096101840168747010", "task_id": "2096449521012240385", "status": "SUCCESS", "result_type": "png", "result_bytes": 7136870},
+    {"id": "realism_4k_text", "workflow_id": "2095331229284470786", "task_id": "2096450507881320450", "status": "SUCCESS", "result_type": "png", "result_bytes": 9048213},
+    {"id": "realism_3in1", "workflow_id": "2096094953332416513", "task_id": "2096451072502067201", "status": "SUCCESS", "submitted_fields": 109, "public_fields_after_locking_device": 108, "result_type": "png", "result_bytes": 1172849},
+    {"id": "realism_zi_flowmatch", "workflow_id": "2096150319347859458", "task_id": "2096452390796980225", "status": "SUCCESS", "result_type": "zip", "result_bytes": 2912688, "zip_entries": 1, "zip_crc_ok": true, "contained_png_bytes": 2912018}
+  ],
+  "resolved_failure": {
+    "id": "realism_multisample",
+    "task_id": "2096445882042159105",
+    "status": "FAILED",
+    "node_id": "87",
+    "node_name": "SeedVR2VideoUpscaler",
+    "exception_type": "torch.OutOfMemoryError",
+    "resolution": "instanceType=plus",
+    "retest_status": "SUCCESS"
+  },
+  "visual_quality": {
+    "all_complete": true,
+    "all_composition_coherent": true,
+    "severe_face_defects": 0,
+    "severe_hand_defects": 0,
+    "watermark_free": ["realism_krea2", "realism_2511", "realism_qwen_zi", "realism_4k_text", "realism_zi_flowmatch"],
+    "inherited_source_watermark": ["realism_multisample", "realism_3in1"]
+  },
+  "browser_e2e": {
+    "seven_workflow_switches": true,
+    "schema_counts_exact": true,
+    "three_in_one_public_controls": 108,
+    "provider_ids_hidden": true,
+    "png_preview_and_favorite": true,
+    "zip_download_card": true,
+    "mobile_width": 390,
+    "mobile_overflow": false,
+    "minimum_hit_target_px": 44
+  },
+  "test_gate": {
+    "test_files_total": 46,
+    "test_files_passed": 45,
+    "known_baseline_failure": "test_restore_prompt_contract.py",
+    "new_failures": 0,
+    "javascript_blocks_checked": 15,
+    "javascript_failures": 0
+  }
+}

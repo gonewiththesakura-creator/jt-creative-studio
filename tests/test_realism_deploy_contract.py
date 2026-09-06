@@ -15,9 +15,9 @@ def load_module():
     return module
 
 
-def complete_workflow(name, workflow_id):
+def complete_workflow(internal_id, name, workflow_id):
     return {
-        "id": "target-" + workflow_id[-4:],
+        "id": internal_id,
         "name": name,
         "kind": "rh_workflow",
         "backend": "runninghub",
@@ -46,8 +46,8 @@ def complete_workflow(name, workflow_id):
 def complete_config(module):
     return {
         "workflows": [
-            complete_workflow(name, str(2100000000000000000 + index))
-            for index, name in enumerate(module.TARGET_WORKFLOW_NAMES, 1)
+            complete_workflow(internal_id, name, str(2100000000000000000 + index))
+            for index, (internal_id, name) in enumerate(module.TARGET_WORKFLOWS.items(), 1)
         ]
     }
 
@@ -69,12 +69,12 @@ def test_release_manifest_is_complete_and_excludes_nonproduction_files():
     assert not any(path.startswith(("tests/", "audit/")) for path in module.RELEASE_RELATIVE_PATHS)
 
 
-def test_current_config_fails_before_credentials_or_ssh_are_needed():
+def test_current_config_passes_without_credentials_or_ssh_needed():
     module = load_module()
     current = json.loads((ROOT / "config.json").read_text(encoding="utf-8"))
     result = module.validate_release_config(current)
-    assert result["ready"] is False
-    assert sorted(result["missing_targets"]) == sorted(module.TARGET_WORKFLOW_NAMES)
+    assert result["ready"] is True
+    assert result["missing_targets"] == []
     assert result["invalid_targets"] == []
 
 
@@ -133,6 +133,20 @@ def test_dry_run_never_allows_remote_mutation_even_when_config_is_complete():
     assert "--execute not supplied" in decision["blockers"]
 
 
+def test_release_targets_match_all_seven_imported_private_workflows():
+    module = load_module()
+    expected = {
+        "realism_krea2", "realism_2511", "realism_multisample", "realism_qwen_zi",
+        "realism_4k_text", "realism_3in1", "realism_zi_flowmatch",
+    }
+    assert set(module.TARGET_WORKFLOW_IDS) == expected
+    current = json.loads((ROOT / "config.json").read_text(encoding="utf-8"))
+    result = module.validate_release_config(current)
+    assert result["ready"] is True
+    assert result["missing_targets"] == []
+    assert result["invalid_targets"] == []
+
+
 def test_atomic_release_contract_contains_stage_backup_verify_and_rollback():
     text = SCRIPT.read_text(encoding="utf-8") if SCRIPT.exists() else ""
     required = [
@@ -153,3 +167,24 @@ def test_atomic_release_contract_contains_stage_backup_verify_and_rollback():
     module = load_module()
     assert not any(path.startswith(("tests/", "audit/")) for path in module.RELEASE_RELATIVE_PATHS)
     assert "RUNNINGHUB_API_KEY=" not in text
+
+
+def test_release_rollback_uses_manifest_retry_and_post_restore_verification():
+    text = SCRIPT.read_text(encoding="utf-8")
+    assert "BACKUP_MANIFEST" in text
+    assert 'stat.st_size == 0' not in text
+    assert "wait_for_health" in text
+    assert "rollback verification mismatch" in text
+    assert "rollback health failed" in text
+
+
+def test_release_requires_clean_git_tests_and_seven_successful_e2e_records():
+    text = SCRIPT.read_text(encoding="utf-8")
+    assert "E2E_MANIFEST" in text
+    assert "validate_e2e_manifest" in text
+    assert "require_clean_git" in text
+    assert "run_release_tests" in text
+    assert "test_restore_prompt_contract.py" in text
+    manifest = json.loads((ROOT / "audit" / "private_realism_workflows" / "e2e_manifest.json").read_text(encoding="utf-8"))
+    assert len(manifest["successful_workflows"]) == 7
+    assert all(row["status"] == "SUCCESS" for row in manifest["successful_workflows"])

@@ -1,0 +1,23 @@
+{
+  "method": "RunningHub pre-submit validation with an intentionally nonexistent fieldName; taskId must remain empty",
+  "all_probes_unbilled": true,
+  "signature_size": 5,
+  "mapping": {
+    "2095331229284470786": "realism_4k_text",
+    "2096094953332416513": "realism_3in1",
+    "2096101840168747010": "realism_qwen_zi",
+    "2096103615374155777": "realism_multisample",
+    "2096138870382723074": "realism_2511",
+    "2096139245572726785": "realism_krea2",
+    "2096150319347859458": "realism_zi_flowmatch"
+  },
+  "scores": {
+    "2095331229284470786": {"realism_4k_text": "5/5"},
+    "2096094953332416513": {"realism_3in1": "5/5"},
+    "2096101840168747010": {"realism_qwen_zi": "5/5"},
+    "2096103615374155777": {"realism_multisample": "5/5"},
+    "2096138870382723074": {"realism_2511": "5/5"},
+    "2096139245572726785": {"realism_krea2": "5/5"},
+    "2096150319347859458": {"realism_zi_flowmatch": "5/5"}
+  }
+}

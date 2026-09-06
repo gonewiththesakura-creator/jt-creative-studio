@@ -8,7 +8,7 @@ HTML = PAGE.read_text(encoding="utf8") if PAGE.exists() else ""
 SCRIPT = BUILDER.read_text(encoding="utf8") if BUILDER.exists() else ""
 
 checks = {
-    "durable page and builder": PAGE.exists() and BUILDER.exists() and "P.read_text" not in SCRIPT,
+    "durable portable page and builder": PAGE.exists() and BUILDER.exists() and "P.read_text" not in SCRIPT and "Path(__file__).resolve().parent" in SCRIPT and 'Path(r"D:/' not in SCRIPT,
     "realism route": '"/realism"' in SERVER and '"realism.html"' in SERVER,
     "workflow schema loaded": "/api/workflows" in HTML and "rh_workflow" in HTML and "ai_app" in HTML,
     "no client workflow id fields": "workflowId" not in HTML and "nodeInfoList" not in HTML,
@@ -19,12 +19,15 @@ checks = {
     "schema validation metadata rendered": all(x in HTML for x in ["mapping.min", "mapping.max", "mapping.step", "mapping.required"]),
     "generic upload and generate endpoints": all(x in HTML for x in ["/api/workflow-upload", "/api/workflow-generate"]),
     "idempotent client request": "client_request_id" in HTML,
+    "ambiguous submit reuses durable request id": all(x in HTML for x in ["pendingSubmitKey", "localStorage.getItem(pendingSubmitKey", "localStorage.setItem(pendingSubmitKey", "localStorage.removeItem(pendingSubmitKey"]),
     "independent task cards": all(x in HTML for x in ["const tasks=new Map()", "addTaskCard", "task-time", "setInterval"]),
     "refresh restoration": "sessionStorage" in HTML and "restoreTasks" in HTML,
     "history and favorites": all(x in HTML for x in ["/api/jobs", "/api/favorites", "applySnapshot", "selection_snapshot"]),
+    "server filters realism history before limit": "REALISM_HISTORY_LIMIT" in SERVER and "realism_history_jobs" in SERVER,
     "two drawers preserve grouping": all(x in HTML for x in ["mapping.group", "common", "advanced"]),
     "mobile touch and no overflow": all(x in HTML for x in ["@media(max-width:820px)", "min-height:44px", "overflow-x:hidden"]),
     "actionable errors": all(x in HTML for x in ["任务号", "running_job", "running_jobs"]),
+    "non-image results use download card": all(x in HTML for x in ["isPreviewableImage", "结果文件", "file-result", "canPreview", "if(canPreview)"]) and "picture.src=preview||original" not in HTML,
     "provider strings never interpolate into html": all(x in HTML for x in ["createResultItem", "createTaskCard", "createHistoryItem", "createFavoriteItem", "safeRemoteUrl", "textContent=", "image.src="]) and all(x not in HTML for x in ["card.innerHTML=", "item.innerHTML=", "d.innerHTML=", "innerHTML='<img"]),
     "load errors render as text": "showWorkflowLoadError" in HTML and "commonControls.innerHTML='<div class=\"config-state error\">'" not in HTML,
     "navigation exposes console": all('href="/realism"' in (ROOT / "static" / name).read_text(encoding="utf8") for name in ["index.html", "promptgen.html", "original_sketch.html", "original_graphic.html", "realcomic.html", "video.html"]),

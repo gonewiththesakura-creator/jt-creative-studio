@@ -207,6 +207,19 @@ def test_generic_runner_uses_only_trusted_workflow_id(monkeypatch):
     assert job["images"][0]["remote"] is True
 
 
+def test_generic_runner_uses_only_trusted_instance_type(monkeypatch):
+    workflow = fixture_workflow()
+    workflow["rh_instance_type"] = "plus"
+    captured = {}
+    def fake_submit(workflow_id, node_info_list, instance_type="default", **kwargs):
+        captured["instance_type"] = instance_type
+        return "task-plus"
+    monkeypatch.setattr(server, "rh_submit", fake_submit)
+    monkeypatch.setattr(server, "_rh_wait_task", lambda *args, **kwargs: [{"url": "https://example.invalid/result.png"}])
+    server.rh_run_generic({"id": "j", "media": {}, "params": {}, "progress_pct": 0}, workflow)
+    assert captured["instance_type"] == "plus"
+
+
 def test_integer_controls_do_not_round_through_float():
     workflow = fixture_workflow()
     workflow["rh_params"]["seed"]["max"] = 9223372036854775807
@@ -320,12 +333,99 @@ def test_remote_results_accept_only_http_urls():
     ]
 
 
+def test_failed_task_error_includes_actionable_node_detail(monkeypatch):
+    class Response:
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def read(self):
+            return json.dumps({"code": 805, "data": {"failedReason": {
+                "node_id": "87", "node_name": "SeedVR2VideoUpscaler",
+                "exception_type": "torch.OutOfMemoryError",
+                "exception_message": "insufficient VRAM; use plus instance",
+            }}}).encode()
+    monkeypatch.setattr(server, "_urlopen_bounded", lambda *args, **kwargs: Response())
+    detail = server.rh_failed_task_detail("task-805")
+    assert "节点87" in detail
+    assert "SeedVR2VideoUpscaler" in detail
+    assert "OutOfMemoryError" in detail
+    assert "plus instance" in detail
+
+
+def test_restart_resumes_existing_cloud_task_without_resubmission(monkeypatch):
+    job = {"id": "restart-job", "workflow": "fixture", "status": "recovering",
+           "generation_backend": "cloud", "rh_task_id": "existing-task", "images": [], "progress_pct": 5}
+    monkeypatch.setattr(server, "_rh_wait_task", lambda *args, **kwargs: [{"url": "https://example.test/recovered.png"}])
+    monkeypatch.setattr(server, "save_jobs", lambda: None)
+    monkeypatch.setattr(server, "rh_submit", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("must not resubmit")))
+    server.resume_cloud_job(job)
+    assert job["status"] == "done"
+    assert job["provider_status"] == "DONE"
+    assert job["images"][0]["url"].endswith("recovered.png")
+
+
+def test_provider_task_id_is_persisted_immediately(monkeypatch):
+    saved = []
+    monkeypatch.setattr(server, "save_jobs", lambda: saved.append(True))
+    job = {"id": "persist-now"}
+    server.persist_provider_task(job, "provider-task")
+    assert job["rh_task_id"] == "provider-task"
+    assert saved == [True]
+    source = Path(server.__file__).read_text(encoding="utf-8")
+    assert source.count("persist_provider_task(job, task_id)") >= 5
+
+
+def test_multistage_jobs_are_not_misreported_as_recovered_complete(tmp_path, monkeypatch):
+    jobs_file = tmp_path / "jobs.json"
+    jobs_file.write_text(json.dumps({"seq": {"id": "seq", "status": "running",
+        "generation_backend": "cloud", "rh_task_id": "last-stage",
+        "sequence_mode": "sketch3", "rh_task_ids": ["stage-1", "last-stage"]}}), encoding="utf-8")
+    monkeypatch.setattr(server, "JOBS_FILE", jobs_file)
+    monkeypatch.setattr(server, "save_jobs", lambda: None)
+    server.load_jobs()
+    assert server._jobs["seq"]["status"] == "error"
+    assert "多阶段" in server._jobs["seq"]["error"]
+
+
+def test_comfy_output_names_cannot_escape_job_directory():
+    import tempfile
+    root = Path(tempfile.mkdtemp())
+    for name in ("../escape.png", "C:/escape.png", "/tmp/escape.png", "sub/escape.png"):
+        with pytest.raises(ValueError):
+            server.safe_output_filename(name)
+    assert server.safe_output_filename("result_00001_.png") == "result_00001_.png"
+
+
+def test_http_server_has_bounded_request_concurrency():
+    assert server.BoundedHTTPServer.max_workers <= 2
+    assert hasattr(server.BoundedHTTPServer, "process_request_thread")
+
+
+def test_load_jobs_marks_provider_task_for_recovery(tmp_path, monkeypatch):
+    jobs_file = tmp_path / "jobs.json"
+    jobs_file.write_text(json.dumps({"cloud": {"id": "cloud", "status": "running",
+        "generation_backend": "cloud", "rh_task_id": "existing-task"},
+        "unknown": {"id": "unknown", "status": "running", "generation_backend": "cloud"}}), encoding="utf-8")
+    monkeypatch.setattr(server, "JOBS_FILE", jobs_file)
+    monkeypatch.setattr(server, "save_jobs", lambda: None)
+    server.load_jobs()
+    assert server._jobs["cloud"]["status"] == "recovering"
+    assert server._jobs["cloud"]["rh_task_id"] == "existing-task"
+    assert server._jobs["unknown"]["status"] == "error"
+
+
 def test_json_limit_preserves_existing_sixty_megabyte_video_upload_contract():
     encoded_sixty_mib = 4 * ((60 * 1024 * 1024 + 2) // 3)
     assert server.json_body_limit("/api/upload") > encoded_sixty_mib
     assert server.json_body_limit("/api/workflow-upload") == server.MAX_JSON_BYTES
     assert server.json_body_limit("/api/workflow-generate") == server.MAX_JSON_BYTES
     assert server.json_body_limit("/api/upload") == server.MAX_UPLOAD_JSON_BYTES
+
+
+def test_favorites_are_deduplicated_and_bounded():
+    assert server.MAX_FAVORITES == 200
+    source = Path(server.__file__).read_text(encoding="utf-8")
+    assert "existing_favorite" in source
+    assert "prune_favorites" in source
 
 
 def test_public_schema_preserves_large_integers_as_decimal_strings():
