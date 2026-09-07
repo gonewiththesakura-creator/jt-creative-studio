@@ -33,7 +33,7 @@ checks = {
     "non-image results use download card": all(x in HTML for x in ["isPreviewableImage", "结果文件", "file-result", "canPreview", "if(canPreview)"]) and "picture.src=preview||original" not in HTML,
     "provider strings never interpolate into html": all(x in HTML for x in ["createResultItem", "createTaskCard", "createHistoryItem", "createFavoriteItem", "safeRemoteUrl", "textContent=", "image.src="]) and all(x not in HTML for x in ["card.innerHTML=", "item.innerHTML=", "d.innerHTML=", "innerHTML='<img"]),
     "load errors render as text": "showWorkflowLoadError" in HTML and "commonControls.innerHTML='<div class=\"config-state error\">'" not in HTML,
-    "navigation exposes one unified console": all('href="/realism"' in (ROOT / "static" / name).read_text(encoding="utf8") and 'href="/realcomic"' not in (ROOT / "static" / name).read_text(encoding="utf8") for name in ["index.html", "promptgen.html", "original_sketch.html", "original_graphic.html", "video.html"]),
+    "navigation exposes one unified console": all('href="/realism"' in (ROOT / "static" / name).read_text(encoding="utf8") and 'href="/realcomic"' not in (ROOT / "static" / name).read_text(encoding="utf8") for name in ["index.html", "promptgen.html", "video.html"]),
     "legacy realcomic page redirects": '/realism?workflow=realcomic' in (ROOT / "static" / "realcomic.html").read_text(encoding="utf8"),
 }
 for name, passed in checks.items():

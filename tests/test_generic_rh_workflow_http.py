@@ -133,20 +133,26 @@ try:
     status, unknown = request("POST", "/api/workflow-generate", {**payload, "workflow": "not-real", "client_request_id": "unknown"})
     assert status == 400 and "unknown workflow" in unknown["error"], (status, unknown)
 
-    real = server_module.WORKFLOWS["realism_3in1"]
+    status, retired = request("POST", "/api/workflow-generate", {
+        "workflow": "realism_3in1", "media": {}, "params": {},
+        "client_request_id": "retired-3in1",
+    })
+    assert status == 400 and "unknown workflow" in retired["error"], (status, retired)
+
+    real = server_module.WORKFLOWS["realism_zi_flowmatch"]
     real_media = {key: f"api/{key}.png" for key in real["rh_media"]}
     real_params = {key: row["default"] for key, row in real["rh_params"].items()}
-    boolean_false = "local_detail_lora"
+    boolean_false = "lora_stack"
     real_params[boolean_false] = False
     status, real_result = request("POST", "/api/workflow-generate", {
-        "workflow": "realism_3in1", "media": real_media, "params": real_params,
-        "client_request_id": "real-3in1-http",
+        "workflow": "realism_zi_flowmatch", "media": real_media, "params": real_params,
+        "client_request_id": "real-zi-flow-http",
         "workflowId": "attacker-id", "nodeInfoList": [{"nodeId": "999"}],
         "selection_snapshot": {"media_names": {key: f"{key}.png" for key in real_media}},
     })
     assert status == 200 and real_result.get("job_id"), (status, real_result)
     real_job = server_module._jobs[real_result["job_id"]]
-    assert real_job["workflow"] == "realism_3in1"
+    assert real_job["workflow"] == "realism_zi_flowmatch"
     assert real_job["media"] == real_media
     assert set(real_job["params"]) == set(real["rh_params"])
     assert real_job["params"][boolean_false] is False

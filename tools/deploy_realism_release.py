@@ -36,7 +36,6 @@ TARGET_WORKFLOWS = {
     "realism_multisample": "动漫转真人·多采超清天花板",
     "realism_qwen_zi": "Qwen+ZI动漫转真人写实感洗图",
     "realism_4k_text": "超写实4K文生图",
-    "realism_3in1": "动漫转真人·多分支超清3in1",
     "realism_zi_flowmatch": "动漫转真人ZI洗图改（Z-Image+FlowMatch）",
 }
 TARGET_WORKFLOW_IDS = tuple(TARGET_WORKFLOWS)
@@ -52,6 +51,20 @@ RELEASE_RELATIVE_PATHS = (
     "static/realcomic.html",
     "static/realism.html",
     "static/video.html",
+    "static/previews/manifest.json",
+    "static/previews/realism-realcomic.webp",
+    "static/previews/realism-krea2.webp",
+    "static/previews/realism-2511.webp",
+    "static/previews/realism-multisample.webp",
+    "static/previews/realism-qwen-zi.webp",
+    "static/previews/realism-zi-flowmatch.webp",
+    "static/previews/style-cold.webp",
+    "static/previews/style-sketch.webp",
+    "static/previews/style-original-sketch.webp",
+    "static/previews/style-graphic.webp",
+    "static/previews/style-original-graphic.webp",
+    "static/previews/style-hanmanga.webp",
+    "static/previews/style-nff.webp",
 )
 
 
@@ -288,7 +301,8 @@ def deploy(files, public_base=PUBLIC_BASE):
     sftp = client.open_sftp()
     remote_paths = list(files.values())
     try:
-        command(client, f"mkdir -p {shlex.quote(REMOTE_ROOT + '/static')}")
+        remote_parent_paths = sorted({str(pathlib.PurePosixPath(remote).parent) for remote in remote_paths})
+        command(client, "mkdir -p -- " + " ".join(shlex.quote(path) for path in remote_parent_paths))
         for local, remote in files.items():
             data = local.read_bytes()
             staged = remote + STAGE_SUFFIX

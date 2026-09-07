@@ -43,6 +43,7 @@ RH_STAGE_PROGRESS = {"QUEUED": 0.02, "RUNNING": 0.10}
 TPL_DIR = BASE / "templates"
 CONFIG = json.loads((BASE / "config.json").read_text(encoding="utf-8"))
 WORKFLOWS = {w["id"]: w for w in CONFIG["workflows"]}
+RETIRED_REALISM_WORKFLOW_IDS = {"realism_3in1"}
 
 # Fixed server-side mappings. The browser only chooses a style id; it cannot
 # send arbitrary LoRA filenames or trigger words. Trigger tokens must match the
@@ -82,7 +83,19 @@ STYLE_PRESETS = {
         "LORA2": "01_style1_step900.safetensors",
         "strengths": {"LORA1": 0.7, "LORA2": 0.6},
     },
+    "original_sketch": {
+        "trigger": "jt_style1_v1",
+        "LORA1": "01_style1_step900.safetensors",
+        "LORA2": "01_style1_step900.safetensors",
+        "strengths": {"LORA1": 0.7, "LORA2": 0.6},
+    },
     "graphic": {
+        "trigger": "jt_style2_v1",
+        "LORA1": "02_style2_step900.safetensors",
+        "LORA2": "02_style2_step900.safetensors",
+        "strengths": {"LORA1": 0.7, "LORA2": 0.6},
+    },
+    "original_graphic": {
         "trigger": "jt_style2_v1",
         "LORA1": "02_style2_step900.safetensors",
         "LORA2": "02_style2_step900.safetensors",
@@ -135,19 +148,7 @@ def resolve_style_preset(style_id, style_variant=None):
         "strengths": dict(preset["strengths"]),
     }
 
-SKETCH_SEQUENCE_STAGES = {
-    "sketch4": [
-        ("rough", "第1步 · 铅笔大致轮廓", "very rough graphite construction sketch, loose gesture drawing, simple silhouette, visible construction lines, minimal facial detail, monochrome pencil only"),
-        ("refined", "第2步 · 人物进一步成型", "refined graphite character sketch, corrected anatomy and facial placement, clearer hair clothing and pose, visible construction lines, monochrome pencil only"),
-        ("monochrome", "第3步 · 完成黑白铅笔稿", "finished monochrome graphite anime illustration, clean final pencil linework, detailed cross-hatching, complete face hair clothing and hands, no color"),
-        ("colored", "第4步 · 铅笔淡彩完成图", "finished colored-pencil anime illustration, graphite linework and hatching preserved, subtle low-saturation colored pencil and minimal marker accents"),
-    ],
-    "sketch3": [
-        ("rough", "第1步 · 铅笔大致轮廓", "very rough graphite construction sketch, loose gesture drawing, simple silhouette, visible construction lines, minimal facial detail, monochrome pencil only"),
-        ("monochrome", "第2步 · 完成黑白铅笔稿", "finished monochrome graphite anime illustration, clean final pencil linework, detailed cross-hatching, complete face hair clothing and hands, no color"),
-        ("colored", "第3步 · 铅笔淡彩完成图", "finished colored-pencil anime illustration, graphite linework and hatching preserved, subtle low-saturation colored pencil and minimal marker accents"),
-    ],
-}
+RETIRED_SEQUENCE_MODES = {"sketch3", "sketch4"}
 
 # Cloud and local image generation have independent resources. Keep each
 # backend serial, but allow one RunningHub job and one local-ComfyUI job to run
@@ -240,7 +241,7 @@ def load_jobs():
     # Cloud jobs with a provider task id are resumable without another submit.
     for j in _jobs.values():
         if j.get("status") == "running":
-            if j.get("sequence_mode") in SKETCH_SEQUENCE_STAGES:
+            if j.get("sequence_mode") in RETIRED_SEQUENCE_MODES:
                 j["status"] = "error"
                 j["error"] = "服务重启中断多阶段任务；已保留阶段与RunningHub任务号，请核对后再运行"
             elif j.get("generation_backend", "cloud") == "cloud" and j.get("rh_task_id"):
@@ -587,6 +588,7 @@ def public_workflow(w):
 def realism_history_jobs(jobs):
     ids = {key for key, workflow in WORKFLOWS.items()
            if workflow.get("kind") in ("rh_workflow", "ai_app")}
+    ids.update(RETIRED_REALISM_WORKFLOW_IDS)
     return [job for job in sorted(jobs, key=lambda row: row.get("created", 0), reverse=True)
             if job.get("workflow") in ids or job.get("style_id") == "realism"][:REALISM_HISTORY_LIMIT]
 
@@ -601,7 +603,7 @@ def scoped_history_jobs(jobs, scope=None, style=None, limit=12):
     elif scope == "creator":
         ordered = [job for job in ordered if job.get("workflow") == "anima02"]
         if style is not None:
-            if style not in {"sketch", "graphic", "cold", "hanmanga", "nff"}:
+            if style not in {"sketch", "original_sketch", "graphic", "original_graphic", "cold", "hanmanga", "nff"}:
                 return []
             ordered = [job for job in ordered if job.get("style_id") == style]
     elif scope:
@@ -809,6 +811,19 @@ def normalize_rh_coins(response, output_rows):
     if not re.fullmatch(r"\d+(?:\.\d+)?", text):
         return None
     return text
+
+
+def static_content_type(path):
+    return {
+        ".html": "text/html; charset=utf-8",
+        ".js": "application/javascript",
+        ".css": "text/css",
+        ".json": "application/json",
+        ".webp": "image/webp",
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+    }.get(pathlib.Path(path).suffix.lower(), "application/octet-stream")
 
 
 def rh_output_details(task_id):
@@ -1194,37 +1209,6 @@ def rh_run_ai_app(job, w):
     job["download_finished"] = time.time()
     return images
 
-def rh_run_sketch_sequence(job, jobdir, w):
-    stages = SKETCH_SEQUENCE_STAGES[job["sequence_mode"]]
-    sequence_seed = int(job.get("seed") or secrets.randbelow(2**31 - 1) + 1)
-    job["sequence_seed"] = sequence_seed
-    job["rh_task_ids"] = []
-    job["stage_status"] = []
-    all_images = []
-    deadline = time.time() + 1800
-    for stage_index, (stage_id, stage_label, stage_prompt) in enumerate(stages):
-        stage_job = dict(job)
-        stage_job["seed"] = sequence_seed
-        stage_job["batch"] = 1
-        stage_job["hd"] = job.get("hd", 0) if stage_id == "colored" else 0
-        stage_job["prompt"] = f"{job['prompt']}, {stage_prompt}, same exact character, same pose, same camera, same composition across the whole process series"
-        stage_job["trigger"] = STYLE_PRESETS["sketch"]["trigger"]
-        node_list = rh_build_node_info(stage_job)
-        task_id = rh_submit(w["rh_workflow_id"], node_list)
-        job["rh_task_ids"].append(task_id)
-        persist_provider_task(job, task_id)
-        job["stage_status"].append({"stage_id": stage_id, "stage_label": stage_label, "status": "RUNNING", "task_id": task_id})
-        job["provider_status"] = stage_label
-        results = _rh_wait_task(job, task_id, deadline, int(stage_index / len(stages) * 100), max(8, int(100 / len(stages))))
-        job["stage_status"][-1]["status"] = "DONE"
-        all_images.extend(_rh_results_to_images(results, task_id, stage_id, stage_label))
-    if not all_images:
-        raise RuntimeError("RH sketch sequence returned no images")
-    job["images"] = all_images
-    job["provider_status"] = "DONE"
-    job["progress_pct"] = 100
-    job["provider_finished"] = time.time()
-    return all_images
 
 def rh_run(job, jobdir, w):
     """RunningHub 后端执行：提交→轮询→下载"""
@@ -1319,27 +1303,6 @@ def local_run_image(job, jobdir, w, prompt=None, negative_prompt=None,
         job["images"] = images
         job["provider_status"] = "LOCAL_PREVIEW_READY"
     return images
-
-def local_run_sketch_sequence(job, jobdir, w):
-    stages = SKETCH_SEQUENCE_STAGES[job["sequence_mode"]]
-    sequence_seed = int(job["seed"])
-    job["sequence_seed"] = sequence_seed
-    job["stage_status"] = []
-    all_images = []
-    for stage_index, (stage_id, stage_label, stage_prompt) in enumerate(stages):
-        job["stage_status"].append({"stage_id": stage_id, "stage_label": stage_label, "status": "RUNNING"})
-        prompt = f"{job['prompt']}, {stage_prompt}, same exact character, same pose, same camera, same composition across the whole process series"
-        images = local_run_image(
-            job, jobdir, w, prompt=prompt, batch_size=1,
-            hd=job.get("hd", 0) if stage_id == "colored" else 0,
-            seed=sequence_seed, stage_id=stage_id, stage_label=stage_label,
-            stage_index=stage_index, stage_total=len(stages),
-        )
-        all_images.extend(images)
-        job["stage_status"][-1]["status"] = "DONE"
-    job["images"] = all_images
-    job["provider_status"] = "LOCAL_DONE"
-    return all_images
 
 
 def rh_upload_file(data, filename, ctype="application/octet-stream", timeout=120):
@@ -1462,17 +1425,12 @@ def run_job(job):
                 rh_run_video(job, w)
             elif w.get("kind") == "rh_workflow":
                 rh_run_generic(job, w)
-            elif job.get("sequence_mode") in SKETCH_SEQUENCE_STAGES:
-                rh_run_sketch_sequence(job, jobdir, w)
             else:
                 rh_run(job, jobdir, w)
             job["status"] = "done"
             job["progress_pct"] = 100
         elif generation_backend == "local":
-            if job.get("sequence_mode") in SKETCH_SEQUENCE_STAGES:
-                local_run_sketch_sequence(job, jobdir, w)
-            else:
-                local_run_image(job, jobdir, w)
+            local_run_image(job, jobdir, w)
             job["status"] = "done"
             job["progress_pct"] = 100
             job["provider_status"] = "LOCAL_DONE"
@@ -1835,12 +1793,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_header("Location", "/realism?workflow=realcomic")
             self.send_header("Content-Length", "0")
             self.end_headers()
-        elif path == "/" or path.startswith("/static/") or path in ("/promptgen", "/original-sketch", "/original-graphic", "/realism", "/video"):
+        elif path in ("/original-sketch", "/original-graphic"):
+            target = "/?style=" + ("original_sketch" if path == "/original-sketch" else "original_graphic")
+            self.send_response(302)
+            self.send_header("Location", target)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+        elif path == "/" or path.startswith("/static/") or path in ("/promptgen", "/realism", "/video"):
             if not self._auth():
                 # serve shell so user can enter token; API calls still guarded
                 pass
             root = BASE / "static"
-            clean_pages = {"/promptgen": "promptgen.html", "/original-sketch": "original_sketch.html", "/original-graphic": "original_graphic.html", "/realism": "realism.html"}
+            clean_pages = {"/promptgen": "promptgen.html", "/realism": "realism.html"}
             if path in clean_pages:
                 rel = clean_pages[path]
             elif path == "/video":
@@ -1853,7 +1817,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._send(404, b"not found")
             if not fp.exists():
                 return self._send(404, b"not found")
-            ctype = "text/html; charset=utf-8" if rel.endswith(".html") else ("application/javascript" if rel.endswith(".js") else "text/css")
+            ctype = static_content_type(rel)
             self._send_static(fp, ctype)
         else:
             self._send(404, b'{"error":"not found"}')
@@ -2249,12 +2213,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 preset = resolve_style_preset(style_id, style_variant)
             except ValueError as error:
                 return self._send(400, json.dumps({"error": str(error)}).encode())
-            sequence_raw = str(body.get("sequence_mode") or "off")
-            sequence_mode = {"3": "sketch3", "4": "sketch4"}.get(sequence_raw, sequence_raw)
-            if sequence_mode not in ("off", "sketch3", "sketch4"):
-                return self._send(400, b'{"error":"unknown sequence_mode"}')
-            if sequence_mode != "off" and style_id != "sketch":
-                return self._send(400, b'{"error":"sketch sequence is only available for sketch style"}')
+            # Staged sketch painting was retired. Old clients may still send a
+            # saved sequence value, but every new task executes exactly once.
+            sequence_mode = "off"
             # Both image backends use the same trusted style mapping. The local
             # runner converts basenames to Anima_JT\ paths just before submit.
             loras = {"LORA1": preset["LORA1"], "LORA2": preset["LORA2"]}

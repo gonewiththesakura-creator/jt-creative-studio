@@ -16,15 +16,9 @@ assert f[('7','lora_name')]=='01_style1_step900.safetensors' and f[('8','lora_na
 # Changing only seed must change exactly the seed node value.
 g=dict(base);g['seed']=987654321;g=fields(m.rh_build_node_info(g));diff={k:(f.get(k),g.get(k)) for k in set(f)|set(g) if f.get(k)!=g.get(k)}
 assert diff=={('10','seed'):(123456789,987654321)},diff
-# Staged mode uses one fixed shared sequence seed and forces one image per stage.
-class Stop(Exception):pass
-captured=[]
-def submit(_id,rows):captured.append(fields(rows));return str(len(captured))
-def wait(*a,**kw):return [{'url':'https://example.invalid/x.png'}]
-m.rh_submit=submit;m._rh_wait_task=wait
-job=dict(base);job.update({'sequence_mode':'sketch4','style_id':'sketch','images':[]})
-m.rh_run_sketch_sequence(job,Path(tempfile.gettempdir()),m.WORKFLOWS['anima02'])
-assert len(captured)==4
-assert {x[('10','seed')] for x in captured}=={123456789}
-assert {x[('6','batch_size')] for x in captured}=={1}
-print('REQUEST_CONSTRUCTION_OK ordinary_batch=4 one_task staged=4tasks batch1 shared_seed')
+# Retired staged values are no longer dispatched by run_job; ordinary payloads retain batch and seed.
+source=P.read_text(encoding='utf8')
+assert 'rh_run_sketch_sequence(job, jobdir, w)' not in source
+assert 'local_run_sketch_sequence(job, jobdir, w)' not in source
+assert 'sequence_mode = "off"' in source
+print('REQUEST_CONSTRUCTION_OK ordinary_batch=4 one_task fixed_seed staged_retired')

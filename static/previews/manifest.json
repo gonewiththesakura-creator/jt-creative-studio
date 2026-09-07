@@ -1,0 +1,197 @@
+[
+  {
+    "source": "快速真人化--01：21.png",
+    "source_sha256": "9ce57cd9562ec5ace47b039a431b16052cdffbdd918876383c65de1fe7a673b6",
+    "output": "realism-realcomic.webp",
+    "original_size": [
+      560,
+      1024
+    ],
+    "preview_size": [
+      560,
+      1024
+    ],
+    "bytes": 54388,
+    "sha256": "18b706ed44250b88d93757cca45ec7ba9d8169ffba49925c17800e255625180f"
+  },
+  {
+    "source": "Krea2_动漫转真人--03：21.png",
+    "source_sha256": "f4b3b5d9044928b7ddda4471bfdda9c0baecd8be8d93d6f728cc20738cfc058b",
+    "output": "realism-krea2.webp",
+    "original_size": [
+      2160,
+      3878
+    ],
+    "preview_size": [
+      891,
+      1600
+    ],
+    "bytes": 134052,
+    "sha256": "0270fd69a8bc8f7d41022cc57991793a03109fcfc70858995ff629813af7100a"
+  },
+  {
+    "source": "动漫转写实真人2511--1：30.png",
+    "source_sha256": "28d40f06a418abd25836bc77ec7c60a25e8f2616d60ee7fe08de226426a196f8",
+    "output": "realism-2511.webp",
+    "original_size": [
+      1440,
+      1080
+    ],
+    "preview_size": [
+      1440,
+      1080
+    ],
+    "bytes": 113898,
+    "sha256": "a48410e17fed24cb3d930add4a8d6392a77e5f827ac120fbc243dd0c24c45c66"
+  },
+  {
+    "source": "动漫转真人·多采超清天花板--03：54.png",
+    "source_sha256": "191ca741d94587a8fd452819fd730166f10b357da0605d62a8a39ff7ca8b2fdc",
+    "output": "realism-multisample.webp",
+    "original_size": [
+      1152,
+      2048
+    ],
+    "preview_size": [
+      900,
+      1600
+    ],
+    "bytes": 162530,
+    "sha256": "68719c8f1d52dbbf4a7c82a79f25a474021851572f8dc34bdbf58b8a7954037a"
+  },
+  {
+    "source": "Qwen+ZI动漫转真人写实感洗图--3：46.png",
+    "source_sha256": "54c7a86abfb9d8b3096f62e5a0b18f0dbda851b75feb91bc6551b57758372051",
+    "output": "realism-qwen-zi.webp",
+    "original_size": [
+      2730,
+      2048
+    ],
+    "preview_size": [
+      1600,
+      1200
+    ],
+    "bytes": 151762,
+    "sha256": "cb120bd36fb85a0745873572a925de4098dd0f49c8283998e307bc3319933574"
+  },
+  {
+    "source": "动漫转真人ZI洗图改2：02.png",
+    "source_sha256": "fb795331f06840171f2da99d0cd7e1fe143065b815b65a914b45f376f7e1103a",
+    "output": "realism-zi-flowmatch.webp",
+    "original_size": [
+      1920,
+      1440
+    ],
+    "preview_size": [
+      1600,
+      1200
+    ],
+    "bytes": 110070,
+    "sha256": "de1d1cf19403311b128e5e9cbfc42d3ef36729b071925b85505325d6773b2bab"
+  },
+  {
+    "source": "冷脸萌20s.png",
+    "source_sha256": "9268cbc22fdb7a0fdc3fa311657e7af19a0a1f95ccf909ee726c910b1e838a88",
+    "output": "style-cold.webp",
+    "original_size": [
+      1808,
+      3408
+    ],
+    "preview_size": [
+      849,
+      1600
+    ],
+    "bytes": 76410,
+    "sha256": "88594b61ffdcfedadb2d7dcfb7ce1b7713179cbf62f76eee9e3b86edbe07c2c3"
+  },
+  {
+    "source": "铅绘20s.png",
+    "source_sha256": "acda4eef6d86d3d971cb63c3dab3d46e163335c3a10f11b2e580573658b23b49",
+    "output": "style-sketch.webp",
+    "original_size": [
+      1808,
+      3408
+    ],
+    "preview_size": [
+      849,
+      1600
+    ],
+    "bytes": 164736,
+    "sha256": "a44300d0bd324970ec68a271bf3d9a777c9e03306672eacf02814cd5ec923702"
+  },
+  {
+    "source": "原始铅绘20s.png",
+    "source_sha256": "535eade808be9203dd1b6400ebadd13b87e4fa7a594a059a75ea8217034fa4fe",
+    "output": "style-original-sketch.webp",
+    "original_size": [
+      904,
+      1704
+    ],
+    "preview_size": [
+      849,
+      1600
+    ],
+    "bytes": 194548,
+    "sha256": "10bbd493b78324c32e11c1a90797201d4d5cc3cf51b9136555904906447f8490"
+  },
+  {
+    "source": "古风--20s.png",
+    "source_sha256": "b4a4f1994a392ba51fe763229e07b2ee35983cbcf72dd37f8911558c1c2d6b46",
+    "output": "style-graphic.webp",
+    "original_size": [
+      1792,
+      3200
+    ],
+    "preview_size": [
+      896,
+      1600
+    ],
+    "bytes": 156224,
+    "sha256": "d36eb9cfc83761ef30b91d6fa61d91457d926b7b0313d441634ce11081c72952"
+  },
+  {
+    "source": "原始古风20s.png",
+    "source_sha256": "1af1d4becb98129b3befc35621671f0de5cd017ccea1d2444434a056eb057ae7",
+    "output": "style-original-graphic.webp",
+    "original_size": [
+      1792,
+      3200
+    ],
+    "preview_size": [
+      896,
+      1600
+    ],
+    "bytes": 148796,
+    "sha256": "9495db62a230f408f7375177998528202078bf2dbbf41f7e555d0634593606a8"
+  },
+  {
+    "source": "古漫20s.png",
+    "source_sha256": "c02f7ff1eb70ed1d4ac532083bca21fb0c861bf2f06e0e34695532a07f9725d9",
+    "output": "style-hanmanga.webp",
+    "original_size": [
+      1792,
+      3200
+    ],
+    "preview_size": [
+      896,
+      1600
+    ],
+    "bytes": 112652,
+    "sha256": "772696a71e6f8c070eb852f2a81a349a5e461442eff9f410076203bd4ad046c5"
+  },
+  {
+    "source": "NFF--20s.png",
+    "source_sha256": "7925fcc70842173fc6e2ed576e00c39cafd21e280c810dbab2bd80f26efd6271",
+    "output": "style-nff.webp",
+    "original_size": [
+      1792,
+      3200
+    ],
+    "preview_size": [
+      896,
+      1600
+    ],
+    "bytes": 105412,
+    "sha256": "9df4e3fe33cb6b43ad36b6d497318723bfe5d714b6d5d68ccb77652347865d8a"
+  }
+]

@@ -3,18 +3,16 @@ import sys
 ROOT=Path(r"D:/LAN-Share/lora/_work/comfy_panel")
 SERVER=(ROOT/"server.py").read_text(encoding="utf8")
 MAIN=(ROOT/"static"/"promptgen.html").read_text(encoding="utf8")
-SKETCH=(ROOT/"static"/"original_sketch.html").read_text(encoding="utf8")
-GRAPHIC=(ROOT/"static"/"original_graphic.html").read_text(encoding="utf8")
+
 TPL=(ROOT/"templates"/"anima02_notrans.json").read_text(encoding="utf8")
 checks={
  "main has cloud and local buttons":all(x in MAIN for x in ['id="genCloudBtn"','id="genLocalBtn"','☁ 云端生图','本地生成']),
- "original sketch has two buttons":all(x in SKETCH for x in ['id="cloudGenerateCloud"','id="cloudGenerateLocal"','☁ 云端生图','本地生成']),
- "original graphic has two buttons":all(x in GRAPHIC for x in ['id="cloudGenerateCloud"','id="cloudGenerateLocal"','☁ 云端生图','本地生成']),
- "graphic button colors":'--liquid-color:#536cff' in GRAPHIC and '--liquid-color:#3c9b82' in GRAPHIC,
- "browser requests backend":all('generation_backend:backend' in x for x in [MAIN,SKETCH,GRAPHIC]),
- "separate status and result panes":all(all(x in page for x in ['data-result-panel="cloud"','data-result-panel="local"','云端结果','本地结果']) for page in [MAIN,SKETCH,GRAPHIC]),
- "parallel frontend state":all("{cloud:false,local:false}" in x for x in [MAIN,SKETCH,GRAPHIC]),
- "history shows backend":all('generation_backend' in x and "==='local'?'本地':'云端'" in x for x in [MAIN,SKETCH,GRAPHIC]),
+ "original styles share two buttons":all(x in MAIN for x in ['data-style="original_sketch"','data-style="original_graphic"','id="genCloudBtn"','id="genLocalBtn"']),
+ "button colors":'--liquid-color:#536cff' in MAIN and '--liquid-color:#3c9b82' in MAIN,
+ "browser requests backend":'generation_backend:backend' in MAIN,
+ "separate status and result panes":all(x in MAIN for x in ['data-result-panel="cloud"','data-result-panel="local"','云端结果','本地结果']),
+ "parallel frontend state":"{cloud:false,local:false}" in MAIN,
+ "history shows backend":'generation_backend' in MAIN and "==='local'?'本地':'云端'" in MAIN,
  "server validates backend":'generation_backend not in ("cloud", "local")' in SERVER and 'unknown generation_backend' in SERVER,
  "server stores backend":'"generation_backend": generation_backend' in SERVER,
  "server exposes backend":'"generation_backend"' in SERVER,
@@ -24,7 +22,7 @@ checks={
  "local route explicit":'generation_backend == "local"' in SERVER,
  "local preset lora paths":'local_lora_name' in SERVER and 'Anima_JT\\\\' in SERVER,
  "local native batch":'local_run_image(job, jobdir, w)' in SERVER and 'batch=int(job["batch"])' in SERVER,
- "local staged route":'local_run_sketch_sequence' in SERVER,
+ "local staged route retired":'local_run_sketch_sequence' not in SERVER and 'sequence_mode = "off"' in SERVER,
  "local negative prompt":'negative_prompt=job.get("negative_prompt", "")' in SERVER,
  "notrans template accepts negative":'{{NEGATIVE}}' in TPL,
  "build api maps negative":'"{{NEGATIVE}}": negative_prompt' in SERVER,

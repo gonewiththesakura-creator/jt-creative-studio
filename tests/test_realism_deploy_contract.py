@@ -64,9 +64,30 @@ def test_release_manifest_is_complete_and_excludes_nonproduction_files():
         "static/realcomic.html",
         "static/realism.html",
         "static/video.html",
+        "static/previews/manifest.json",
+        "static/previews/realism-realcomic.webp",
+        "static/previews/realism-krea2.webp",
+        "static/previews/realism-2511.webp",
+        "static/previews/realism-multisample.webp",
+        "static/previews/realism-qwen-zi.webp",
+        "static/previews/realism-zi-flowmatch.webp",
+        "static/previews/style-cold.webp",
+        "static/previews/style-sketch.webp",
+        "static/previews/style-original-sketch.webp",
+        "static/previews/style-graphic.webp",
+        "static/previews/style-original-graphic.webp",
+        "static/previews/style-hanmanga.webp",
+        "static/previews/style-nff.webp",
     }
     assert set(module.RELEASE_RELATIVE_PATHS) == expected
     assert not any(path.startswith(("tests/", "audit/")) for path in module.RELEASE_RELATIVE_PATHS)
+
+
+def test_release_creates_every_remote_parent_directory():
+    source = SCRIPT.read_text(encoding="utf-8")
+    assert "remote_parent_paths" in source
+    assert "mkdir -p" in source
+    assert "pathlib.PurePosixPath(remote).parent" in source
 
 
 def test_current_config_passes_without_credentials_or_ssh_needed():
@@ -133,11 +154,11 @@ def test_dry_run_never_allows_remote_mutation_even_when_config_is_complete():
     assert "--execute not supplied" in decision["blockers"]
 
 
-def test_release_targets_match_all_seven_imported_private_workflows():
+def test_release_targets_match_all_six_active_private_workflows():
     module = load_module()
     expected = {
         "realism_krea2", "realism_2511", "realism_multisample", "realism_qwen_zi",
-        "realism_4k_text", "realism_3in1", "realism_zi_flowmatch",
+        "realism_4k_text", "realism_zi_flowmatch",
     }
     assert set(module.TARGET_WORKFLOW_IDS) == expected
     current = json.loads((ROOT / "config.json").read_text(encoding="utf-8"))

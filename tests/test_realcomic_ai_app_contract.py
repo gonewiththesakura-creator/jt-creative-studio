@@ -6,7 +6,7 @@ CONFIG=json.loads((ROOT/"config.json").read_text(encoding="utf8"))
 BUILDER=ROOT/"build_realism_workbench.py"; PAGE=ROOT/"static"/"realism.html"; LEGACY=ROOT/"static"/"realcomic.html"
 html=PAGE.read_text(encoding="utf8");script=BUILDER.read_text(encoding="utf8");legacy=LEGACY.read_text(encoding="utf8")
 w=next((x for x in CONFIG['workflows'] if x.get('id')=='realcomic'),{})
-pages=[ROOT/"static"/x for x in ['index.html','promptgen.html','original_sketch.html','original_graphic.html','video.html']]
+pages=[ROOT/"static"/x for x in ['index.html','promptgen.html','video.html']]
 checks={
  'trusted ai app config':w.get('kind')=='ai_app' and w.get('backend')=='runninghub' and w.get('rh_ai_app_id')=='2025090022289973249',
  'exact public input mapping':w.get('rh_media',{}).get('source_image',{}).get('node')=='504' and w.get('rh_params',{}).get('requirements',{}).get('node')=='491',

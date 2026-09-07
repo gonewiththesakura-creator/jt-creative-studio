@@ -26,9 +26,9 @@ checks = {
             "'/'+location.search+location.hash",
         ]
     ),
-    "all creator home links use root": all(
+    "active creator pages home links use root": all(
         'href="/">' in html and 'href="/promptgen"' not in html
-        for html in PAGES.values()
+        for name,html in PAGES.items() if name not in ('original_sketch.html','original_graphic.html')
     ),
     "main builder owns normalization": all(
         token in (ROOT / "build_unified_three_styles.py").read_text(encoding="utf8")

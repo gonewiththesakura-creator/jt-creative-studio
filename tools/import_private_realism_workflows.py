@@ -56,14 +56,7 @@ SOURCES = (
         "editor_sha": "13d2c2469e9a8db8f7ec79c594c09d489e2694307fd10ab94ef8fd1104ba33d0",
         "api_sha": "ccbba3d7e067a5b82ed22436cb6033b4238e1fdbb6b14e79f4b4e1c064a6615a",
     },
-    {
-        "id": "realism_3in1", "name": "动漫转真人·多分支超清3in1",
-        "desc": "完整多分支图：Flux2 Klein转真人、Z-Image质感、面部修复、局部处理与SeedVR2放大。",
-        "run_id": "2096094953332416513", "editor_id": None,
-        "editor": "3in1.json", "api": "3in1_api.json",
-        "editor_sha": "43c5681ea9ac4d9f3cceeaf5e5583ee4acf3dba67459797c9af357c11c32549c",
-        "api_sha": "d0dc8eabb62b939a9bf64c33f16d2a6bf5db6ee665649cf8718ac4efda6d2e10",
-    },
+
     {
         "id": "realism_zi_flowmatch", "name": "动漫转真人ZI洗图改（Z-Image+FlowMatch）",
         "desc": "动漫转真人、提示词反推与Z-Image FlowMatch质感增强组合。",
@@ -90,7 +83,7 @@ PUBLIC_FIELDS = {
     "realism_multisample": {("7", "image"), ("53", "text"), ("24", "noise_seed"), ("45", "scale_to_length"), ("47", "batch_size")},
     "realism_qwen_zi": {("78", "image"), ("110", "prompt"), ("77", "prompt"), ("3", "seed"), ("264", "scale_to_length"), ("293", "resolution")},
     "realism_4k_text": {("64", "text"), ("59", "seed"), ("70", "preset_size"), ("70", "use_custom_size"), ("70", "custom_width"), ("70", "custom_height"), ("67", "batch_size"), ("36", "toggle"), ("37", "toggle")},
-    "realism_3in1": {("1291", "image"), ("1398", "prompt"), ("1250", "seed"), ("1251", "scale_to_length")},
+
     "realism_zi_flowmatch": {("78", "image"), ("383", "text"), ("3", "seed"), ("515", "toggle")},
 }
 KEY_ALIASES = {
@@ -111,8 +104,7 @@ KEY_ALIASES = {
     ("realism_4k_text", "67", "batch_size"): "batch",
     ("realism_4k_text", "36", "toggle"): "stage1_lora",
     ("realism_4k_text", "37", "toggle"): "stage2_lora",
-    ("realism_3in1", "1291", "image"): "image", ("realism_3in1", "1398", "prompt"): "instruction",
-    ("realism_3in1", "1250", "seed"): "seed", ("realism_3in1", "1251", "scale_to_length"): "input_long_edge",
+
     ("realism_zi_flowmatch", "78", "image"): "image", ("realism_zi_flowmatch", "383", "text"): "instruction",
     ("realism_zi_flowmatch", "3", "seed"): "seed",
     ("realism_zi_flowmatch", "515", "toggle"): "lora_stack",
@@ -219,9 +211,7 @@ def build_workflow(source, object_info):
             key = KEY_ALIASES.get((source["id"], str(node_id), field), f"n{node_id}_{field}")
             base_label = LABELS.get(field) or f"{title} · {field}"
             group = group_for(class_type, field, value)
-            if source["id"] == "realism_3in1" and str(node_id) == "1399" and field == "prompt":
-                base_label = "成人向原生提示词"
-                group = "advanced"
+
             label = friendly_label(source["id"], node_id, field, base_label)
             row = {"node": str(node_id), "field": field, "type": kind, "label": label,
                    "default": value, "required": bool(required), "group": group,
@@ -249,22 +239,7 @@ def build_workflow(source, object_info):
     if source["id"] == "realism_4k_text":
         for key in ("width", "height"):
             result["rh_params"][key]["depends_on"] = {"key": "use_custom_size", "value": True}
-    if source["id"] == "realism_3in1":
-        result["subworkflows"] = [
-            {"id": "anime_to_real", "label": "漫画转真人", "available": True},
-            {"id": "image_edit", "label": "图像编辑", "available": False, "reason": "需要单独的RunningHub运行ID"},
-            {"id": "local_wardrobe", "label": "局部换装", "available": False, "reason": "需要单独的RunningHub运行ID"},
-        ]
-        result["fixed_features"] = ["Z-Image质感增强", "面部修复", "SeedVR2高清放大"]
-        result["rh_params"]["local_detail_lora"] = {
-            "type": "boolean", "label": "局部细节LoRA（仅控制一组）", "default": True,
-            "required": False, "group": "common",
-            "description": "关闭时仅停用这一组LoRA和配套提示词，不代表关闭工作流内其他成人向能力。仅用于明确成年人内容。",
-            "trusted_overrides": {
-                "true": [{"node": "1304", "field": "strength_model", "value": 0.5}, {"node": "1399", "field": "prompt", "value": "shaved pussy\n"}],
-                "false": [{"node": "1304", "field": "strength_model", "value": 0.0}, {"node": "1399", "field": "prompt", "value": ""}],
-            },
-        }
+
     return result
 
 

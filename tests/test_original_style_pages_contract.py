@@ -1,44 +1,22 @@
 from pathlib import Path
-import hashlib,json,subprocess,tempfile,sys
+import json,re,sys
 ROOT=Path(r"D:/LAN-Share/lora/_work/comfy_panel")
-ATT=Path(r"C:/Users/JT/AppData/Local/hermes/attachments")
-CASES={
- "sketch":{
-  "source":ATT/"sketch_anime_dual_mode_generator (1).html",
-  "built":ROOT/"static"/"original_sketch.html",
-  "sha":"bede47b8608b80a1211646ea75cdf27dadb4df11fe085ab753fa25e65c496e49",
-  "rows":230,"categories":17,"style":"sketch","trigger":"jt_style1_v1","path":"/original-sketch"},
- "graphic":{
-  "source":ATT/"graphic_anime_style2_dual_mode_generator (1).html",
-  "built":ROOT/"static"/"original_graphic.html",
-  "sha":"3f7b52578f8321e6cf993912818813920e396dae83fcf97651ee4872a73dcba5",
-  "rows":66,"categories":12,"style":"graphic","trigger":"jt_style2_v1","path":"/original-graphic"},
+HOME=(ROOT/'static/promptgen.html').read_text(encoding='utf8')
+SERVER=(ROOT/'server.py').read_text(encoding='utf8')
+match=re.search(r"const STYLE_CONFIGS=(.*?);const DRAWERS=",HOME,re.S)
+styles=json.loads(match.group(1)) if match else {}
+checks={
+ 'original profiles embedded':set(['original_sketch','original_graphic']).issubset(styles),
+ 'original pool category counts':len(styles.get('original_sketch',{}).get('pools',{}))==17 and len(styles.get('original_graphic',{}).get('pools',{}))==12,
+ 'original exact option row counts':sum(map(len,styles.get('original_sketch',{}).get('pools',{}).values()))==230 and sum(map(len,styles.get('original_graphic',{}).get('pools',{}).values()))==66,
+ 'trusted backend identities':styles.get('original_sketch',{}).get('trigger')=='jt_style1_v1' and styles.get('original_graphic',{}).get('trigger')=='jt_style2_v1' and all(x in SERVER for x in ['"original_sketch": {','"original_graphic": {']),
+ 'original sketch uses ordinary generation':all(x in HOME for x in ["const sequence_mode='off'",'batch:+genBatch.value']) and 'id="sketchProcess"' not in HOME,
+ 'home unified style buttons':all(x in HOME for x in ['data-style="original_sketch"','原始铅绘','data-style="original_graphic"','原始古风']),
+ 'home has no duplicate top nav':all(x not in HOME for x in ['href="/original-sketch"','href="/original-graphic"']),
+ 'server legacy redirects':all(x in SERVER for x in ['path in ("/original-sketch", "/original-graphic")','/?style=']),
 }
-def config(path,name):
- s=path.read_text(encoding='utf8');a=s.index('const DEFAULT_PREFIX');b=s.index('let state',a);block=s[a:b]
- tmp=Path(tempfile.gettempdir())/f'orig_contract_{name}.js';tmp.write_text(block+'\nconsole.log(JSON.stringify({DEFAULT_PREFIX,FIXED_HEAD,FIXED_STYLE,NEGATIVE,POOLS,LABELS,ORDER}));',encoding='utf8')
- r=subprocess.run(['node',str(tmp)],capture_output=True,text=True,encoding='utf8');assert r.returncode==0,r.stderr
- return json.loads(r.stdout)
-checks={}
-for name,c in CASES.items():
- checks[f'{name} source hash']=c['source'].exists() and hashlib.sha256(c['source'].read_bytes()).hexdigest()==c['sha']
- checks[f'{name} built page exists']=c['built'].exists()
- if c['built'].exists():
-  src=config(c['source'],name+'s');out=config(c['built'],name+'b');html=c['built'].read_text(encoding='utf8')
-  checks[f'{name} exact original config preserved']=src==out
-  checks[f'{name} exact pool counts']=len(out['POOLS'])==c['categories'] and sum(map(len,out['POOLS'].values()))==c['rows']
-  checks[f'{name} fixed backend identity']=f"CLOUD_STYLE_ID='{c['style']}'" in html and f"CLOUD_TRIGGER='{c['trigger']}'" in html
-  checks[f'{name} generation controls']=all(x in html for x in ['id="cloudW"','id="cloudH"','id="cloudBatch"','id="cloudHd"','id="cloudSeedMode"','id="cloudSeed"','id="cloudGenerateCloud"','id="cloudGenerateLocal"'])
-  checks[f'{name} current api request']=all(x in html for x in ["'/api/generate'","negative_prompt:negative","prompt_mode:cloudPromptMode.value","seed_mode:cloudSeedMode.value","style_id:CLOUD_STYLE_ID"])
-  checks[f'{name} native batch control']='id="cloudBatch"' in html and 'batch:+cloudBatch.value' in html
-  checks[f'{name} history favorites']=all(x in html for x in ['/api/jobs','/api/favorites','cloudHistory','cloudFavorites','套用提示词、选项和种子'])
-  checks[f'{name} RH coin cost']=all(x in html for x in ['cloudCoinText','RH币：','j.rh_coins'])
-  checks[f'{name} history server scoped']=all(x in html for x in ["/api/jobs?scope=creator&style=", "encodeURIComponent(CLOUD_STYLE_ID)"])
-  checks[f'{name} structured snapshot']=all(x in html for x in ['source_page:CLOUD_PAGE_ID','state:JSON.parse(JSON.stringify(state))','locked:JSON.parse(JSON.stringify(locked))','seed:+cloudSeed.value'])
-  checks[f'{name} back home']='href="/">' in html and 'href="/promptgen"' not in html
-checks['sketch staged controls']=CASES['sketch']['built'].exists() and all(x in CASES['sketch']['built'].read_text(encoding='utf8') for x in ['id="cloudSequence"','cloudSequenceMode','cloudBatch.value=1'])
-home=(ROOT/'static'/'promptgen.html').read_text(encoding='utf8');server=(ROOT/'server.py').read_text(encoding='utf8')
-checks['home original links']=all(x in home for x in ['href="/original-sketch"','原始铅绘','href="/original-graphic"','原始古风'])
-checks['server original routes']=all(x in server for x in ['"/original-sketch": "original_sketch.html"','"/original-graphic": "original_graphic.html"'])
+for name,target in [('original_sketch.html','/?style=original_sketch'),('original_graphic.html','/?style=original_graphic')]:
+ html=(ROOT/'static'/name).read_text(encoding='utf8')
+ checks[name+' lightweight redirect']=target in html and 'location.replace' in html and len(html)<1500
 for k,v in checks.items():print(k,v)
-sys.exit(0 if checks and all(checks.values()) else 1)
+sys.exit(0 if all(checks.values()) else 1)

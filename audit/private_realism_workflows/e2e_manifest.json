@@ -39,6 +39,14 @@
     "result_count": 4,
     "task_cost_seconds": 316
   },
+  "retired_workflows": [
+    {
+      "id": "realism_3in1",
+      "retired_at": "2026-09-08",
+      "reason": "retired by user; historical E2E records retained",
+      "production_available": false
+    }
+  ],
   "visual_quality": {
     "all_complete": true,
     "all_composition_coherent": true,
@@ -48,14 +56,14 @@
     "inherited_source_watermark": ["realism_multisample", "realism_3in1"]
   },
   "browser_e2e": {
-    "eight_unified_realism_schemes": true,
+    "seven_unified_realism_schemes": true,
     "schema_counts_exact": true,
-    "public_media_fields": 7,
-    "public_workflow_parameter_fields": 33,
+    "active_private_workflows": 6,
     "public_ai_app_parameter_fields": 1,
-    "three_in_one_public_controls": 5,
-    "three_in_one_available_subworkflows": ["anime_to_real"],
-    "three_in_one_unavailable_until_run_id": ["image_edit", "local_wardrobe"],
+    "three_in_one_retired": true,
+    "realism_previews": 6,
+    "creator_style_previews": 7,
+    "staged_sketch_painting_retired": true,
     "legacy_realcomic_redirect": true,
     "ai_app_adapter_in_unified_console": true,
     "provider_ids_hidden": true,
@@ -67,11 +75,11 @@
     "minimum_hit_target_px": 44
   },
   "test_gate": {
-    "test_files_total": 48,
-    "test_files_passed": 47,
+    "test_files_total": 51,
+    "test_files_passed": 50,
     "known_baseline_failure": "test_restore_prompt_contract.py",
     "new_failures": 0,
-    "javascript_blocks_checked": 15,
+    "javascript_blocks_checked": 13,
     "javascript_failures": 0
   }
 }

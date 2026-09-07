@@ -4,7 +4,7 @@
 
 ## 范围与证据等级
 
-用户提供了14份JSON（7份ComfyUI编辑格式、7份API格式）、7个`/run/workflow/` ID及7个`/workflow/`编辑页ID。本接入不使用公开作者副本，不在仓库保存RunningHub Key。
+用户曾提供14份JSON（7份ComfyUI编辑格式、7份API格式）、7个`/run/workflow/` ID及7个`/workflow/`编辑页ID。2026-09-08按用户决定，3in1退出生产；当前生产保留6套私有Workflow及快速真人化AI App。本接入不使用公开作者副本，不在仓库保存RunningHub Key。
 
 最初按消息顺序配对运行ID的假设被真实预校验推翻：Krea2节点227对最初候选ID返回`node_not_found_in_workflow`且无taskId。随后先执行49次单节点探测，再以每套5个分散节点组成多节点结构指纹。每个运行ID均出现唯一的5/5匹配；所有预校验均返回`taskId=""`，没有启动任务或扣费。
 
@@ -17,7 +17,7 @@
 | `realism_multisample` | 动漫转真人·多采超清天花板 | `2096103615374155777` | 1 | 4 |
 | `realism_qwen_zi` | Qwen+ZI动漫转真人写实感洗图 | `2096101840168747010` | 1 | 5 |
 | `realism_4k_text` | 超写实4K文生图 | `2095331229284470786` | 0 | 9 |
-| `realism_3in1` | 动漫转真人·多分支超清3in1 | `2096094953332416513` | 1 | 4 |
+| `realism_3in1` | 动漫转真人·多分支超清3in1（已退役，仅保留历史E2E证据） | `2096094953332416513` | - | - |
 | `realism_zi_flowmatch` | 动漫转真人ZI洗图改（Z-Image+FlowMatch） | `2096150319347859458` | 1 | 3 |
 
 用户还提供了以下编辑页ID集合：
@@ -37,9 +37,9 @@
 
 机械获得类型、枚举、默认值、最小值、最大值、步长、多行文本及布尔定义。可重复导入器为`tools/import_private_realism_workflows.py`；修改配置前会校验全部14份源文件SHA-256。
 
-## 3in1源图与精简产品Schema
+## 3in1历史源图与退役状态
 
-当前导出的API源图包含3个`LoadImage.image`与105个可覆盖字面字段，原始109项完整payload已经真实E2E成功。按用户产品意图，面板不再把这些技术参数全部公开，而采用明确业务白名单：
+该API源图曾包含3个`LoadImage.image`与105个可覆盖字面字段，原始109项及后续精简控制均完成过真实E2E。2026-09-08用户决定取消3in1；它已从生产`config.json`、导入器、公开页面和发布门禁删除。以下信息仅作为历史证据，不代表当前可用能力：
 
 - 当前可执行“漫画转真人”分支：1张真正进入最终结果链的动漫原图
 - 转换要求、主Seed、输入最长边
@@ -66,13 +66,15 @@ ComfyUI的`required`表示调用签名字段存在，并不禁止空字符串。
 - 原始3in1完整payload真实E2E已留档；精简后HTTP合同验证1图+4参数及逻辑开关可信展开
 - `false`、整数`0`、合法空文本完整保留
 - 浏览器传入的`workflowId`与`nodeInfoList`被丢弃
-- 最新隔离Edge浏览器：8个统一真人化方案控件数逐项匹配
-- 7套Workflow共7个图片字段、33个参数字段；快速AI App另有1图+1要求
-- 3in1页面：5个业务控件（1图+4参数）
+- 最新隔离Edge浏览器：7个统一真人化方案逐项匹配（快速真人化AI App + 6套私有Workflow）
+- 6套生产Workflow及快速AI App均保留可信服务端映射；3in1不再公开
+- 13张用户预览图已等比例压缩为WebP（总计约1.69MB）：7张创作画风、6张真人化工作流；超写实4K无预览时诚实显示空态
+- 原始铅绘与原始古风已并入创作台画风列表，旧URL保留302兼容跳转
+- 铅绘3/4步逐步上色已取消；前端无入口，服务端对旧请求强制`sequence_mode=off`
 - provider ID不在页面中出现
 - 桌面无横向溢出
 - 390px手机无横向溢出、触控目标至少44px、当前导航可见
-- 全仓库逐文件：48个测试文件中47个通过；唯一红项为基线既有的`test_restore_prompt_contract.py`
+- 全仓库逐文件：51个测试文件中50个通过；唯一红项为基线既有的`test_restore_prompt_contract.py`
 - 可恢复真实E2E执行器：5项安全合同通过；已有taskId只查询，提交结果不明确时要求人工核查，绝不自动重提
 - Krea2真实E2E：taskId `2096442809591558145`，`RUNNING → SUCCESS`，返回1张有效PNG（8,578,419字节）；视觉检查显示真人化明显、脸部无严重畸形、无文字水印
 - 2511真实E2E：taskId `2096445452946796545`，`RUNNING → SUCCESS`
@@ -85,7 +87,7 @@ ComfyUI的`required`表示调用签名字段存在，并不禁止空字符串。
 - ZI+FlowMatch真实E2E：taskId `2096452390796980225`，`RUNNING → SUCCESS`；ZIP CRC完整，内含1张有效PNG
 - 本地Qwen3-VL质检：8张均完整、构图连贯，无严重脸手畸形。Krea2、2511、Qwen+ZI、4K、ZI+FlowMatch无文字水印；多采和3in1保留输入图原有右侧英文水印，属于源图继承
 - 安全加固：持久化幂等请求号、服务重启只恢复既有taskId、视频幂等与并发原子化、HTTP最多2工作线程、ComfyUI输出basename校验、收藏去重及200条上限、回滚manifest/哈希/健康复验
-- 最终逐文件回归：48个测试文件中47个通过；唯一红项仍是基线既有`test_restore_prompt_contract.py`
+- 最终逐文件回归：51个测试文件中50个通过；唯一红项仍是基线既有`test_restore_prompt_contract.py`
 - 一级导航已合并为“真人化”；旧`/realcomic`以302跳转到`/realism?workflow=realcomic`，旧任务和收藏兼容迁入统一页面
 
 ## 发布边界

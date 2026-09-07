@@ -18,7 +18,7 @@ checks={
  "nff uses sketch quality and adult head":bool(nff) and nff.get('prefix')==sketch.get('prefix') and nff.get('head')==sketch.get('head'),
  "nff has non sketch negative":bool(nff.get('negative')) and nff.get('negative')!=sketch.get('negative'),
  "nff independent style description":bool(nff.get('style')) and nff.get('style')!=sketch.get('style') and 'jt_style1_v1' not in nff.get('style',''),
- "nff not staged sketch":'currentStyle===\'sketch\'' in HTML and "currentStyle==='nff'" not in re.search(r'function updateBatchSemantics\(\).*?\}',HTML,re.S).group(0) if re.search(r'function updateBatchSemantics\(\).*?\}',HTML,re.S) else False,
+ "staged generation retired":'id="sketchProcess"' not in HTML and "const sequence_mode='off'" in HTML,
  "server trusted nff preset":all(x in SERVER for x in ['"nff": {','"trigger": "jt_nffstyle_v1"','"LORA1": "06_nff_style_v1_step2000.safetensors"','"LORA2": "06_nff_style_v1_step2000.safetensors"']),
  "server rejects browser lora override":'loras = {"LORA1": preset["LORA1"], "LORA2": preset["LORA2"]}' in SERVER,
  "snapshot restores nff":'STYLE_CONFIGS[snapshot.style]' in HTML and "currentStyle=STYLE_CONFIGS[snapshot.style]?snapshot.style:'cold'" in HTML,

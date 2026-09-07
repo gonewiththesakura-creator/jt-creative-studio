@@ -1,25 +1,21 @@
 from pathlib import Path
-import sys
-
+import json,re,sys
 ROOT=Path(r"D:/LAN-Share/lora/_work/comfy_panel")
-SKETCH=(ROOT/"static"/"original_sketch.html").read_text(encoding="utf8")
-GRAPHIC=(ROOT/"static"/"original_graphic.html").read_text(encoding="utf8")
-BUILDER=(ROOT/"build_original_style_pages.py").read_text(encoding="utf8")
-PAGES=[SKETCH,GRAPHIC]
+HTML=(ROOT/'static/promptgen.html').read_text(encoding='utf8')
+BUILDER=(ROOT/'build_unified_three_styles.py').read_text(encoding='utf8')
+styles=json.loads(re.search(r'const STYLE_CONFIGS=(.*?);const DRAWERS=',HTML,re.S).group(1))
 checks={
- "same creation workbench hierarchy":all(all(x in page for x in ['<h1>创作设置</h1>','class="section-label">人物模式','id="originalDrawers"','id="originalRandomAll"','id="originalClearAll"']) for page in PAGES),
- "all option categories start hidden":all('let originalOpenDrawers=new Set()' in page and '.original-drawer-body{display:none' in page for page in PAGES),
- "one category click reveals selectors":all("originalOpenDrawers.has(key)?originalOpenDrawers.delete(key):originalOpenDrawers.add(key)" in page and '.original-drawer.open .original-drawer-body{display:grid' in page for page in PAGES),
- "two step direct picker":all('class="original-picker"' in page and 'class="original-value-summary"' not in page and 'class="original-expand"' not in page for page in PAGES),
- "no legacy visible option grid":all('.original-content{display:none!important}' in page for page in PAGES),
- "random and lock retained":all('class="original-reroll"' in page and 'class="original-lock"' in page for page in PAGES),
- "favorites restore only relevant drawers":all('restoreOriginalOpenDrawers' in page and 'originalExpandedKeys' not in page for page in PAGES),
- "exact source configs stay embedded":all(x in SKETCH for x in ['const DEFAULT_PREFIX','const FIXED_HEAD','const FIXED_STYLE','const NEGATIVE','const POOLS','const LABELS','const ORDER']) and all(x in GRAPHIC for x in ['const DEFAULT_PREFIX','const FIXED_HEAD','const FIXED_STYLE','const NEGATIVE','const POOLS','const LABELS','const ORDER']),
- "builder owns new shell":all(x in BUILDER for x in ['ORIGINAL_WORKBENCH','originalOpenDrawers','original-picker','original-content{display:none!important}']),
- "mobile controls remain accessible":all('.original-drawer-head{width:100%;min-height:48px' in page and '.original-reroll,.original-lock{width:44px;height:44px' in page for page in PAGES),
- "mobile picker targets are 44px":all('.original-picker{display:block;width:100%;min-height:44px' in page for page in PAGES),
- "mobile generation dock is fixed":all('position:fixed;left:12px;right:12px;bottom:calc(8px + env(safe-area-inset-bottom))' in page and 'padding-bottom:calc(104px + env(safe-area-inset-bottom))' in page for page in PAGES),
- "mobile generation dock stays one row":all('@media(max-width:480px){.generation-actions{grid-template-columns:1fr 1fr}' in page for page in PAGES),
+ 'same creation workbench hierarchy':all(x in HTML for x in ['<h1>创作设置</h1>','class="section-label">人物模式','id="drawers"','id="randomAll"','id="clearAll"']),
+ 'all option categories start hidden':'openDrawers=new Set()' in HTML and '.drawer-body{display:none' in HTML,
+ 'one category click reveals selectors':"openDrawers.has(d.id)?openDrawers.delete(d.id):openDrawers.add(d.id)" in HTML and '.drawer.open .drawer-body' in HTML,
+ 'two step direct picker':'class="picker"' in HTML and 'class="picker-wrap"' in HTML,
+ 'random and lock retained':all(x in HTML for x in ['class="reroll"','class="lock"']),
+ 'favorites restore only relevant drawers':'openDrawers=new Set(Object.keys(state()).filter' in HTML,
+ 'exact original configs embedded':sum(map(len,styles['original_sketch']['pools'].values()))==230 and sum(map(len,styles['original_graphic']['pools'].values()))==66,
+ 'builder owns unified profiles':all(x in BUILDER for x in ['"original_sketch":{','"original_graphic":{','RAW_SOURCE_POOLS']),
+ 'mobile controls remain accessible':all(x in HTML for x in ['.drawer-head{min-height:48px}','.item-actions button{width:44px;height:44px}']),
+ 'mobile generation dock is fixed':'position:fixed;left:12px;right:12px;bottom:calc(8px + env(safe-area-inset-bottom))' in HTML,
+ 'mobile generation dock stays one row':'@media(max-width:480px)' in HTML and '.generation-actions{grid-template-columns:1fr 1fr}' in HTML,
 }
-for name,value in checks.items():print(name,value)
+for k,v in checks.items():print(k,v)
 sys.exit(0 if all(checks.values()) else 1)

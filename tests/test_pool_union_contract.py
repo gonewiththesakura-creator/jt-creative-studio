@@ -12,7 +12,7 @@ if MANIFEST.exists():
         styles=json.loads(m.group(1))
         expected=manifest["union_pools"]
         source_pools=manifest["raw_source_pools"]
-        checks["five profiles present"]=set(styles)=={"cold","sketch","graphic","hanmanga","nff"}
+        checks["seven profiles present"]=set(styles)=={"cold","sketch","original_sketch","graphic","original_graphic","hanmanga","nff"}
         for source_id,pools0 in source_pools.items():
             for key,items0 in pools0.items():
                 checks[f"source preserved:{source_id}:{key}"]={tuple(x) for x in items0}.issubset({tuple(x) for x in expected[key]})

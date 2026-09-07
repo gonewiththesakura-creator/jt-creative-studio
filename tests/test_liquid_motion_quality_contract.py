@@ -2,8 +2,8 @@ from pathlib import Path
 import sys
 
 ROOT=Path(r"D:/LAN-Share/lora/_work/comfy_panel")
-PAGES=[(ROOT/"static"/name).read_text(encoding="utf8") for name in ("promptgen.html","original_sketch.html","original_graphic.html")]
-BUILDERS=[(ROOT/name).read_text(encoding="utf8") for name in ("build_unified_three_styles.py","build_original_style_pages.py")]
+PAGES=[(ROOT/"static"/"promptgen.html").read_text(encoding="utf8")]
+BUILDERS=[(ROOT/"build_unified_three_styles.py").read_text(encoding="utf8")]
 checks={
  "raf liquid controller":all("requestAnimationFrame" in page and "liquidMotionState" in page and "renderLiquidFrame" in page for page in PAGES),
  "visual progress never exceeds backend target":all("Math.min(state.target" in page and "dataset.progressTarget" in page for page in PAGES),

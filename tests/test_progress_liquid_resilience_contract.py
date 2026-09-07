@@ -3,10 +3,8 @@ import sys
 
 ROOT=Path(r"D:/LAN-Share/lora/_work/comfy_panel")
 MAIN=(ROOT/"static"/"promptgen.html").read_text(encoding="utf8")
-SKETCH=(ROOT/"static"/"original_sketch.html").read_text(encoding="utf8")
-GRAPHIC=(ROOT/"static"/"original_graphic.html").read_text(encoding="utf8")
 SERVER=(ROOT/"server.py").read_text(encoding="utf8")
-PAGES=[MAIN,SKETCH,GRAPHIC]
+PAGES=[MAIN]
 
 checks={
  "liquid accepts numeric progress":all(all(x in page for x in ['setLiquidProgress','--liquid-progress:0%','--liquid-level:calc(100% - var(--liquid-progress))']) for page in PAGES),
