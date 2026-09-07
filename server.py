@@ -591,6 +591,24 @@ def realism_history_jobs(jobs):
             if job.get("workflow") in ids or job.get("style_id") == "realism"][:REALISM_HISTORY_LIMIT]
 
 
+def scoped_history_jobs(jobs, scope=None, style=None, limit=12):
+    if scope == "realism":
+        return realism_history_jobs(jobs)
+    ordered = sorted(jobs, key=lambda row: row.get("created", 0), reverse=True)
+    if scope == "video":
+        ids = {key for key, workflow in WORKFLOWS.items() if workflow.get("kind") == "video"}
+        ordered = [job for job in ordered if job.get("workflow") in ids]
+    elif scope == "creator":
+        ordered = [job for job in ordered if job.get("workflow") == "anima02"]
+        if style is not None:
+            if style not in {"sketch", "graphic", "cold", "hanmanga", "nff"}:
+                return []
+            ordered = [job for job in ordered if job.get("style_id") == style]
+    elif scope:
+        return []
+    return ordered[:limit]
+
+
 def normalize_realism_snapshot(w, trusted_media, trusted_params, snapshot):
     """Persist only server-validated fields in generic workflow history."""
     raw = snapshot if isinstance(snapshot, dict) else {}
@@ -1672,7 +1690,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 # a few KB and prevents slow mobile polling/timeouts.
                 items = []
                 query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
-                sources = realism_history_jobs(list(_jobs.values())) if query.get("scope") == ["realism"] else sorted(_jobs.values(), key=lambda j: j.get("created", 0), reverse=True)[:12]
+                scope = (query.get("scope") or [None])[0]
+                style = (query.get("style") or [None])[0]
+                sources = scoped_history_jobs(list(_jobs.values()), scope, style)
                 for src in sources:
                     allowed = (
                         "id", "workflow", "status", "provider_status", "rh_task_id",

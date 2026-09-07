@@ -381,6 +381,19 @@ def test_failed_provider_job_can_backfill_charged_coins(monkeypatch):
     assert server.backfill_rh_coins(job) == "9"
 
 
+def test_history_scope_filters_before_limit():
+    jobs = [
+        {"id": "new-realism", "workflow": "realism_3in1", "created": 50},
+        {"id": "video", "workflow": "h3_t2v_i2v", "created": 40},
+        {"id": "sketch", "workflow": "anima02", "style_id": "sketch", "created": 30},
+        {"id": "graphic", "workflow": "anima02", "style_id": "graphic", "created": 20},
+    ]
+    assert [x["id"] for x in server.scoped_history_jobs(jobs, "video")] == ["video"]
+    assert [x["id"] for x in server.scoped_history_jobs(jobs, "creator")] == ["sketch", "graphic"]
+    assert [x["id"] for x in server.scoped_history_jobs(jobs, "creator", "sketch")] == ["sketch"]
+    assert [x["id"] for x in server.scoped_history_jobs(jobs, "realism")] == ["new-realism"]
+
+
 def test_failed_task_error_includes_actionable_node_detail(monkeypatch):
     class Response:
         def __enter__(self): return self
