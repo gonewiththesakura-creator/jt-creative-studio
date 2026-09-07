@@ -115,33 +115,34 @@ def test_multisample_uses_trusted_plus_instance_after_verified_default_vram_oom(
             assert BY_ID[internal_id].get("rh_instance_type", "default") == "default"
 
 
-def test_3in1_complete_executable_literal_control_contract():
+def test_3in1_source_graph_is_complete_but_public_controls_are_curated():
     source = SOURCES["realism_3in1"]
     api = json.loads((ATTACHMENTS / source["api"]).read_text(encoding="utf-8-sig"))
     expected_media, expected_params = api_literals(api)
     item = BY_ID["realism_3in1"]
     actual_media = {(str(row["node"]), row["field"]) for row in item["rh_media"].values()}
-    actual_params = {(str(row["node"]), row["field"]) for row in item["rh_params"].values()}
+    actual_params = {(str(row["node"]), row["field"]) for row in item["rh_params"].values() if row.get("node")}
     assert len(expected_media) == 3
     assert len(expected_params) == 105
-    assert actual_media == expected_media
-    assert actual_params == expected_params
+    assert actual_media == {("1291", "image")}
+    assert actual_params == {("1398", "prompt"), ("1250", "seed"), ("1251", "scale_to_length")}
+    assert actual_media.issubset(expected_media)
+    assert actual_params.issubset(expected_params)
 
 
-def test_3in1_sensitive_native_prompt_is_preserved_and_clearly_labeled():
+def test_3in1_sensitive_native_prompt_is_controlled_by_one_business_switch():
     item = BY_ID["realism_3in1"]
-    mapping = next(row for row in item["rh_params"].values() if row["node"] == "1399" and row["field"] == "prompt")
-    assert mapping["default"]
-    assert "成人向" in mapping["label"]
-    assert mapping["group"] == "advanced"
+    mapping = item["rh_params"]["local_detail_lora"]
+    assert mapping["default"] is True
+    assert "仅控制一组" in mapping["label"]
+    assert "不代表关闭工作流内其他成人向能力" in mapping["description"]
+    assert mapping["group"] == "common"
 
 
-def test_3in1_labels_expose_node_and_field_identity_without_provider_id():
+def test_3in1_labels_are_business_facing_not_node_debug_labels():
     item = BY_ID["realism_3in1"]
     for mapping in list(item["rh_media"].values()) + list(item["rh_params"].values()):
-        assert f"节点{mapping['node']}" in mapping["label"]
-        assert mapping["field"] in mapping["hint"]
-        assert mapping.get("node_type")
+        assert "节点" not in mapping["label"]
 
 
 def test_all_exported_defaults_normalize_without_semantic_rewriting():
@@ -164,5 +165,9 @@ def test_provider_implementation_paths_are_never_browser_controls():
     forbidden_fields = {"unet_name", "clip_name", "vae_name", "lora_name", "ckpt_name", "model_name", "model", "device", "device_mode", "offload_device"}
     for internal_id in SOURCES:
         item = BY_ID[internal_id]
-        assert not forbidden_fields.intersection(row["field"] for row in item["rh_params"].values())
+        direct_fields = {row["field"] for row in item["rh_params"].values() if row.get("field")}
+        override_fields = {override["field"] for row in item["rh_params"].values()
+                           for branch in (row.get("trusted_overrides") or {}).values()
+                           for override in branch}
+        assert not forbidden_fields.intersection(direct_fields | override_fields)
         assert all(row.get("type") == "image" for row in item["rh_media"].values())

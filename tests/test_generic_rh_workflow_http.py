@@ -81,8 +81,10 @@ try:
     shown = next(item for item in workflows if item["id"] == "fixture_3in1")
     assert status == 200
     assert shown["kind"] == "rh_workflow"
-    assert shown["rh_media"] == fixture["rh_media"]
-    assert shown["rh_params"] == fixture["rh_params"]
+    assert set(shown["rh_media"]) == set(fixture["rh_media"])
+    assert set(shown["rh_params"]) == set(fixture["rh_params"])
+    for mapping in list(shown["rh_media"].values()) + list(shown["rh_params"].values()):
+        assert not {"node", "field", "node_type", "trusted_overrides"}.intersection(mapping)
     assert "rh_workflow_id" not in shown
 
     payload = {
@@ -134,9 +136,8 @@ try:
     real = server_module.WORKFLOWS["realism_3in1"]
     real_media = {key: f"api/{key}.png" for key in real["rh_media"]}
     real_params = {key: row["default"] for key, row in real["rh_params"].items()}
-    boolean_false = next(key for key, row in real["rh_params"].items() if row["type"] == "boolean" and row["default"] is False)
-    integer_zero = next(key for key, row in real["rh_params"].items() if row["type"] == "int" and row["default"] == 0)
-    blank_text = next(key for key, row in real["rh_params"].items() if row["type"] in ("text", "textarea") and row["default"] == "")
+    boolean_false = "local_detail_lora"
+    real_params[boolean_false] = False
     status, real_result = request("POST", "/api/workflow-generate", {
         "workflow": "realism_3in1", "media": real_media, "params": real_params,
         "client_request_id": "real-3in1-http",
@@ -149,8 +150,6 @@ try:
     assert real_job["media"] == real_media
     assert set(real_job["params"]) == set(real["rh_params"])
     assert real_job["params"][boolean_false] is False
-    assert real_job["params"][integer_zero] == 0
-    assert real_job["params"][blank_text] == ""
     assert "workflowId" not in real_job and "nodeInfoList" not in real_job
 
     print("GENERIC_WORKFLOW_HTTP_OK", {"workflow": job["workflow"], "deduplicated": second["deduplicated"]})

@@ -13,7 +13,7 @@
     {"id": "realism_multisample", "workflow_id": "2096103615374155777", "task_id": "2096448361467539457", "status": "SUCCESS", "instance_type": "plus", "result_type": "png", "result_bytes": 3313549},
     {"id": "realism_qwen_zi", "workflow_id": "2096101840168747010", "task_id": "2096449521012240385", "status": "SUCCESS", "result_type": "png", "result_bytes": 7136870},
     {"id": "realism_4k_text", "workflow_id": "2095331229284470786", "task_id": "2096450507881320450", "status": "SUCCESS", "result_type": "png", "result_bytes": 9048213},
-    {"id": "realism_3in1", "workflow_id": "2096094953332416513", "task_id": "2096451072502067201", "status": "SUCCESS", "submitted_fields": 109, "public_fields_after_locking_device": 108, "result_type": "png", "result_bytes": 1172849},
+    {"id": "realism_3in1", "workflow_id": "2096094953332416513", "task_id": "2096451072502067201", "status": "SUCCESS", "original_full_schema_submitted_fields": 109, "result_type": "png", "result_bytes": 1172849},
     {"id": "realism_zi_flowmatch", "workflow_id": "2096150319347859458", "task_id": "2096452390796980225", "status": "SUCCESS", "result_type": "zip", "result_bytes": 2912688, "zip_entries": 1, "zip_crc_ok": true, "contained_png_bytes": 2912018}
   ],
   "resolved_failure": {
@@ -26,6 +26,19 @@
     "resolution": "instanceType=plus",
     "retest_status": "SUCCESS"
   },
+  "compact_control_e2e": {
+    "id": "realism_3in1",
+    "workflow_id": "2096094953332416513",
+    "task_id": "2096768750299181057",
+    "status": "SUCCESS",
+    "public_input_images": 1,
+    "public_parameters": 4,
+    "local_detail_lora": false,
+    "trusted_overrides": 2,
+    "result_nodes": ["1708", "1709", "1707", "1706"],
+    "result_count": 4,
+    "task_cost_seconds": 316
+  },
   "visual_quality": {
     "all_complete": true,
     "all_composition_coherent": true,
@@ -35,10 +48,18 @@
     "inherited_source_watermark": ["realism_multisample", "realism_3in1"]
   },
   "browser_e2e": {
-    "seven_workflow_switches": true,
+    "eight_unified_realism_schemes": true,
     "schema_counts_exact": true,
-    "three_in_one_public_controls": 108,
+    "public_media_fields": 7,
+    "public_workflow_parameter_fields": 33,
+    "public_ai_app_parameter_fields": 1,
+    "three_in_one_public_controls": 5,
+    "three_in_one_available_subworkflows": ["anime_to_real"],
+    "three_in_one_unavailable_until_run_id": ["image_edit", "local_wardrobe"],
+    "legacy_realcomic_redirect": true,
+    "ai_app_adapter_in_unified_console": true,
     "provider_ids_hidden": true,
+    "provider_node_wiring_hidden": true,
     "png_preview_and_favorite": true,
     "zip_download_card": true,
     "mobile_width": 390,
@@ -46,8 +67,8 @@
     "minimum_hit_target_px": 44
   },
   "test_gate": {
-    "test_files_total": 46,
-    "test_files_passed": 45,
+    "test_files_total": 48,
+    "test_files_passed": 47,
     "known_baseline_failure": "test_restore_prompt_contract.py",
     "new_failures": 0,
     "javascript_blocks_checked": 15,

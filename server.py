@@ -557,6 +557,11 @@ def _json_safe_integer_metadata(value):
 
 def public_workflow(w):
     """Return the browser-visible workflow schema without provider identifiers."""
+    def public_controls(rows):
+        allowed = {"type", "label", "default", "required", "group", "description", "help",
+                   "placeholder", "max_length", "options", "min", "max", "step", "allow_blank", "depends_on"}
+        return {key: {name: value for name, value in mapping.items() if name in allowed}
+                for key, mapping in (rows or {}).items()}
     result = {
         "id": w["id"], "name": w["name"], "desc": w["desc"],
         "speed": w.get("speed", "—"), "ref": w.get("ref", "—"),
@@ -568,8 +573,11 @@ def public_workflow(w):
         "loras": w.get("loras", []), "trigger_default": w.get("trigger_default"),
         "translate_default": w.get("translate_default", True),
         "backend": w.get("backend"), "kind": w.get("kind", "image"),
-        "rh_media": w.get("rh_media", {}), "rh_params": w.get("rh_params", {}),
+        "rh_media": public_controls(w.get("rh_media", {})),
+        "rh_params": public_controls(w.get("rh_params", {})),
         "params_defaults": w.get("params_defaults", {}),
+        "subworkflows": w.get("subworkflows", []),
+        "fixed_features": w.get("fixed_features", []),
         "prompt_placeholder": w.get("prompt_placeholder"),
         "prompt_hint": w.get("prompt_hint"),
     }
@@ -1028,6 +1036,12 @@ def rh_build_generic_node_info(job, w):
     for key, mapping in (w.get("rh_params") or {}).items():
         params = job.get("params") or {}
         if key not in params:
+            continue
+        if mapping.get("trusted_overrides"):
+            branch = "true" if params[key] is True else "false"
+            for override in mapping["trusted_overrides"].get(branch, []):
+                nodes.append({"nodeId": str(override["node"]),
+                              "fieldName": override["field"], "fieldValue": override["value"]})
             continue
         nodes.append({"nodeId": str(mapping["node"]),
                       "fieldName": mapping["field"], "fieldValue": params[key]})
@@ -1730,12 +1744,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self._send(404, b'{"error":"not found"}')
             except Exception as e:
                 self._send(500, json.dumps({"error": str(e)[:200]}).encode())
-        elif path == "/" or path.startswith("/static/") or path in ("/promptgen", "/original-sketch", "/original-graphic", "/realcomic", "/realism", "/video"):
+        elif path == "/realcomic":
+            self.send_response(302)
+            self.send_header("Location", "/realism?workflow=realcomic")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+        elif path == "/" or path.startswith("/static/") or path in ("/promptgen", "/original-sketch", "/original-graphic", "/realism", "/video"):
             if not self._auth():
                 # serve shell so user can enter token; API calls still guarded
                 pass
             root = BASE / "static"
-            clean_pages = {"/promptgen": "promptgen.html", "/original-sketch": "original_sketch.html", "/original-graphic": "original_graphic.html", "/realcomic": "realcomic.html", "/realism": "realism.html"}
+            clean_pages = {"/promptgen": "promptgen.html", "/original-sketch": "original_sketch.html", "/original-graphic": "original_graphic.html", "/realism": "realism.html"}
             if path in clean_pages:
                 rel = clean_pages[path]
             elif path == "/video":
@@ -1902,6 +1921,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             defaults = w.get("params_defaults") or {}
             trusted_params = {k: str(params.get(k, defaults.get(k, "")))[:1000] for k in (w.get("rh_params") or {})}
             client_request_id = str(body.get("client_request_id") or "").strip()[:96]
+            if not client_request_id:
+                return self._send(400, b'{"error":"client_request_id is required"}')
             with _submit_locks["cloud"]:
                 existing_job = existing_job_for_request(client_request_id, "cloud")
                 if existing_job:

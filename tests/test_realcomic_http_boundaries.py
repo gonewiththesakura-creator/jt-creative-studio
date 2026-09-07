@@ -18,6 +18,7 @@ try:
  status,data=post('/api/realcomic-upload',{'filename':'folder/fixture.png','data':base64.b64encode(png).decode()})
  assert status==200 and data['fileName']=='api/trusted-source.png' and uploaded==[('fixture.png','image/png',len(png))],(status,data,uploaded)
  payload={'workflow':'realcomic','media':{'source_image':'api/trusted-source.png','evil':'must-drop'},'params':{'requirements':'保留构图','evil':'must-drop'},'client_request_id':'same-realcomic','webappId':'attacker-app','nodeInfoList':[{'nodeId':'999','fieldName':'evil','fieldValue':'evil'}]}
+ status,missing_id=post('/api/ai-app-generate',{**payload,'client_request_id':''});assert status==400 and 'client_request_id' in missing_id['error'],(status,missing_id)
  status,first=post('/api/ai-app-generate',payload);assert status==200 and first.get('job_id'),(status,first)
  jid=first['job_id'];job=m._jobs[jid]
  assert job['media']=={'source_image':'api/trusted-source.png'} and job['params']=={'requirements':'保留构图'}

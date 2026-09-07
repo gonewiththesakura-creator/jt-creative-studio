@@ -84,6 +84,39 @@ OUTPUT_CLASSES = {"SaveImage", "CompressImages", "easy showAnything", "ShowText|
 OUTPUT_FIELDS = {"filename_prefix", "text", "mask_opacity", "mask_color", "pass_through"}
 LOCKED_PAIRS = {("SeedVR2", "model"), ("easy imageColorMatch", "save_prefix")}
 LOCKED_FIELD_NAMES = {"model", "device", "device_mode", "offload_device"}
+PUBLIC_FIELDS = {
+    "realism_krea2": {("227", "image"), ("220", "prompt"), ("248", "seed"), ("254", "value"), ("243", "resolution")},
+    "realism_2511": {("33", "image"), ("34", "prompt"), ("22", "seed"), ("36", "scale_to_length")},
+    "realism_multisample": {("7", "image"), ("53", "text"), ("24", "noise_seed"), ("45", "scale_to_length"), ("47", "batch_size")},
+    "realism_qwen_zi": {("78", "image"), ("110", "prompt"), ("77", "prompt"), ("3", "seed"), ("264", "scale_to_length"), ("293", "resolution")},
+    "realism_4k_text": {("64", "text"), ("59", "seed"), ("70", "preset_size"), ("70", "use_custom_size"), ("70", "custom_width"), ("70", "custom_height"), ("67", "batch_size"), ("36", "toggle"), ("37", "toggle")},
+    "realism_3in1": {("1291", "image"), ("1398", "prompt"), ("1250", "seed"), ("1251", "scale_to_length")},
+    "realism_zi_flowmatch": {("78", "image"), ("383", "text"), ("3", "seed"), ("515", "toggle")},
+}
+KEY_ALIASES = {
+    ("realism_krea2", "227", "image"): "image", ("realism_krea2", "220", "prompt"): "instruction",
+    ("realism_krea2", "248", "seed"): "seed", ("realism_krea2", "254", "value"): "input_long_edge",
+    ("realism_krea2", "243", "resolution"): "output_resolution",
+    ("realism_2511", "33", "image"): "image", ("realism_2511", "34", "prompt"): "instruction",
+    ("realism_2511", "22", "seed"): "seed", ("realism_2511", "36", "scale_to_length"): "input_long_edge",
+    ("realism_multisample", "7", "image"): "image", ("realism_multisample", "53", "text"): "instruction",
+    ("realism_multisample", "24", "noise_seed"): "seed", ("realism_multisample", "45", "scale_to_length"): "input_long_edge",
+    ("realism_multisample", "47", "batch_size"): "batch",
+    ("realism_qwen_zi", "78", "image"): "image", ("realism_qwen_zi", "110", "prompt"): "instruction",
+    ("realism_qwen_zi", "77", "prompt"): "negative", ("realism_qwen_zi", "3", "seed"): "seed",
+    ("realism_qwen_zi", "264", "scale_to_length"): "input_long_edge", ("realism_qwen_zi", "293", "resolution"): "output_resolution",
+    ("realism_4k_text", "64", "text"): "prompt", ("realism_4k_text", "59", "seed"): "seed",
+    ("realism_4k_text", "70", "preset_size"): "resolution_preset", ("realism_4k_text", "70", "use_custom_size"): "use_custom_size",
+    ("realism_4k_text", "70", "custom_width"): "width", ("realism_4k_text", "70", "custom_height"): "height",
+    ("realism_4k_text", "67", "batch_size"): "batch",
+    ("realism_4k_text", "36", "toggle"): "stage1_lora",
+    ("realism_4k_text", "37", "toggle"): "stage2_lora",
+    ("realism_3in1", "1291", "image"): "image", ("realism_3in1", "1398", "prompt"): "instruction",
+    ("realism_3in1", "1250", "seed"): "seed", ("realism_3in1", "1251", "scale_to_length"): "input_long_edge",
+    ("realism_zi_flowmatch", "78", "image"): "image", ("realism_zi_flowmatch", "383", "text"): "instruction",
+    ("realism_zi_flowmatch", "3", "seed"): "seed",
+    ("realism_zi_flowmatch", "515", "toggle"): "lora_stack",
+}
 LABELS = {
     "image": "输入图片", "prompt": "提示词", "text": "文本", "seed": "随机种子",
     "noise_seed": "噪声种子", "steps": "采样步数", "cfg": "CFG强度",
@@ -141,6 +174,23 @@ def group_for(class_type, field, value):
     return "advanced"
 
 
+def friendly_label(workflow_id, node_id, field, fallback):
+    special = {
+        ("realism_2511", "33", "image"): "动漫原图", ("realism_2511", "51", "image"): "参考图",
+        ("realism_qwen_zi", "77", "prompt"): "负向要求",
+        ("realism_4k_text", "36", "toggle"): "启用第一阶段LoRA",
+        ("realism_4k_text", "37", "toggle"): "启用第二阶段LoRA",
+        ("realism_zi_flowmatch", "515", "toggle"): "启用真人化LoRA组",
+    }
+    if (workflow_id, str(node_id), field) in special:
+        return special[(workflow_id, str(node_id), field)]
+    common = {"image": "动漫原图", "prompt": "转换要求", "text": "转换要求",
+              "seed": "随机种子", "noise_seed": "随机种子", "scale_to_length": "输入最长边",
+              "resolution": "输出分辨率", "batch_size": "生成批量", "preset_size": "分辨率预设",
+              "use_custom_size": "使用自定义尺寸", "custom_width": "自定义宽度", "custom_height": "自定义高度"}
+    return common.get(field, fallback)
+
+
 def build_workflow(source, object_info):
     editor, api = load_source(source)
     titles = node_titles(editor)
@@ -148,13 +198,13 @@ def build_workflow(source, object_info):
     for node_id, node in api.items():
         if not isinstance(node, dict): continue
         class_type = str(node.get("class_type") or "")
-        if class_type in LOCKED_CLASSES: continue
         title = str((node.get("_meta") or {}).get("title") or titles.get(str(node_id)) or class_type)
         for field, value in (node.get("inputs") or {}).items():
             if isinstance(value, list) and len(value) == 2 and str(value[0]) in api: continue
+            if (str(node_id), field) not in PUBLIC_FIELDS[source["id"]]: continue
             if class_type == "LoadImage" and field == "image":
-                key = f"n{node_id}_{field}"
-                label = f"节点{node_id} · {title or LABELS['image']}"
+                key = KEY_ALIASES.get((source["id"], str(node_id), field), f"n{node_id}_{field}")
+                label = friendly_label(source["id"], node_id, field, title or LABELS["image"])
                 media[key] = {"node": str(node_id), "field": field, "type": "image",
                               "label": label, "required": True, "group": "common",
                               "node_type": class_type,
@@ -166,13 +216,13 @@ def build_workflow(source, object_info):
             if field in LOCKED_FIELD_NAMES: continue
             required, spec = input_spec(object_info, class_type, field)
             kind, options, meta = control_type(value, spec)
-            key = f"n{node_id}_{field}"
+            key = KEY_ALIASES.get((source["id"], str(node_id), field), f"n{node_id}_{field}")
             base_label = LABELS.get(field) or f"{title} · {field}"
             group = group_for(class_type, field, value)
             if source["id"] == "realism_3in1" and str(node_id) == "1399" and field == "prompt":
                 base_label = "成人向原生提示词"
                 group = "advanced"
-            label = f"节点{node_id} · {base_label}"
+            label = friendly_label(source["id"], node_id, field, base_label)
             row = {"node": str(node_id), "field": field, "type": kind, "label": label,
                    "default": value, "required": bool(required), "group": group,
                    "node_type": class_type}
@@ -196,6 +246,25 @@ def build_workflow(source, object_info):
     }
     if source["id"] == "realism_multisample":
         result["rh_instance_type"] = "plus"
+    if source["id"] == "realism_4k_text":
+        for key in ("width", "height"):
+            result["rh_params"][key]["depends_on"] = {"key": "use_custom_size", "value": True}
+    if source["id"] == "realism_3in1":
+        result["subworkflows"] = [
+            {"id": "anime_to_real", "label": "漫画转真人", "available": True},
+            {"id": "image_edit", "label": "图像编辑", "available": False, "reason": "需要单独的RunningHub运行ID"},
+            {"id": "local_wardrobe", "label": "局部换装", "available": False, "reason": "需要单独的RunningHub运行ID"},
+        ]
+        result["fixed_features"] = ["Z-Image质感增强", "面部修复", "SeedVR2高清放大"]
+        result["rh_params"]["local_detail_lora"] = {
+            "type": "boolean", "label": "局部细节LoRA（仅控制一组）", "default": True,
+            "required": False, "group": "common",
+            "description": "关闭时仅停用这一组LoRA和配套提示词，不代表关闭工作流内其他成人向能力。仅用于明确成年人内容。",
+            "trusted_overrides": {
+                "true": [{"node": "1304", "field": "strength_model", "value": 0.5}, {"node": "1399", "field": "prompt", "value": "shaved pussy\n"}],
+                "false": [{"node": "1304", "field": "strength_model", "value": 0.0}, {"node": "1399", "field": "prompt", "value": ""}],
+            },
+        }
     return result
 
 
@@ -204,6 +273,11 @@ def main():
     config_path = BASE / "config.json"
     config = json.loads(config_path.read_text(encoding="utf-8"))
     generated = [build_workflow(source, object_info) for source in SOURCES]
+    for item in config["workflows"]:
+        if item.get("id") == "realcomic":
+            item["name"] = "快速真人化（原漫画转真人）"
+            item.setdefault("params_defaults", {})["requirements"] = ""
+            for row in (item.get("rh_params") or {}).values(): row.setdefault("group", "common")
     ids = {source["id"] for source in SOURCES}
     config["workflows"] = [item for item in config["workflows"] if item.get("id") not in ids] + generated
     tmp = config_path.with_suffix(".json.new")
