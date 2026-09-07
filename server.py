@@ -777,7 +777,38 @@ def rh_failed_task_detail(task_id):
     return f"节点{node_id} {node_name}: {error_type} {message}".strip()
 
 
-def rh_query(task_id):
+def normalize_rh_coins(response, output_rows):
+    """Return one task-level RH coin value; never sum repeated output values."""
+    raw = ((response.get("usage") or {}).get("consumeCoins")
+           if isinstance(response, dict) else None)
+    if raw in (None, ""):
+        values = {str(row.get("consumeCoins")).strip() for row in (output_rows or [])
+                  if isinstance(row, dict) and row.get("consumeCoins") not in (None, "")}
+        if len(values) != 1:
+            return None
+        raw = values.pop()
+    text = str(raw).strip()
+    if not re.fullmatch(r"\d+(?:\.\d+)?", text):
+        return None
+    return text
+
+
+def rh_output_details(task_id):
+    """Read legacy output metadata used as a billing fallback; never submits."""
+    body = json.dumps({"apiKey": RH_KEY, "taskId": task_id}).encode()
+    req = urllib.request.Request(
+        "https://www.runninghub.cn/task/openapi/outputs", data=body,
+        headers={"Content-Type": "application/json"}, method="POST")
+    try:
+        with _urlopen_bounded(req, None, RH_TIMEOUT_QUERY) as resp:
+            result = json.loads(resp.read().decode(errors="replace"))
+    except Exception:
+        return []
+    data = result.get("data") if isinstance(result, dict) else None
+    return data if isinstance(data, list) else []
+
+
+def rh_query(task_id, job=None):
     """查询 RunningHub 任务状态，返回 (status, results)"""
     url = f"{RH_BASE}/query"
     body = {"taskId": task_id}
@@ -791,11 +822,46 @@ def rh_query(task_id):
     except Exception as e:
         raise RuntimeError(f"RH query failed: {e}")
     status = r.get("status", "")
+    results = r.get("results") or []
+    coins = normalize_rh_coins(r, results)
+    if coins is None and status == "SUCCESS":
+        coins = normalize_rh_coins({}, rh_output_details(task_id))
+    if job is not None and coins is not None:
+        job["rh_coins"] = coins
     if status == "FAILED":
         detail = rh_failed_task_detail(task_id)
         suffix = f"；{detail}" if detail else ""
         raise RuntimeError(f"RH task failed: {r.get('errorCode')} {r.get('errorMessage')}{suffix}")
-    return status, r.get("results") or []
+    return status, results
+
+
+def backfill_rh_coins(job):
+    """Fill billing metadata for one completed provider task at most once."""
+    if job.get("rh_coins") not in (None, ""):
+        return job["rh_coins"]
+    if job.get("status") not in ("done", "error") or not job.get("rh_task_id"):
+        return None
+    if job.get("rh_coins_checked"):
+        return None
+    job["rh_coins_checked"] = True
+    try:
+        rh_query(job["rh_task_id"], job=job)
+    except Exception:
+        return job.get("rh_coins")
+    return job.get("rh_coins")
+
+
+def backfill_completed_rh_coins():
+    changed = False
+    with _lock_jobs:
+        jobs = list(_jobs.values())
+    for job in jobs:
+        before = (job.get("rh_coins"), job.get("rh_coins_checked"))
+        backfill_rh_coins(job)
+        changed = changed or before != (job.get("rh_coins"), job.get("rh_coins_checked"))
+    if changed:
+        with _lock_jobs:
+            save_jobs()
 
 def rh_build_node_info(job):
     """Build RunningHub nodeInfoList for anima02.
@@ -859,7 +925,7 @@ def prepend_trigger_once(prompt, trigger):
 
 def _rh_wait_task(job, task_id, deadline, progress_base=0, progress_span=100):
     while time.time() < deadline:
-        status, results = rh_query(task_id)
+        status, results = rh_query(task_id, job=job)
         job["provider_status"] = status or "RUNNING"
         fraction = RH_STAGE_PROGRESS.get(str(status or "RUNNING").upper(), 0.10)
         job["progress_pct"] = round(min(99, progress_base + progress_span * fraction))
@@ -1586,7 +1652,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     return self._send(404, b'{"error":"job not found"}')
                 allowed = (
                     "id", "workflow", "status", "provider_status", "rh_task_id",
-                    "progress_pct", "error", "elapsed", "created", "wf_name",
+                    "progress_pct", "error", "elapsed", "created", "wf_name", "rh_coins",
                     "width", "height", "batch", "hd", "images",
                     "submit_started", "provider_started", "provider_finished",
                     "download_started", "download_finished", "selection_snapshot",
@@ -1610,7 +1676,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 for src in sources:
                     allowed = (
                         "id", "workflow", "status", "provider_status", "rh_task_id",
-                        "progress_pct", "error", "elapsed", "created", "wf_name",
+                        "progress_pct", "error", "elapsed", "created", "wf_name", "rh_coins",
                         "width", "height", "batch", "hd", "images",
                         "submit_started", "provider_started", "provider_finished",
                         "download_started", "download_finished", "selection_snapshot",
@@ -2208,6 +2274,7 @@ def main():
     for job in list(_jobs.values()):
         if job.get("status") == "recovering" and job.get("rh_task_id"):
             threading.Thread(target=resume_cloud_job, args=(job,), daemon=True).start()
+    threading.Thread(target=backfill_completed_rh_coins, daemon=True).start()
     ok, msg = comfy_ok()
     print(f"[panel] comfy {COMFY_URL}: ok={ok} {msg}", flush=True)
     print(f"[panel] listening 0.0.0.0:{PORT} data={DATA_DIR}", flush=True)

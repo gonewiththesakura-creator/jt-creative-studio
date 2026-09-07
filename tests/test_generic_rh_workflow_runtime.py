@@ -333,6 +333,54 @@ def test_remote_results_accept_only_http_urls():
     ]
 
 
+def test_consume_coins_is_task_level_and_never_summed_per_output():
+    assert server.normalize_rh_coins({"usage": {"consumeCoins": "64"}}, []) == "64"
+    repeated = [{"consumeCoins": "64"}, {"consumeCoins": "64"}, {"consumeCoins": "64"}]
+    assert server.normalize_rh_coins({}, repeated) == "64"
+    assert server.normalize_rh_coins({}, [{"consumeCoins": "17.5"}]) == "17.5"
+    assert server.normalize_rh_coins({}, [{"consumeCoins": "64"}, {"consumeCoins": "65"}]) is None
+    assert server.normalize_rh_coins({"usage": {"consumeCoins": None}}, []) is None
+
+
+def test_rh_query_persists_v2_usage_on_job(monkeypatch):
+    class Response:
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def read(self):
+            return json.dumps({"status": "SUCCESS", "results": [{"url": "https://example.test/a.png"}],
+                               "usage": {"consumeCoins": "23"}}).encode()
+    monkeypatch.setattr(server, "_urlopen_bounded", lambda *args, **kwargs: Response())
+    job = {}
+    status, results = server.rh_query("task-coins", job=job)
+    assert status == "SUCCESS" and results
+    assert job["rh_coins"] == "23"
+
+
+def test_completed_job_coin_backfill_queries_once(monkeypatch):
+    calls = []
+    job = {"status": "done", "rh_task_id": "old-task"}
+    def query(task_id, job=None):
+        calls.append(task_id); job["rh_coins"] = "31"; return "SUCCESS", []
+    monkeypatch.setattr(server, "rh_query", query)
+    assert server.backfill_rh_coins(job) == "31"
+    assert server.backfill_rh_coins(job) == "31"
+    assert calls == ["old-task"]
+
+
+def test_non_runninghub_jobs_do_not_backfill_coins(monkeypatch):
+    monkeypatch.setattr(server, "rh_query", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("must not query")))
+    assert server.backfill_rh_coins({"status": "done"}) is None
+
+
+def test_failed_provider_job_can_backfill_charged_coins(monkeypatch):
+    job = {"status": "error", "rh_task_id": "failed-task"}
+    def query(task_id, job=None):
+        job["rh_coins"] = "9"
+        raise RuntimeError("provider task failed")
+    monkeypatch.setattr(server, "rh_query", query)
+    assert server.backfill_rh_coins(job) == "9"
+
+
 def test_failed_task_error_includes_actionable_node_detail(monkeypatch):
     class Response:
         def __enter__(self): return self

@@ -29,6 +29,7 @@ checks = {
     "dependent controls follow native toggle": all(x in HTML for x in ["mapping.depends_on", "updateDependencies", "control.disabled"]),
     "mobile touch and no overflow": all(x in HTML for x in ["@media(max-width:820px)", "min-height:44px", "overflow-x:hidden"]),
     "actionable errors": all(x in HTML for x in ["任务号", "running_job", "running_jobs"]),
+    "RH coin cost shown on task and history": all(x in HTML for x in ["coinText", "RH币：", "job.rh_coins"]),
     "non-image results use download card": all(x in HTML for x in ["isPreviewableImage", "结果文件", "file-result", "canPreview", "if(canPreview)"]) and "picture.src=preview||original" not in HTML,
     "provider strings never interpolate into html": all(x in HTML for x in ["createResultItem", "createTaskCard", "createHistoryItem", "createFavoriteItem", "safeRemoteUrl", "textContent=", "image.src="]) and all(x not in HTML for x in ["card.innerHTML=", "item.innerHTML=", "d.innerHTML=", "innerHTML='<img"]),
     "load errors render as text": "showWorkflowLoadError" in HTML and "commonControls.innerHTML='<div class=\"config-state error\">'" not in HTML,

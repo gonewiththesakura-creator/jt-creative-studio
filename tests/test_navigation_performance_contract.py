@@ -18,6 +18,7 @@ checks={
  "resume polls without resubmit":all('resumeActiveJobs' in page and "'/api/job/'" in page and 'submitGenerateResilient' in page for page in PAGES[:3]),
  "cloud local resume concurrently":all("Promise.all(['cloud','local'].map(resumeActiveJob))" in page for page in PAGES[:3]),
  "completed recovery restores result":all('resumeActiveJobs' in page and ('addResult(j' in page or 'cloudAddResult(j' in page) for page in PAGES[:3]),
+ "creator pages show RH coin cost":all(all(x in page for x in ['RH币：','j.rh_coins']) for page in PAGES[:3]),
  "builders own performance helpers":all(x in BUILDERS for x in ['scheduleRoutePrefetch','sessionStorage','/api/job/']),
  "result images lazy decode":all('loading="lazy"' in page and 'decoding="async"' in page for page in PAGES[:3]),
  "hidden legacy grid is released":all('legacyGrid.replaceChildren()' in page and 'legacyOriginalRender()' not in page for page in PAGES[1:3]),
