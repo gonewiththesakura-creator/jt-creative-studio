@@ -1,9 +1,10 @@
 from pathlib import Path
-import sys
+import re,sys
 
 ROOT=Path(r"D:/LAN-Share/lora/_work/comfy_panel")
 PAGES=[(ROOT/"static"/"promptgen.html").read_text(encoding="utf8")]
 BUILDERS=[(ROOT/"build_unified_three_styles.py").read_text(encoding="utf8")]
+PAGE_CODE=[re.sub(r"data:image/webp;base64,[A-Za-z0-9+/=]+","[embedded-preview]",page) for page in PAGES]
 checks={
  "raf liquid controller":all("requestAnimationFrame" in page and "liquidMotionState" in page and "renderLiquidFrame" in page for page in PAGES),
  "visual progress never exceeds backend target":all("Math.min(state.target" in page and "dataset.progressTarget" in page for page in PAGES),
@@ -20,7 +21,7 @@ checks={
  "no liquid glow":all('.liquid-meniscus' in page and 'box-shadow:none' in page.split('.liquid-meniscus{',1)[1].split('}',1)[0] for page in PAGES),
  "reduced motion keeps exact value":all("prefers-reduced-motion:reduce" in page and "LIQUID_REDUCED_MOTION" in page for page in PAGES),
  "durable builders own implementation":all("liquidMotionState" in builder and "liquid-label-fill" in builder for builder in BUILDERS),
- "no heavy motion dependency":all(token not in "\n".join(PAGES) for token in ("three.js","@react-three","gsap","ogl")),
+ "no heavy motion dependency":all(token not in "\n".join(PAGE_CODE) for token in ("three.js","@react-three","gsap","ogl")),
 }
 for name,value in checks.items():print(name,value)
 sys.exit(0 if all(checks.values()) else 1)

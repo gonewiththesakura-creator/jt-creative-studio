@@ -1532,6 +1532,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         raw = fp.read_bytes()
         etag = '"' + hashlib.sha256(raw).hexdigest()[:24] + '"'
         cache = "no-cache, must-revalidate" if fp.suffix == ".html" else "public, max-age=3600, must-revalidate"
+        request = urllib.parse.urlparse(self.path)
+        if request.path.startswith("/static/previews/") and fp.suffix == ".webp" and re.fullmatch(r"v=[0-9a-f]{12}", request.query):
+            cache = "public, max-age=31536000, immutable"
         if self.headers.get("If-None-Match") == etag:
             self.send_response(http.HTTPStatus.NOT_MODIFIED)
             self.send_header("ETag", etag)

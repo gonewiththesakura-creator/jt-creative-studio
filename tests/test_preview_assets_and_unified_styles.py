@@ -24,11 +24,11 @@ style_assets={
 checks={
  'all 13 source previews exist':len(list(DESKTOP.glob('*.png')))==13,
  'all generated preview assets exist':all((ROOT/'static/previews'/x).exists() for x in [*realism_assets.values(),*style_assets.values()]),
- 'realism mapping embedded':all(f'"{k}":"/static/previews/{v}"' in REALISM for k,v in realism_assets.items()),
+ 'realism mapping embedded':all(re.search(rf'"{re.escape(k)}":"/static/previews/{re.escape(v)}\?v=[0-9a-f]{{12}}"',REALISM) for k,v in realism_assets.items()),
  'unmapped workflows stay empty':all(x in REALISM for x in ['没有提供预览图','WORKFLOW_PREVIEWS']) and all(k not in re.search(r'const WORKFLOW_PREVIEWS=(.*?);',REALISM,re.S).group(1) for k in ['realism_3in1','realism_4k_text']),
  'realism preview swaps and hides for tasks':all(x in REALISM for x in ['workflowPreview','updateWorkflowPreview','currentPreviewUrl','previewEmpty.classList.add(\'hidden\')']),
  'seven creator styles':set(styles)=={'cold','sketch','original_sketch','graphic','original_graphic','hanmanga','nff'},
- 'style previews mapped':all(styles.get(k,{}).get('preview')=='/static/previews/'+v for k,v in style_assets.items()),
+ 'style previews mapped':all(re.fullmatch(r'/static/previews/'+re.escape(v)+r'\?v=[0-9a-f]{12}',styles.get(k,{}).get('preview','')) for k,v in style_assets.items()),
  'original profiles preserve raw pools':styles.get('original_sketch',{}).get('pools')!=styles.get('sketch',{}).get('pools') and styles.get('original_graphic',{}).get('pools')!=styles.get('graphic',{}).get('pools'),
  'original trusted server aliases':all(x in SERVER for x in ['"original_sketch": {','"original_graphic": {','"trigger": "jt_style1_v1"','"trigger": "jt_style2_v1"']),
  'staged painting retired':'id="sketchProcess"' not in CREATOR and 'sequence_mode = "off"' in SERVER,

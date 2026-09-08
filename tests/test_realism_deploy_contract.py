@@ -78,6 +78,19 @@ def test_release_manifest_is_complete_and_excludes_nonproduction_files():
         "static/previews/style-original-graphic.webp",
         "static/previews/style-hanmanga.webp",
         "static/previews/style-nff.webp",
+        "static/previews/realism-realcomic.thumb.webp",
+        "static/previews/realism-krea2.thumb.webp",
+        "static/previews/realism-2511.thumb.webp",
+        "static/previews/realism-multisample.thumb.webp",
+        "static/previews/realism-qwen-zi.thumb.webp",
+        "static/previews/realism-zi-flowmatch.thumb.webp",
+        "static/previews/style-cold.thumb.webp",
+        "static/previews/style-sketch.thumb.webp",
+        "static/previews/style-original-sketch.thumb.webp",
+        "static/previews/style-graphic.thumb.webp",
+        "static/previews/style-original-graphic.thumb.webp",
+        "static/previews/style-hanmanga.thumb.webp",
+        "static/previews/style-nff.thumb.webp",
     }
     assert set(module.RELEASE_RELATIVE_PATHS) == expected
     assert not any(path.startswith(("tests/", "audit/")) for path in module.RELEASE_RELATIVE_PATHS)

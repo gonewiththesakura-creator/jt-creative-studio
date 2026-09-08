@@ -1,7 +1,7 @@
 """Build optimized workflow/style previews from user-provided source images."""
 from pathlib import Path
-from PIL import Image, ImageOps
-import hashlib, json
+from PIL import Image, ImageOps, ImageChops, ImageStat
+import hashlib, json, math
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = Path(r"C:/Users/JT/Desktop/22")
@@ -35,6 +35,17 @@ for source_name, output_name in MAPPING.items():
         image.thumbnail((1600, 1600), Image.Resampling.LANCZOS)
         dest = OUT / output_name
         image.save(dest, "WEBP", quality=86, method=6)
+        thumb = image.copy()
+        thumb.thumbnail((640, 640), Image.Resampling.LANCZOS)
+        thumb_dest = OUT / output_name.replace(".webp", ".thumb.webp")
+        thumb.save(thumb_dest, "WEBP", quality=84, method=6)
+        with Image.open(thumb_dest) as decoded:
+            decoded = decoded.convert("RGB")
+            reference = image.copy()
+            reference.thumbnail((640, 640), Image.Resampling.LANCZOS)
+            rms = ImageStat.Stat(ImageChops.difference(reference, decoded)).rms
+            mse = sum(value * value for value in rms) / len(rms)
+            psnr = 99.0 if mse == 0 else 10*math.log10((255**2)/mse)
     rows.append({
         "source": source_name,
         "source_sha256": hashlib.sha256(src.read_bytes()).hexdigest(),
@@ -43,6 +54,11 @@ for source_name, output_name in MAPPING.items():
         "preview_size": image.size,
         "bytes": dest.stat().st_size,
         "sha256": hashlib.sha256(dest.read_bytes()).hexdigest(),
+        "thumb_output": thumb_dest.name,
+        "thumb_size": thumb.size,
+        "thumb_bytes": thumb_dest.stat().st_size,
+        "thumb_sha256": hashlib.sha256(thumb_dest.read_bytes()).hexdigest(),
+        "thumb_psnr_db": round(psnr, 2),
     })
 (OUT / "manifest.json").write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
 print(json.dumps({"count": len(rows), "total_bytes": sum(row["bytes"] for row in rows), "rows": rows}, ensure_ascii=False, indent=2))
