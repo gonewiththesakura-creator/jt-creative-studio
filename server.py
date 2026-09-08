@@ -1021,7 +1021,7 @@ def rh_build_ai_app_node_info(job, w):
 def _coerce_rh_control(value, mapping):
     """Validate one declared workflow control and preserve its native type."""
     label = str(mapping.get("label") or mapping.get("field") or "参数")
-    control_type = str(mapping.get("type") or "text").lower()
+    control_type = str(mapping.get("vtype") or mapping.get("type") or "text").lower()
     if control_type in ("text", "string", "textarea"):
         result = str(value)
         max_length = int(mapping.get("max_length", 10000))
@@ -1347,11 +1347,6 @@ def rh_build_video_node_info(job, w):
     as rh_params entries so the generic loop covers everything.
     """
     node_list = []
-    def set_field(key, value):
-        m = (w.get("rh_params") or {}).get(key)
-        if not m:
-            return
-        node_list.append({"nodeId": str(m["node"]), "fieldName": m["field"], "fieldValue": value})
     media_map = w.get("rh_media") or {}
     for key, m in media_map.items():
         fname = (job.get("media") or {}).get(key)
@@ -1367,16 +1362,14 @@ def rh_build_video_node_info(job, w):
             val = (job.get("params") or {}).get(key)
         if val is None or val == "":
             continue
-        vtype = m.get("vtype") or m.get("type")
-        if vtype == "int":
-            try: val = int(float(val))
-            except Exception: continue
-        elif vtype == "float":
-            try: val = float(val)
-            except Exception: continue
-        else:
-            val = str(val)
-        node_list.append({"nodeId": str(m["node"]), "fieldName": m["field"], "fieldValue": val})
+        overrides = (m.get("trusted_overrides") or {}).get(str(val).lower())
+        if overrides is None:
+            overrides = (m.get("trusted_overrides") or {}).get(str(val))
+        if overrides is not None:
+            for override in overrides:
+                node_list.append({"nodeId": str(override["node"]), "fieldName": override["field"], "fieldValue": override["value"]})
+        if m.get("node") is not None and m.get("field"):
+            node_list.append({"nodeId": str(m["node"]), "fieldName": m["field"], "fieldValue": val})
     return node_list
 
 
@@ -1592,6 +1585,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             fid = path.split("/api/favorite-preview/", 1)[1]
             with _lock_jobs: fav = _favorites.get(fid)
             if not fav: return self._send(404, b'{"error":"favorite not found"}')
+            if str(fav.get("favorite_media_type") or "").startswith("video/"):
+                return self._send(415, b'{"error":"video favorites do not have image previews"}')
             try:
                 src = safe_child_path(FAVORITES_DIR, pathlib.Path(fav.get("image_path", "")))
             except ValueError:
@@ -2049,6 +2044,19 @@ class Handler(http.server.BaseHTTPRequestHandler):
             params = body.get("params") or {}
             if not isinstance(params, dict):
                 return self._send(400, b'{"error":"params must be object"}')
+            # Normalize before persistence so browser-only keys, node wiring,
+            # model paths and malformed enum/range values never enter a job.
+            schema_params = dict(params)
+            if "prompt" in (w.get("rh_params") or {}) and "prompt" not in schema_params:
+                schema_params["prompt"] = prompt
+            if "negative" in (w.get("rh_params") or {}) and "negative" not in schema_params:
+                schema_params["negative"] = negative_prompt
+            try:
+                media, params = normalize_rh_workflow_inputs(w, media, schema_params)
+            except ValueError as error:
+                return self._send(400, json.dumps({"error": str(error)}, ensure_ascii=False).encode())
+            prompt = str(params.get("prompt", prompt)).strip()
+            negative_prompt = str(params.get("negative", negative_prompt)).strip()
             client_request_id = str(body.get("client_request_id") or "").strip()[:96]
             if not client_request_id:
                 return self._send(400, b'{"error":"client_request_id is required"}')
@@ -2107,7 +2115,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 if idx < 0 or idx >= len(images): return self._send(400, b'{"error":"bad image index"}')
                 im = images[idx]; fid = uuid.uuid4().hex[:12]
                 remote_suffix = pathlib.PurePosixPath(urllib.parse.urlparse(im.get("url", "")).path).suffix.lower()
-                suffix = remote_suffix if remote_suffix in (".png", ".jpg", ".jpeg", ".webp") else ".png"
+                allowed_suffixes = {".png", ".jpg", ".jpeg", ".webp", ".mp4", ".mov", ".webm", ".avi", ".mkv"}
+                suffix = remote_suffix if remote_suffix in allowed_suffixes else ".bin"
                 dest = FAVORITES_DIR / f"{fid}{suffix}"
                 try:
                     if im.get("remote"):
@@ -2118,7 +2127,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 except Exception as e:
                     return self._send(502, json.dumps({"error": f"收藏图片失败：{str(e)[:200]}"}, ensure_ascii=False).encode())
                 favorite_data = dest.read_bytes()
-                favorite_media_type = image_content_type(favorite_data, dest.name) or "image/png"
+                video_mimes = {".mp4": "video/mp4", ".mov": "video/quicktime", ".webm": "video/webm", ".avi": "video/x-msvideo", ".mkv": "video/x-matroska"}
+                favorite_media_type = image_content_type(favorite_data, dest.name) or video_mimes.get(suffix) or "application/octet-stream"
                 fav = {
                     "id": fid, "created": time.time(), "job_id": jid, "image_index": idx,
                     "image_url": f"/api/favorite-image/{fid}",

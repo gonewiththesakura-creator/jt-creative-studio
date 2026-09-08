@@ -1,0 +1,46 @@
+{
+  "verified_at": "2026-09-08",
+  "submission_policy": "one submit per workflow; persisted taskId; no automatic retry",
+  "zero_cost_validation": {
+    "node_fingerprint_probes": 10,
+    "full_payload_preflight_workflows": 2,
+    "all_task_ids_empty": true,
+    "all_expected_sentinel_errors": true
+  },
+  "workflows": {
+    "scail2_multi": {
+      "workflow_id": "2096840691372924929",
+      "editor_id": "2097130786146328577",
+      "task_id": "2097184143866109953",
+      "status": "SUCCESS",
+      "consumeCoins": "145",
+      "result_count": 1,
+      "result_type": "mp4",
+      "bytes": 8599937,
+      "duration_seconds": 14.966667,
+      "width": 512,
+      "height": 896,
+      "fps": 30,
+      "video_codec": "h264",
+      "audio_codec": "aac",
+      "visual_notes": "功能有效；二次元人物叠加真实室内背景，白色描边明显，手部有粘连；中尾帧继承源视频右下角抖音水印。"
+    },
+    "scail2_plus": {
+      "workflow_id": "2096841102812053505",
+      "editor_id": "2097130671957770242",
+      "task_id": "2097187210711834626",
+      "status": "SUCCESS",
+      "consumeCoins": "312",
+      "result_count": 1,
+      "result_type": "mp4",
+      "bytes": 7776359,
+      "duration_seconds": 10.7,
+      "width": 704,
+      "height": 1280,
+      "fps": 30,
+      "video_codec": "h264",
+      "audio_codec": "aac",
+      "visual_notes": "主体、呼啦圈动作与场景贯穿首中尾帧，无文字水印；脸部完整，运动手部有模糊和粘连，整体偏二次元半写实。"
+    }
+  }
+}

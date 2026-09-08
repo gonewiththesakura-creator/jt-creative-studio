@@ -967,6 +967,284 @@
    "params_defaults": {},
    "speed": "RunningHub云端，耗时按工作流和当前队列而定",
    "ref": "按页面字段上传图片；文生图工作流无需图片"
+  },
+  {
+   "id": "scail2_plus",
+   "name": "SCAIL2 Plus · 长视频人物替换/动作迁移",
+   "kind": "video",
+   "backend": "runninghub",
+   "rh_workflow_id": "2096841102812053505",
+   "source_editor_workflow_id": "2097130671957770242",
+   "source_editor_json_sha256": "33f136262598be6a6ff6b6285455f69d9777fb1664bfba84317a587afc481694",
+   "source_api_json_sha256": "af6a7f2d76b22571ee896db3e8ca182c277eb1e14ebd171bdbaaead3f8a04828",
+   "rh_schema_complete": true,
+   "desc": "SCAIL2 Plus长视频版：参考图驱动人物替换/动作迁移。当前API图不包含背景替换与黑背景分支。",
+   "rh_media": {
+    "reference_image": {
+     "node": "108",
+     "field": "image",
+     "type": "image",
+     "label": "目标人物参考图",
+     "required": true
+    },
+    "driving_video": {
+     "node": "112",
+     "field": "video",
+     "type": "video",
+     "label": "动作参考视频",
+     "required": true
+    }
+   },
+   "rh_params": {
+    "prompt": {
+     "node": "58",
+     "field": "positive_prompt",
+     "type": "text",
+     "label": "视频提示词",
+     "default": "一个女人在昏暗的房间里玩发着七彩灯光的呼啦圈",
+     "required": true,
+     "max_length": 2000
+    },
+    "width": {
+     "node": "115",
+     "field": "value",
+     "type": "int",
+     "label": "输出宽度",
+     "default": 720,
+     "min": 256,
+     "max": 2048
+    },
+    "height": {
+     "node": "116",
+     "field": "value",
+     "type": "int",
+     "label": "输出高度",
+     "default": 1280,
+     "min": 256,
+     "max": 2048
+    },
+    "frame_rate": {
+     "node": "112",
+     "field": "force_rate",
+     "type": "int",
+     "label": "强制帧率（0=沿用源视频）",
+     "default": 0,
+     "min": 0,
+     "max": 60
+    },
+    "frame_load_cap": {
+     "node": "110",
+     "field": "value",
+     "type": "int",
+     "label": "读取帧数（0=全部）",
+     "default": 0,
+     "min": 0,
+     "max": 100000
+    },
+    "skip_first_frames": {
+     "node": "111",
+     "field": "value",
+     "type": "int",
+     "label": "跳过开头帧数",
+     "default": 0,
+     "min": 0,
+     "max": 100000
+    },
+    "seed": {
+     "node": "45",
+     "field": "seed",
+     "type": "int",
+     "label": "随机种子",
+     "default": 328570562043662,
+     "min": 0,
+     "max": 1125899906842624
+    },
+    "vae_tiling": {
+     "node": "43",
+     "field": "enable_vae_tiling",
+     "type": "boolean",
+     "label": "VAE分块（长视频/高分辨率防爆显存）",
+     "default": false
+    },
+    "long_video_low_memory": {
+     "type": "boolean",
+     "label": "长视频遮罩低显存模式（超过20秒建议开启）",
+     "default": false,
+     "trusted_overrides": {
+      "true": [
+       {
+        "node": "197",
+        "field": "render_device",
+        "value": "cpu"
+       }
+      ],
+      "false": [
+       {
+        "node": "197",
+        "field": "render_device",
+        "value": "gpu"
+       }
+      ]
+     }
+    }
+   },
+   "params_defaults": {},
+   "fixed_features": [
+    "当前API图不包含背景替换与黑背景视频分支"
+   ],
+   "speed": "RunningHub云端，耗时按视频长度和队列而定"
+  },
+  {
+   "id": "scail2_multi",
+   "name": "SCAIL2 · 动作迁移/人物替换（影视二创）",
+   "kind": "video",
+   "backend": "runninghub",
+   "rh_workflow_id": "2096840691372924929",
+   "source_editor_workflow_id": "2097130786146328577",
+   "source_editor_json_sha256": "bbcbd044fde6a5ce8f7908a86b87c430f7a72027951b959735aa108c5b318eb3",
+   "source_api_json_sha256": "5c397ba441d8a2bd9edba82d5d69658d9979ac6f23da52dc9662a7327d8f2419",
+   "rh_schema_complete": true,
+   "desc": "SCAIL2影视二创版：支持动作迁移与人物替换。当前API图仅含单张参考图，不包含多图和骨骼动作分支。",
+   "rh_media": {
+    "reference_image": {
+     "node": "348",
+     "field": "image",
+     "type": "image",
+     "label": "目标人物参考图",
+     "required": true
+    },
+    "driving_video": {
+     "node": "297",
+     "field": "video",
+     "type": "video",
+     "label": "动作参考视频",
+     "required": true
+    }
+   },
+   "rh_params": {
+    "prompt": {
+     "node": "469",
+     "field": "text",
+     "type": "text",
+     "label": "视频提示词",
+     "default": "一个女人正在跳舞",
+     "required": true,
+     "max_length": 2000
+    },
+    "mask_prompt": {
+     "node": "470",
+     "field": "text",
+     "type": "text",
+     "label": "遮罩提示词",
+     "default": "person",
+     "required": true,
+     "max_length": 200
+    },
+    "long_edge": {
+     "node": "435",
+     "field": "value",
+     "type": "int",
+     "label": "视频最长边",
+     "default": 896,
+     "min": 256,
+     "max": 2048
+    },
+    "frame_rate": {
+     "node": "438",
+     "field": "value",
+     "type": "int",
+     "label": "强制帧率",
+     "default": 30,
+     "min": 1,
+     "max": 60
+    },
+    "frame_load_cap": {
+     "node": "295",
+     "field": "value",
+     "type": "int",
+     "label": "读取帧数（0=全部）",
+     "default": 0,
+     "min": 0,
+     "max": 100000
+    },
+    "skip_first_frames": {
+     "node": "294",
+     "field": "value",
+     "type": "int",
+     "label": "跳过开头帧数",
+     "default": 0,
+     "min": 0,
+     "max": 100000
+    },
+    "people": {
+     "node": "439",
+     "field": "value",
+     "type": "int",
+     "label": "人数",
+     "default": 1,
+     "min": 1,
+     "max": 3
+    },
+    "seed": {
+     "node": "493",
+     "field": "seed",
+     "type": "int",
+     "label": "随机种子",
+     "default": 914837815167441,
+     "min": 0,
+     "max": 1125899906842624
+    },
+    "mode": {
+     "type": "select",
+     "label": "处理模式",
+     "default": "action_transfer",
+     "options": [
+      {
+       "value": "action_transfer",
+       "label": "动作迁移"
+      },
+      {
+       "value": "character_replace",
+       "label": "人物替换"
+      }
+     ],
+     "trusted_overrides": {
+      "action_transfer": [
+       {
+        "node": "423",
+        "field": "value",
+        "value": false
+       }
+      ],
+      "character_replace": [
+       {
+        "node": "423",
+        "field": "value",
+        "value": true
+       }
+      ]
+     }
+    },
+    "preserve_reference_background": {
+     "node": "432",
+     "field": "value",
+     "type": "boolean",
+     "label": "保留参考图背景",
+     "default": true
+    },
+    "vae_tiling": {
+     "node": "267",
+     "field": "enable_vae_tiling",
+     "type": "boolean",
+     "label": "VAE分块（长视频/高分辨率防爆显存）",
+     "default": false
+    }
+   },
+   "params_defaults": {},
+   "fixed_features": [
+    "当前API图不包含多图参考、骨骼图动作与背景替换分支"
+   ],
+   "speed": "RunningHub云端，耗时按视频长度和队列而定"
   }
  ],
  "default_prompt_reset": true

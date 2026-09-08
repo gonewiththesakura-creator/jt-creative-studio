@@ -24,6 +24,7 @@ import urllib.request
 
 BASE = pathlib.Path(__file__).resolve().parents[1]
 E2E_MANIFEST = BASE / "audit" / "private_realism_workflows" / "e2e_manifest.json"
+SCAIL_E2E_MANIFEST = BASE / "audit" / "scail2_video_e2e.json"
 REMOTE_ROOT = "/home/admin/comfy-panel"
 PUBLIC_BASE = "http://8.210.125.65:8189"
 STAGE_SUFFIX = ".realism-release.new"
@@ -40,6 +41,14 @@ TARGET_WORKFLOWS = {
 }
 TARGET_WORKFLOW_IDS = tuple(TARGET_WORKFLOWS)
 TARGET_WORKFLOW_NAMES = tuple(TARGET_WORKFLOWS.values())
+SCAIL_VIDEO_TARGETS = {
+    "scail2_plus": "2096841102812053505",
+    "scail2_multi": "2096840691372924929",
+}
+SCAIL_VIDEO_FIELDS = {
+    "scail2_plus": ({"reference_image", "driving_video"}, {"prompt", "width", "height", "frame_rate", "frame_load_cap", "skip_first_frames", "seed", "vae_tiling", "long_video_low_memory"}),
+    "scail2_multi": ({"reference_image", "driving_video"}, {"prompt", "mask_prompt", "long_edge", "frame_rate", "frame_load_cap", "skip_first_frames", "people", "seed", "mode", "preserve_reference_background", "vae_tiling"}),
+}
 
 RELEASE_RELATIVE_PATHS = (
     "server.py",
@@ -118,6 +127,45 @@ def validate_release_config(config):
     }
 
 
+def validate_scail_video_config(config):
+    by_id = _target_by_id(config)
+    errors = []
+    forbidden_keys = {"multi_image", "pose_detection", "skeleton_action", "background_image", "black_background", "model", "lora", "steps", "cfg", "scheduler", "device", "blocks_to_swap"}
+    forbidden_fields = {"model", "model_name", "lora", "lora_0", "steps", "cfg", "scheduler", "render_device", "blocks_to_swap", "device", "load_device"}
+    for internal_id, workflow_id in SCAIL_VIDEO_TARGETS.items():
+        item = by_id.get(internal_id)
+        if not item:
+            errors.append(f"missing SCAIL workflow: {internal_id}")
+            continue
+        expected_media, expected_params = SCAIL_VIDEO_FIELDS[internal_id]
+        media = item.get("rh_media") or {}; params = item.get("rh_params") or {}
+        if item.get("kind") != "video" or item.get("backend") != "runninghub" or item.get("rh_workflow_id") != workflow_id or item.get("rh_schema_complete") is not True:
+            errors.append(f"invalid SCAIL identity: {internal_id}")
+        if set(media) != expected_media or set(params) != expected_params or not all(row.get("required") for row in media.values()):
+            errors.append(f"invalid SCAIL public schema: {internal_id}")
+        direct_fields = {row.get("field") for row in params.values() if row.get("field")}
+        if forbidden_keys.intersection(media) or forbidden_keys.intersection(params) or forbidden_fields.intersection(direct_fields):
+            errors.append(f"unsafe SCAIL controls: {internal_id}")
+        for key in ("source_editor_json_sha256", "source_api_json_sha256"):
+            if not re.fullmatch(r"[0-9a-f]{64}", str(item.get(key) or "")):
+                errors.append(f"missing SCAIL source hash: {internal_id}")
+    return errors
+
+
+def validate_scail_e2e_manifest():
+    try:
+        manifest = json.loads(SCAIL_E2E_MANIFEST.read_text(encoding="utf-8"))
+    except Exception as error:
+        return [f"SCAIL E2E manifest unreadable: {error}"]
+    records = manifest.get("workflows") or {}
+    errors = []
+    for internal_id, workflow_id in SCAIL_VIDEO_TARGETS.items():
+        record = records.get(internal_id) or {}
+        if record.get("workflow_id") != workflow_id or record.get("status") != "SUCCESS" or not re.fullmatch(r"\d{16,24}", str(record.get("task_id") or "")) or int(record.get("result_count") or 0) < 1:
+            errors.append(f"missing successful SCAIL E2E: {internal_id}")
+    return errors
+
+
 def validate_e2e_manifest(config):
     manifest = json.loads(E2E_MANIFEST.read_text(encoding="utf-8"))
     records = {row.get("id"): row for row in manifest.get("successful_workflows", [])}
@@ -170,12 +218,15 @@ def auth_is_disabled(server_source):
 
 def preflight_decision(config, server_source, execute=False, allow_unauthenticated_public=False):
     config_result = validate_release_config(config)
+    scail_errors = validate_scail_video_config(config) + validate_scail_e2e_manifest()
     unauthenticated = auth_is_disabled(server_source)
     blockers = []
     if config_result["missing_targets"]:
         blockers.append("missing target workflows")
     if config_result["invalid_targets"]:
         blockers.append("invalid or incomplete target schemas")
+    if scail_errors:
+        blockers.append("invalid SCAIL video schemas")
     if not execute:
         blockers.append("--execute not supplied")
     if unauthenticated and not allow_unauthenticated_public:
@@ -188,6 +239,7 @@ def preflight_decision(config, server_source, execute=False, allow_unauthenticat
         "allow_unauthenticated_public": bool(allow_unauthenticated_public),
         "missing_targets": config_result["missing_targets"],
         "invalid_targets": config_result["invalid_targets"],
+        "scail_video_errors": scail_errors,
         "blockers": blockers,
     }
 
