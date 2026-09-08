@@ -90,6 +90,14 @@ def test_release_creates_every_remote_parent_directory():
     assert "pathlib.PurePosixPath(remote).parent" in source
 
 
+def test_staging_upload_reconnects_and_verifies_each_file():
+    source = SCRIPT.read_text(encoding="utf-8")
+    assert "def stage_file_resilient" in source
+    assert "for attempt in range(1, 4)" in source
+    assert "client.open_sftp()" in source
+    assert "staging mismatch" in source
+
+
 def test_current_config_passes_without_credentials_or_ssh_needed():
     module = load_module()
     current = json.loads((ROOT / "config.json").read_text(encoding="utf-8"))

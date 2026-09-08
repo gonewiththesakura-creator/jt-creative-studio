@@ -266,6 +266,35 @@ def command(client, text, timeout=240):
     return out
 
 
+def stage_file_resilient(client, local, remote):
+    """Upload and byte-verify one staged file on a fresh SFTP channel."""
+    data = local.read_bytes()
+    staged = remote + STAGE_SUFFIX
+    last_error = None
+    for attempt in range(1, 4):
+        sftp = None
+        try:
+            sftp = client.open_sftp()
+            with sftp.open(staged, "wb") as handle:
+                handle.write(data)
+            with sftp.open(staged, "rb") as handle:
+                if handle.read() != data:
+                    raise RuntimeError(f"staging mismatch: {local}")
+            return
+        except Exception as error:
+            last_error = error
+            if attempt == 3:
+                raise
+            time.sleep(2 ** attempt)
+        finally:
+            if sftp is not None:
+                try:
+                    sftp.close()
+                except Exception:
+                    pass
+    raise last_error
+
+
 def backup_release(client, sftp, remote_paths):
     """Snapshot the immediately previous live set, including absent-file markers."""
     manifest = {}
@@ -350,20 +379,16 @@ def deploy(files, public_base=PUBLIC_BASE):
         password=creds["password"], timeout=30,
         allow_agent=False, look_for_keys=False,
     )
-    sftp = client.open_sftp()
+    sftp = None
     remote_paths = list(files.values())
     try:
         remote_parent_paths = sorted({str(pathlib.PurePosixPath(remote).parent) for remote in remote_paths})
         command(client, "mkdir -p -- " + " ".join(shlex.quote(path) for path in remote_parent_paths))
         for local, remote in files.items():
-            data = local.read_bytes()
-            staged = remote + STAGE_SUFFIX
-            with sftp.open(staged, "wb") as handle:
-                handle.write(data)
-            with sftp.open(staged, "rb") as handle:
-                if handle.read() != data:
-                    raise RuntimeError(f"staging mismatch: {local}")
+            stage_file_resilient(client, local, remote)
 
+        # Do not carry a recovered upload channel into backup/swap.
+        sftp = client.open_sftp()
         command(client, f"python3 -m py_compile {shlex.quote(REMOTE_ROOT + '/server.py' + STAGE_SUFFIX)}")
         staged_config = REMOTE_ROOT + "/config.json" + STAGE_SUFFIX
         command(client, "python3 -c " + shlex.quote(
@@ -405,7 +430,8 @@ def deploy(files, public_base=PUBLIC_BASE):
             rollback_release(client, sftp, remote_paths, public_base=public_base)
             raise
     finally:
-        sftp.close()
+        if sftp is not None:
+            sftp.close()
         client.close()
 
 
