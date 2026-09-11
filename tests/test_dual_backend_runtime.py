@@ -16,7 +16,8 @@ assert api['71']['inputs']['lora_name']=='Anima_JT\\01_style1_step900.safetensor
 assert api['4']['inputs']['text'].lower().count('jt_style1_v1')==1
 assert api['5']['inputs']['text']=='bad hands, text'
 assert '{{' not in json.dumps(api), 'unresolved template placeholder remains'
-assert api['6']['inputs']['batch_size']==3 and api['9']['inputs']['seed']==123456 and api['19']['inputs']['index']==0
+assert api['6']['inputs']['batch_size']==3 and api['9']['inputs']['seed']==123456
+assert api['11']['inputs']['images']==['10',0] and '19' not in api
 assert len(imgs)==3 and all(x['remote'] is False and x['preview_url'].startswith('/api/local-preview/') and x['archive_status']=='pending' for x in imgs)
 # Independent lanes: one running cloud job does not occupy local and vice versa.
 m._jobs={'c':{'id':'c','status':'running','generation_backend':'cloud'},'l':{'id':'l','status':'running','generation_backend':'local'}}

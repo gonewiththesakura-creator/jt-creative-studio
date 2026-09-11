@@ -1,6 +1,6 @@
 [
   {
-    "source": "快速真人化--01：21.png",
+    "source": "C:\\Users\\JT\\Desktop\\22\\快速真人化--01：21.png",
     "source_sha256": "9ce57cd9562ec5ace47b039a431b16052cdffbdd918876383c65de1fe7a673b6",
     "output": "realism-realcomic.webp",
     "original_size": [
@@ -20,10 +20,12 @@
     ],
     "thumb_bytes": 25454,
     "thumb_sha256": "46d999fa4701a602aa7692af39fb6c108d0dede1067bcc1352d5ced931cf3938",
-    "thumb_psnr_db": 38.88
+    "thumb_psnr_db": 38.88,
+    "full_lossless": false,
+    "thumb_quality": 84
   },
   {
-    "source": "Krea2_动漫转真人--03：21.png",
+    "source": "C:\\Users\\JT\\Desktop\\22\\Krea2_动漫转真人--03：21.png",
     "source_sha256": "f4b3b5d9044928b7ddda4471bfdda9c0baecd8be8d93d6f728cc20738cfc058b",
     "output": "realism-krea2.webp",
     "original_size": [
@@ -43,10 +45,12 @@
     ],
     "thumb_bytes": 27272,
     "thumb_sha256": "90ed3cae61e4e742e65c47cb25b9cd1c20773f6b4ab92cfa2c1ae2ff6e8da272",
-    "thumb_psnr_db": 37.61
+    "thumb_psnr_db": 37.61,
+    "full_lossless": false,
+    "thumb_quality": 84
   },
   {
-    "source": "动漫转写实真人2511--1：30.png",
+    "source": "C:\\Users\\JT\\Desktop\\22\\动漫转写实真人2511--1：30.png",
     "source_sha256": "28d40f06a418abd25836bc77ec7c60a25e8f2616d60ee7fe08de226426a196f8",
     "output": "realism-2511.webp",
     "original_size": [
@@ -66,10 +70,12 @@
     ],
     "thumb_bytes": 23990,
     "thumb_sha256": "ed7e8d52591253007ded2255cf1ba8008a48d2282a406a7eda1b1c65f65b9295",
-    "thumb_psnr_db": 39.76
+    "thumb_psnr_db": 39.76,
+    "full_lossless": false,
+    "thumb_quality": 84
   },
   {
-    "source": "动漫转真人·多采超清天花板--03：54.png",
+    "source": "C:\\Users\\JT\\Desktop\\22\\动漫转真人·多采超清天花板--03：54.png",
     "source_sha256": "191ca741d94587a8fd452819fd730166f10b357da0605d62a8a39ff7ca8b2fdc",
     "output": "realism-multisample.webp",
     "original_size": [
@@ -89,10 +95,12 @@
     ],
     "thumb_bytes": 28064,
     "thumb_sha256": "7e08581ad5d052f8077c4b739cf8d6a6cd3b7fca0dc24aaca794709302574168",
-    "thumb_psnr_db": 38.17
+    "thumb_psnr_db": 38.17,
+    "full_lossless": false,
+    "thumb_quality": 84
   },
   {
-    "source": "Qwen+ZI动漫转真人写实感洗图--3：46.png",
+    "source": "C:\\Users\\JT\\Desktop\\22\\Qwen+ZI动漫转真人写实感洗图--3：46.png",
     "source_sha256": "54c7a86abfb9d8b3096f62e5a0b18f0dbda851b75feb91bc6551b57758372051",
     "output": "realism-qwen-zi.webp",
     "original_size": [
@@ -112,10 +120,12 @@
     ],
     "thumb_bytes": 34540,
     "thumb_sha256": "b501ee9095203870d98efa662913b2b5d0bf946d75e1025e8e02385f4fc9f1fa",
-    "thumb_psnr_db": 37.23
+    "thumb_psnr_db": 37.23,
+    "full_lossless": false,
+    "thumb_quality": 84
   },
   {
-    "source": "动漫转真人ZI洗图改2：02.png",
+    "source": "C:\\Users\\JT\\Desktop\\22\\动漫转真人ZI洗图改2：02.png",
     "source_sha256": "fb795331f06840171f2da99d0cd7e1fe143065b815b65a914b45f376f7e1103a",
     "output": "realism-zi-flowmatch.webp",
     "original_size": [
@@ -135,10 +145,12 @@
     ],
     "thumb_bytes": 22012,
     "thumb_sha256": "a7f9d2af55977bd69e3ef552f7d71027af52ce91fc5ce4c2e3a13995aebf4094",
-    "thumb_psnr_db": 39.94
+    "thumb_psnr_db": 39.94,
+    "full_lossless": false,
+    "thumb_quality": 84
   },
   {
-    "source": "冷脸萌20s.png",
+    "source": "C:\\Users\\JT\\Desktop\\22\\冷脸萌20s.png",
     "source_sha256": "9268cbc22fdb7a0fdc3fa311657e7af19a0a1f95ccf909ee726c910b1e838a88",
     "output": "style-cold.webp",
     "original_size": [
@@ -158,10 +170,12 @@
     ],
     "thumb_bytes": 16596,
     "thumb_sha256": "8a4bb8f1458e2da35b94b37e5d9723eb1e394eb97656d283d64e175afa34e18a",
-    "thumb_psnr_db": 41.63
+    "thumb_psnr_db": 41.63,
+    "full_lossless": false,
+    "thumb_quality": 84
   },
   {
-    "source": "铅绘20s.png",
+    "source": "C:\\Users\\JT\\Desktop\\22\\铅绘20s.png",
     "source_sha256": "acda4eef6d86d3d971cb63c3dab3d46e163335c3a10f11b2e580573658b23b49",
     "output": "style-sketch.webp",
     "original_size": [
@@ -181,10 +195,12 @@
     ],
     "thumb_bytes": 38864,
     "thumb_sha256": "44210fb33e255ea80e8e1fa824c04405b550b5b03e6e600833874aebee1045f5",
-    "thumb_psnr_db": 39.93
+    "thumb_psnr_db": 39.93,
+    "full_lossless": false,
+    "thumb_quality": 84
   },
   {
-    "source": "原始铅绘20s.png",
+    "source": "C:\\Users\\JT\\Desktop\\22\\原始铅绘20s.png",
     "source_sha256": "535eade808be9203dd1b6400ebadd13b87e4fa7a594a059a75ea8217034fa4fe",
     "output": "style-original-sketch.webp",
     "original_size": [
@@ -204,10 +220,12 @@
     ],
     "thumb_bytes": 44378,
     "thumb_sha256": "49412f4352d2c2a311a413aab71dcaf0ad49d36d80752db245d1fc5fcb80843c",
-    "thumb_psnr_db": 40.12
+    "thumb_psnr_db": 40.12,
+    "full_lossless": false,
+    "thumb_quality": 84
   },
   {
-    "source": "古风--20s.png",
+    "source": "C:\\Users\\JT\\Desktop\\22\\古风--20s.png",
     "source_sha256": "b4a4f1994a392ba51fe763229e07b2ee35983cbcf72dd37f8911558c1c2d6b46",
     "output": "style-graphic.webp",
     "original_size": [
@@ -227,10 +245,12 @@
     ],
     "thumb_bytes": 37620,
     "thumb_sha256": "96a0ded0a4e3a56fc41fdcf51707f31fbf981d9a8a5168afa35a14f7c101e650",
-    "thumb_psnr_db": 38.8
+    "thumb_psnr_db": 38.8,
+    "full_lossless": false,
+    "thumb_quality": 84
   },
   {
-    "source": "原始古风20s.png",
+    "source": "C:\\Users\\JT\\Desktop\\22\\原始古风20s.png",
     "source_sha256": "1af1d4becb98129b3befc35621671f0de5cd017ccea1d2444434a056eb057ae7",
     "output": "style-original-graphic.webp",
     "original_size": [
@@ -250,10 +270,12 @@
     ],
     "thumb_bytes": 41654,
     "thumb_sha256": "f3423c1c4545fdd0496909ee59d263bf15740b17aa08b7ea024b75ae258ee60d",
-    "thumb_psnr_db": 36.35
+    "thumb_psnr_db": 36.35,
+    "full_lossless": false,
+    "thumb_quality": 84
   },
   {
-    "source": "古漫20s.png",
+    "source": "C:\\Users\\JT\\Desktop\\22\\古漫20s.png",
     "source_sha256": "c02f7ff1eb70ed1d4ac532083bca21fb0c861bf2f06e0e34695532a07f9725d9",
     "output": "style-hanmanga.webp",
     "original_size": [
@@ -273,10 +295,12 @@
     ],
     "thumb_bytes": 23910,
     "thumb_sha256": "6e28f70ac71aa79e60b32117872d648f9bebbe3d5dbbe66f50b91b26e215592b",
-    "thumb_psnr_db": 39.97
+    "thumb_psnr_db": 39.97,
+    "full_lossless": false,
+    "thumb_quality": 84
   },
   {
-    "source": "NFF--20s.png",
+    "source": "C:\\Users\\JT\\Desktop\\22\\NFF--20s.png",
     "source_sha256": "7925fcc70842173fc6e2ed576e00c39cafd21e280c810dbab2bd80f26efd6271",
     "output": "style-nff.webp",
     "original_size": [
@@ -296,6 +320,33 @@
     ],
     "thumb_bytes": 21232,
     "thumb_sha256": "81ccc47c0967747f3874d2973982aca4e07e203c694c51b24f9de60cc0c368a3",
-    "thumb_psnr_db": 39.47
+    "thumb_psnr_db": 39.47,
+    "full_lossless": false,
+    "thumb_quality": 84
+  },
+  {
+    "source": "D:\\ComfyUI_Mie\\ComfyUI\\output\\style321_panel_preview_w04\\PREVIEW_32402_00001_.png",
+    "source_sha256": "1298dbd6736eb47e13beb45bc89983e30b94557a0bad5021ea8071f3c5514e48",
+    "output": "style-retro-manga-luxury.webp",
+    "original_size": [
+      768,
+      1024
+    ],
+    "preview_size": [
+      768,
+      1024
+    ],
+    "bytes": 882020,
+    "sha256": "2ebb09eea5c1f9944e3a0376991a42b46a5a75bc92d1a83e3033b7522b60bb22",
+    "thumb_output": "style-retro-manga-luxury.thumb.webp",
+    "thumb_size": [
+      315,
+      420
+    ],
+    "thumb_bytes": 44654,
+    "thumb_sha256": "42d1afbc0d5d10664e79081955775741b84e4235279704ffc800bbc084df11c7",
+    "thumb_psnr_db": 31.79,
+    "full_lossless": true,
+    "thumb_quality": 90
   }
 ]

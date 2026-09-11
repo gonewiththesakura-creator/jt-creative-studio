@@ -12,7 +12,7 @@ if MANIFEST.exists():
         styles=json.loads(m.group(1))
         expected=manifest["union_pools"]
         source_pools=manifest["raw_source_pools"]
-        checks["seven profiles present"]=set(styles)=={"cold","sketch","original_sketch","graphic","original_graphic","hanmanga","nff"}
+        checks["eight profiles present"]=set(styles)=={"cold","sketch","original_sketch","graphic","original_graphic","hanmanga","nff","retro_manga_luxury"}
         for source_id,pools0 in source_pools.items():
             for key,items0 in pools0.items():
                 checks[f"source preserved:{source_id}:{key}"]={tuple(x) for x in items0}.issubset({tuple(x) for x in expected[key]})
@@ -22,6 +22,7 @@ if MANIFEST.exists():
             for key,items in expected.items():
                 checks[f"{sid}:{key} preserves full union"]={tuple(x) for x in pools[key]}=={tuple(x) for x in items}
         checks["nff pools reuse sketch union"]=styles["nff"]["pools"]==styles["sketch"]["pools"]
+        checks["retro style preserves full union"]=all({tuple(x) for x in items}.issubset({tuple(x) for x in styles["retro_manga_luxury"]["pools"][key]}) for key,items in expected.items())
         han_source=json.loads((ROOT/"sources"/"hanmanga_profile.source.json").read_text(encoding="utf8"))
         checks["hanmanga keeps independent source pool"]=styles["hanmanga"]["pools"]==han_source["pools"] and sum(len(v) for v in styles["hanmanga"]["pools"].values())==382
         checks["manifest records all three sources"]=set(manifest.get("sources",{}))=={"cold","sketch","graphic"}

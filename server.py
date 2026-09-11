@@ -33,7 +33,19 @@ RH_TIMEOUT_QUERY = 30
 RH_SUBMIT_HARD_TIMEOUT = 120  # wall-clock cap for the whole submit (all retries)
 MAX_JSON_BYTES = 42 * 1024 * 1024  # 30 MiB image after base64 + bounded metadata
 MAX_UPLOAD_JSON_BYTES = 82 * 1024 * 1024  # existing 60 MiB video after base64
-MAX_HTTP_WORKERS = 2
+MAX_HTTP_WORKERS = 32
+HTTP_REQUEST_BACKLOG = 128
+MAX_REJECTION_WORKERS = 8
+OVERLOAD_DRAIN_TIMEOUT = 0.1
+MAX_OVERLOAD_HEADER_BYTES = 16 * 1024
+CLIENT_SOCKET_TIMEOUT = 10
+REQUEST_HEADER_TIMEOUT = 15
+REQUEST_BODY_BASE_TIMEOUT = 15
+REQUEST_BODY_MIN_BYTES_PER_SECOND = 256 * 1024
+REQUEST_BODY_MAX_TIMEOUT = 300
+MAX_REQUESTS_PER_CONNECTION = 1
+MAX_LARGE_REQUESTS = 2
+LARGE_REQUEST_THRESHOLD = 1024 * 1024
 REALISM_HISTORY_LIMIT = 50
 MAX_FAVORITES = 200
 # V2 query exposes only real task states, not a stable percentage. Keep these
@@ -112,6 +124,12 @@ STYLE_PRESETS = {
         "LORA1": "08_liuli_style_v1_step600.safetensors",
         "LORA2": "08_liuli_style_v1_step600.safetensors",
         "strengths": {"LORA1": 0.7, "LORA2": 0.6},
+    },
+    "retro_manga_luxury": {
+        "trigger": "jt_style321_v1",
+        "LORA1": "09_style321_v1_step200.safetensors",
+        "LORA2": "09_style321_v1_step200.safetensors",
+        "strengths": {"LORA1": 0.4, "LORA2": 0.0},
     },
 }
 
@@ -603,7 +621,7 @@ def scoped_history_jobs(jobs, scope=None, style=None, limit=12):
     elif scope == "creator":
         ordered = [job for job in ordered if job.get("workflow") == "anima02"]
         if style is not None:
-            if style not in {"sketch", "original_sketch", "graphic", "original_graphic", "cold", "hanmanga", "nff"}:
+            if style not in {"sketch", "original_sketch", "graphic", "original_graphic", "cold", "hanmanga", "nff", "retro_manga_luxury"}:
                 return []
             ordered = [job for job in ordered if job.get("style_id") == style]
     elif scope:
@@ -646,6 +664,58 @@ def subst_obj(obj, mapping):
         return {k: subst_obj(v, mapping) for k, v in obj.items()}
     return obj
 
+def prune_hd_switch_branches(api, hd):
+    """Resolve the selected image branch so unused upscalers never execute."""
+    upscale_types = {"UpscaleModelLoader", "ImageUpscaleWithModel", "ImageScaleBy"}
+    selected_index = max(0, min(2, int(hd)))
+    switch_ids = [node_id for node_id, node in api.items()
+                  if node.get("class_type") == "easy imageIndexSwitch"]
+    for switch_id in switch_ids:
+        inputs = api[switch_id].get("inputs") or {}
+        selected = inputs.get(f"image{selected_index}")
+        if not (isinstance(selected, list) and len(selected) >= 2):
+            continue
+        for node in api.values():
+            node_inputs = node.get("inputs") or {}
+            for key, value in list(node_inputs.items()):
+                if isinstance(value, list) and len(value) >= 2 and str(value[0]) == str(switch_id):
+                    node_inputs[key] = list(selected)
+        def upscale_ancestors(link):
+            found = set()
+            stack = [str(link[0])] if isinstance(link, list) and len(link) >= 2 else []
+            while stack:
+                node_id = stack.pop()
+                if node_id in found or node_id not in api:
+                    continue
+                node = api[node_id]
+                if node.get("class_type") not in upscale_types:
+                    continue
+                found.add(node_id)
+                for value in (node.get("inputs") or {}).values():
+                    if isinstance(value, list) and len(value) >= 2:
+                        stack.append(str(value[0]))
+            return found
+
+        branch_nodes = set()
+        for index in range(3):
+            branch_nodes.update(upscale_ancestors(inputs.get(f"image{index}")))
+        keep = upscale_ancestors(selected)
+
+        removable = branch_nodes - keep
+        protected = set()
+        for consumer_id, node in api.items():
+            if consumer_id == switch_id or consumer_id in removable:
+                continue
+            for value in (node.get("inputs") or {}).values():
+                if (isinstance(value, list) and len(value) >= 2 and
+                        str(value[0]) in removable):
+                    protected.update(upscale_ancestors(value))
+
+        del api[switch_id]
+        for node_id in removable - protected:
+            api.pop(node_id, None)
+    return api
+
 def build_api(workflow, prompt, width, height, batch, hd, seed, loras=None, trigger=None, translate=True, negative_prompt="", prefix=None, lora_strengths=None):
     w = WORKFLOWS[workflow]
     tname = w["template"]
@@ -676,15 +746,14 @@ def build_api(workflow, prompt, width, height, batch, hd, seed, loras=None, trig
             key = lora_placeholder.strip("{}")
             if key in (lora_strengths or {}):
                 inputs["strength_model"] = float(lora_strengths[key])
-    api = subst_obj(tpl, mapping)
+    api = prune_hd_switch_branches(subst_obj(tpl, mapping), hd)
     if w["size_mode"] == "resize" and (int(width) > 0 and int(height) > 0):
-        # node id layout per workflow: (switch_id, save_id)
-        layout = {"qwen2509": ("19", "11"), "qwen2511": ("20", "21"),
-                  "anima01": ("19", "11"), "anima02": ("19", "11"),
-                  "anima03": ("19", "11"), "anima04": ("19", "11")}
-        switch_id, save_id = layout.get(workflow, ("19", "11"))
+        # Preserve the selected image before the switch is pruned above.
+        save_ids = {"qwen2511": "21"}
+        save_id = save_ids.get(workflow, "11")
+        selected_image = list(api[save_id]["inputs"]["images"])
         api["500"] = {"class_type": "ImageScale", "inputs": {
-            "image": [switch_id, 0], "upscale_method": "lanczos",
+            "image": selected_image, "upscale_method": "lanczos",
             "width": int(width), "height": int(height), "crop": "disabled"}}
         api[save_id]["inputs"]["images"] = ["500", 0]
     return api
@@ -1493,30 +1562,187 @@ def safe_output_filename(value):
 
 class BoundedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     daemon_threads = True
+    block_on_close = False
     allow_reuse_address = True
+    request_queue_size = HTTP_REQUEST_BACKLOG
     max_workers = MAX_HTTP_WORKERS
 
     def __init__(self, *args, **kwargs):
         self._worker_slots = threading.BoundedSemaphore(self.max_workers)
+        self._rejection_slots = threading.BoundedSemaphore(MAX_REJECTION_WORKERS)
+        self._large_request_slots = threading.BoundedSemaphore(MAX_LARGE_REQUESTS)
+        self._metrics_lock = threading.Lock()
+        self._active_workers = 0
+        self._active_rejections = 0
+        self._overload_rejections = 0
         super().__init__(*args, **kwargs)
 
     def process_request(self, request, client_address):
-        self._worker_slots.acquire()
+        # Never block the accept loop waiting for a worker. A slow-client wave
+        # must receive a bounded 503 instead of filling the kernel listen queue.
+        if not self._worker_slots.acquire(blocking=False):
+            with self._metrics_lock:
+                self._overload_rejections += 1
+            if not self._rejection_slots.acquire(blocking=False):
+                request.close()
+                return
+            threading.Thread(
+                target=self._send_overload_response,
+                args=(request,),
+                daemon=True,
+            ).start()
+            return
+        with self._metrics_lock:
+            self._active_workers += 1
         try:
             super().process_request(request, client_address)
         except Exception:
+            with self._metrics_lock:
+                self._active_workers -= 1
             self._worker_slots.release()
             raise
+
+    def _send_overload_response(self, request):
+        with self._metrics_lock:
+            self._active_rejections += 1
+        try:
+            # Read only an already-sent request header, and for at most 100 ms.
+            # Graceful close after draining prevents Windows from replacing the
+            # 503 response with a TCP RST while keeping the accept loop free.
+            request.settimeout(OVERLOAD_DRAIN_TIMEOUT)
+            received = b""
+            header_end = bytes((13, 10, 13, 10))
+            while (len(received) < MAX_OVERLOAD_HEADER_BYTES and
+                   header_end not in received):
+                try:
+                    chunk = request.recv(min(4096, MAX_OVERLOAD_HEADER_BYTES - len(received)))
+                except (socket.timeout, OSError):
+                    break
+                if not chunk:
+                    break
+                received += chunk
+            newline = bytes((13, 10))
+            body = b'{"ok":false,"service":"comfy-panel","overloaded":true}'
+            response = newline.join((
+                b"HTTP/1.0 503 Service Unavailable",
+                b"Connection: close",
+                b"Retry-After: 1",
+                b"Content-Type: application/json",
+                f"Content-Length: {len(body)}".encode("ascii"),
+                b"",
+                body,
+            ))
+            request.sendall(response)
+            try:
+                request.shutdown(socket.SHUT_WR)
+            except OSError:
+                pass
+        except OSError:
+            pass
+        finally:
+            request.close()
+            with self._metrics_lock:
+                self._active_rejections -= 1
+            self._rejection_slots.release()
 
     def process_request_thread(self, request, client_address):
         try:
             super().process_request_thread(request, client_address)
         finally:
+            with self._metrics_lock:
+                self._active_workers -= 1
             self._worker_slots.release()
+
+    def liveness_snapshot(self):
+        with self._metrics_lock:
+            return {
+                "active_workers": self._active_workers,
+                "max_workers": self.max_workers,
+                "active_rejections": self._active_rejections,
+                "max_rejection_workers": MAX_REJECTION_WORKERS,
+                "overload_rejections": self._overload_rejections,
+            }
+
+    def get_request(self):
+        request, client_address = super().get_request()
+        request.settimeout(CLIENT_SOCKET_TIMEOUT)
+        return request, client_address
+
+    def handle_error(self, request, client_address):
+        error = sys.exc_info()[1]
+        if isinstance(error, (BrokenPipeError, ConnectionAbortedError, ConnectionResetError, socket.timeout, TimeoutError)):
+            return
+        super().handle_error(request, client_address)
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.0"
+
     def log_message(self, *a): pass
+
+    def _start_absolute_deadline(self, seconds):
+        state = {"expired": False, "armed": True, "lock": threading.Lock()}
+
+        def expire():
+            with state["lock"]:
+                if not state["armed"]:
+                    return
+                state["expired"] = True
+                state["armed"] = False
+            try:
+                self.connection.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+
+        timer = threading.Timer(max(0.01, float(seconds)), expire)
+        timer.daemon = True
+        timer.start()
+        return timer, state
+
+    @staticmethod
+    def _cancel_absolute_deadline(deadline):
+        if deadline:
+            timer, state = deadline
+            with state["lock"]:
+                state["armed"] = False
+            timer.cancel()
+
+    def parse_request(self):
+        try:
+            return super().parse_request()
+        finally:
+            # The header deadline starts before the request line is read and
+            # ends only after all headers have been parsed.
+            self._cancel_absolute_deadline(getattr(self, "_header_deadline", None))
+            self._header_deadline = None
+
+    def handle(self):
+        try:
+            super().handle()
+        except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError,
+                socket.timeout, TimeoutError):
+            # Browsers, probes and deliberately slow clients routinely close
+            # sockets mid-request. This is expected client behaviour, not a
+            # server fault, so keep production stderr free of tracebacks.
+            self.close_connection = True
+
+    def handle_one_request(self):
+        self._header_deadline = self._start_absolute_deadline(REQUEST_HEADER_TIMEOUT)
+        try:
+            super().handle_one_request()
+        finally:
+            self._cancel_absolute_deadline(getattr(self, "_header_deadline", None))
+            self._header_deadline = None
+            if MAX_REQUESTS_PER_CONNECTION == 1:
+                self.close_connection = True
+
+    def finish(self):
+        try:
+            super().finish()
+        finally:
+            if getattr(self, "_large_request_slot_acquired", False):
+                self._large_request_slot_acquired = False
+                self.server._large_request_slots.release()
 
     def _send(self, code, body=b"", ctype="application/json; charset=utf-8", headers=None):
         self.send_response(code)
@@ -1558,11 +1784,27 @@ class Handler(http.server.BaseHTTPRequestHandler):
         n = int(self.headers.get("Content-Length", 0))
         if n < 0 or n > limit:
             raise OverflowError("request body too large")
-        return json.loads(self.rfile.read(n).decode())
+        timeout = min(
+            REQUEST_BODY_MAX_TIMEOUT,
+            REQUEST_BODY_BASE_TIMEOUT + n / REQUEST_BODY_MIN_BYTES_PER_SECOND,
+        )
+        deadline = self._start_absolute_deadline(timeout)
+        try:
+            raw = self.rfile.read(n)
+        finally:
+            self._cancel_absolute_deadline(deadline)
+        if len(raw) != n:
+            if deadline[1]["expired"]:
+                raise TimeoutError("request body deadline exceeded")
+            raise ValueError("incomplete request body")
+        return json.loads(raw.decode())
 
     def do_GET(self):
         path = urllib.parse.urlparse(self.path).path
-        if path == "/api/health":
+        if path == "/api/live":
+            payload = {"ok": True, "service": "comfy-panel", **self.server.liveness_snapshot()}
+            self._send(200, json.dumps(payload, separators=(",", ":")).encode())
+        elif path == "/api/health":
             ok, msg = comfy_ok()
             self._send(200, json.dumps({"ok": ok, "comfy": msg, "local_comfy_ok": ok,
                                         "running_cloud": self._running_job_id("cloud"),
@@ -1836,6 +2078,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
         body_limit = json_body_limit(path)
         if content_length < 0 or content_length > body_limit:
             return self._send(413, b'{"error":"request body too large"}')
+        if content_length >= LARGE_REQUEST_THRESHOLD:
+            if not self.server._large_request_slots.acquire(blocking=False):
+                return self._send(503, b'{"error":"large upload capacity busy"}', headers={"Retry-After": "10"})
+            self._large_request_slot_acquired = True
         if path == "/api/workflow-upload":
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
             try:
@@ -2178,6 +2424,26 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if generation_backend not in ("cloud", "local"):
             return self._send(400, b'{"error":"unknown generation_backend"}')
         client_request_id = str(body.get("client_request_id") or "").strip()[:96]
+        if not client_request_id:
+            return self._send(400, b'{"error":"client_request_id is required"}')
+        try:
+            numeric_values = {
+                "batch": body.get("batch", 1),
+                "hd": body.get("hd", 0),
+                "width": body.get("width", 0),
+                "height": body.get("height", 0),
+            }
+            if any(isinstance(value, (bool, dict, list)) for value in numeric_values.values()):
+                raise TypeError("numeric parameter must be scalar")
+            batch = max(1, min(int(1 if numeric_values["batch"] in (None, "") else numeric_values["batch"]), w["batch_max"]))
+            hd = int(0 if numeric_values["hd"] in (None, "") else numeric_values["hd"])
+            width = int(0 if numeric_values["width"] in (None, "") else numeric_values["width"])
+            height = int(0 if numeric_values["height"] in (None, "") else numeric_values["height"])
+        except (TypeError, ValueError, OverflowError):
+            return self._send(400, b'{"error":"invalid numeric parameters"}')
+        hd_options = w.get("hd") or ["关闭"]
+        if hd < 0 or hd >= len(hd_options):
+            return self._send(400, b'{"error":"hd out of range"}')
         with _submit_locks[generation_backend]:
             # Browser submission retries reuse this id. If the first response was
             # lost, return the same accepted task instead of generating twice.
@@ -2195,10 +2461,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "error": "已有任务正在运行，请等待完成后再提交",
                     "running_job": active_id,
                 }, ensure_ascii=False).encode())
-            batch = max(1, min(int(body.get("batch", 1)), w["batch_max"]))
-            hd = int(body.get("hd", 0))
-            width = int(body.get("width", 0) or 0)
-            height = int(body.get("height", 0) or 0)
             if w["size_mode"] == "native":
                 presets = w["size_presets"]
                 if not (width > 0 and height > 0):

@@ -1,0 +1,8 @@
+[Unit]
+Description=Comfy Panel local liveness watchdog
+After=network.target comfy-panel.service
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/bin/python3 /usr/local/libexec/comfy-panel-watchdog.py

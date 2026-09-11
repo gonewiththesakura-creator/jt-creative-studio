@@ -28,10 +28,7 @@ SOURCES = {
         "run_id": "2095331229284470786", "editor_id": None,
         "editor": "超写实4K文生图.json", "api": "超写实4K文生图_api.json",
     },
-    "realism_3in1": {
-        "run_id": "2096094953332416513", "editor_id": None,
-        "editor": "3in1.json", "api": "3in1_api.json",
-    },
+
     "realism_zi_flowmatch": {
         "run_id": "2096150319347859458", "editor_id": None,
         "editor": "动漫转真人ZI洗图改（Z-image+FlowMatch）.json", "api": "动漫转真人ZI洗图改（Z-image+FlowMatch）_api.json",
@@ -86,16 +83,16 @@ def api_literals(api):
     return media, rows
 
 
-def test_all_seven_run_ids_are_unique_and_match_fingerprint_audit():
+def test_all_active_run_ids_are_unique_and_match_fingerprint_audit():
     fingerprint = json.loads((ROOT / "audit" / "private_realism_workflows" / "run_id_fingerprints.json").read_text(encoding="utf-8"))
     configured = {BY_ID[internal_id]["rh_workflow_id"]: internal_id for internal_id in SOURCES}
-    assert len(configured) == 7
-    assert configured == fingerprint["mapping"]
+    assert len(configured) == 6
+    assert configured.items() <= fingerprint["mapping"].items()
     assert fingerprint["all_probes_unbilled"] is True
     assert all(next(iter(score.values())) == "5/5" for score in fingerprint["scores"].values())
 
 
-def test_all_seven_private_workflows_have_exact_ids_and_source_hashes():
+def test_all_active_private_workflows_have_exact_ids_and_source_hashes():
     assert set(SOURCES).issubset(BY_ID)
     for internal_id, source in SOURCES.items():
         item = BY_ID[internal_id]
@@ -115,34 +112,13 @@ def test_multisample_uses_trusted_plus_instance_after_verified_default_vram_oom(
             assert BY_ID[internal_id].get("rh_instance_type", "default") == "default"
 
 
-def test_3in1_source_graph_is_complete_but_public_controls_are_curated():
-    source = SOURCES["realism_3in1"]
-    api = json.loads((ATTACHMENTS / source["api"]).read_text(encoding="utf-8-sig"))
-    expected_media, expected_params = api_literals(api)
-    item = BY_ID["realism_3in1"]
-    actual_media = {(str(row["node"]), row["field"]) for row in item["rh_media"].values()}
-    actual_params = {(str(row["node"]), row["field"]) for row in item["rh_params"].values() if row.get("node")}
-    assert len(expected_media) == 3
-    assert len(expected_params) == 105
-    assert actual_media == {("1291", "image")}
-    assert actual_params == {("1398", "prompt"), ("1250", "seed"), ("1251", "scale_to_length")}
-    assert actual_media.issubset(expected_media)
-    assert actual_params.issubset(expected_params)
-
-
-def test_3in1_sensitive_native_prompt_is_controlled_by_one_business_switch():
-    item = BY_ID["realism_3in1"]
-    mapping = item["rh_params"]["local_detail_lora"]
-    assert mapping["default"] is True
-    assert "仅控制一组" in mapping["label"]
-    assert "不代表关闭工作流内其他成人向能力" in mapping["description"]
-    assert mapping["group"] == "common"
-
-
-def test_3in1_labels_are_business_facing_not_node_debug_labels():
-    item = BY_ID["realism_3in1"]
-    for mapping in list(item["rh_media"].values()) + list(item["rh_params"].values()):
-        assert "节点" not in mapping["label"]
+def test_3in1_is_retired_from_production_but_audit_history_is_retained():
+    assert "realism_3in1" not in BY_ID
+    manifest = json.loads((ROOT / "audit" / "private_realism_workflows" / "e2e_manifest.json").read_text(encoding="utf-8"))
+    assert any(row.get("id") == "realism_3in1" and row.get("production_available") is False
+               for row in manifest.get("retired_workflows", []))
+    assert any(row.get("id") == "realism_3in1" and row.get("status") == "SUCCESS"
+               for row in manifest.get("successful_workflows", []))
 
 
 def test_all_exported_defaults_normalize_without_semantic_rewriting():

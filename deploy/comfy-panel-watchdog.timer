@@ -1,0 +1,12 @@
+[Unit]
+Description=Run Comfy Panel liveness watchdog every minute
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1min
+AccuracySec=10s
+Persistent=true
+Unit=comfy-panel-watchdog.service
+
+[Install]
+WantedBy=timers.target

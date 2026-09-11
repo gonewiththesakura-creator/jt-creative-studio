@@ -1,0 +1,77 @@
+{
+  "job_id": "af3aae6c8ae6",
+  "comfy_prompt_id": "a52bcbfb-02a4-430c-b3b5-493e4d3c2024",
+  "status": "done",
+  "provider_status": "LOCAL_DONE",
+  "seed": 32411,
+  "style_id": "retro_manga_luxury",
+  "width": 768,
+  "height": 1024,
+  "hd": 0,
+  "image_bytes": 1059602,
+  "image_sha256": "74ec2323c782dd76d209b5c28695b788ddaa37c7c59d2f85023ce42a8949cc62",
+  "preview_bytes": 85572,
+  "preview_sha256": "2d5088c33d29367aff12712aa62bb2041ab655f96aa59237b3903c4b9f8963c5",
+  "rh_task_id": null,
+  "rh_coins": null,
+  "verified_prompt_id": "a52bcbfb-02a4-430c-b3b5-493e4d3c2024",
+  "actual_lora_nodes": {
+    "70": {
+      "lora_name": "Anima_JT\\09_style321_v1_step200.safetensors",
+      "strength_model": 0.4,
+      "model": [
+        "1",
+        0
+      ]
+    },
+    "71": {
+      "lora_name": "Anima_JT\\09_style321_v1_step200.safetensors",
+      "strength_model": 0.0,
+      "model": [
+        "70",
+        0
+      ]
+    }
+  },
+  "actual_trigger_in_positive": true,
+  "actual_upscale_or_switch_nodes": {},
+  "comfy_status": "success",
+  "comfy_completed": true,
+  "cache_messages": [
+    [
+      "execution_start",
+      {
+        "prompt_id": "a52bcbfb-02a4-430c-b3b5-493e4d3c2024",
+        "timestamp": 1789088704098
+      }
+    ],
+    [
+      "execution_cached",
+      {
+        "nodes": [
+          "1",
+          "2",
+          "3",
+          "6"
+        ],
+        "prompt_id": "a52bcbfb-02a4-430c-b3b5-493e4d3c2024",
+        "timestamp": 1789088704101
+      }
+    ],
+    [
+      "execution_success",
+      {
+        "prompt_id": "a52bcbfb-02a4-430c-b3b5-493e4d3c2024",
+        "timestamp": 1789088748325
+      }
+    ]
+  ],
+  "verification": "PASS",
+  "effective_loras_source": "ComfyUI /history prompt graph",
+  "effective_trigger": "jt_style321_v1",
+  "effective_lora_strengths": {
+    "LORA1": 0.4,
+    "LORA2": 0.0
+  },
+  "sampling_executed": true
+}

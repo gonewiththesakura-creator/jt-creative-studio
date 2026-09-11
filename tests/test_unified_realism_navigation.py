@@ -10,6 +10,9 @@ def test_one_realism_top_level_navigation():
   if page.name == 'realcomic.html':
    assert 'href="/realism?workflow=realcomic"' in html
    continue
+  if page.name in ('original_sketch.html','original_graphic.html'):
+   assert 'http-equiv="refresh"' in html and '创作台画风' in html
+   continue
   assert html.count('href="/realism"')==1,(page.name,html.count('href="/realism"'))
   assert 'href="/realcomic"' not in html,page.name
   assert '>真人化<' in html
@@ -26,11 +29,11 @@ def test_unified_console_supports_ai_app_adapter():
  assert "new URLSearchParams(location.search).get('workflow')" in BUILDER
  assert '快速真人化（原漫画转真人）' in (ROOT/'config.json').read_text(encoding='utf-8')
 
-def test_3in1_subworkflow_selector_shows_unavailable_honestly():
+def test_3in1_is_absent_after_user_retirement_decision():
  config=(ROOT/'config.json').read_text(encoding='utf-8')
- for marker in ['subworkflows','fixed_features','需要单独的RunningHub运行ID']:
-  assert marker in config
- assert '当前版本固定启用' in BUILDER
+ assert '"id": "realism_3in1"' not in config
+ audit=(ROOT/'audit/private_realism_workflows/e2e_manifest.json').read_text(encoding='utf-8')
+ assert '"three_in_one_retired": true' in audit
 
 def test_legacy_realcomic_jobs_and_favorites_are_migrated():
  assert 'jt-active-realcomic-cloud' in BUILDER

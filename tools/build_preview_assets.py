@@ -23,10 +23,14 @@ MAPPING = {
     "古漫20s.png": "style-hanmanga.webp",
     "NFF--20s.png": "style-nff.webp",
 }
+EXTRA_MAPPING = {
+    Path(r"D:/ComfyUI_Mie/ComfyUI/output/style321_panel_preview_w04/PREVIEW_32402_00001_.png"): "style-retro-manga-luxury.webp",
+}
 
 rows = []
-for source_name, output_name in MAPPING.items():
-    src = SOURCE / source_name
+sources = [(SOURCE / source_name, output_name) for source_name, output_name in MAPPING.items()]
+sources.extend(EXTRA_MAPPING.items())
+for src, output_name in sources:
     if not src.is_file():
         raise FileNotFoundError(src)
     with Image.open(src) as opened:
@@ -34,20 +38,26 @@ for source_name, output_name in MAPPING.items():
         original_size = image.size
         image.thumbnail((1600, 1600), Image.Resampling.LANCZOS)
         dest = OUT / output_name
-        image.save(dest, "WEBP", quality=86, method=6)
+        lossless_full = output_name == "style-retro-manga-luxury.webp"
+        if lossless_full:
+            image.save(dest, "WEBP", lossless=True, method=6)
+        else:
+            image.save(dest, "WEBP", quality=86, method=6)
         thumb = image.copy()
-        thumb.thumbnail((640, 640), Image.Resampling.LANCZOS)
+        thumb_bound = (420, 420) if lossless_full else (640, 640)
+        thumb.thumbnail(thumb_bound, Image.Resampling.LANCZOS)
         thumb_dest = OUT / output_name.replace(".webp", ".thumb.webp")
-        thumb.save(thumb_dest, "WEBP", quality=84, method=6)
+        thumb_quality = 90 if lossless_full else 84
+        thumb.save(thumb_dest, "WEBP", quality=thumb_quality, method=6)
         with Image.open(thumb_dest) as decoded:
             decoded = decoded.convert("RGB")
             reference = image.copy()
-            reference.thumbnail((640, 640), Image.Resampling.LANCZOS)
+            reference.thumbnail(thumb_bound, Image.Resampling.LANCZOS)
             rms = ImageStat.Stat(ImageChops.difference(reference, decoded)).rms
             mse = sum(value * value for value in rms) / len(rms)
             psnr = 99.0 if mse == 0 else 10*math.log10((255**2)/mse)
     rows.append({
-        "source": source_name,
+        "source": str(src),
         "source_sha256": hashlib.sha256(src.read_bytes()).hexdigest(),
         "output": output_name,
         "original_size": original_size,
@@ -59,6 +69,8 @@ for source_name, output_name in MAPPING.items():
         "thumb_bytes": thumb_dest.stat().st_size,
         "thumb_sha256": hashlib.sha256(thumb_dest.read_bytes()).hexdigest(),
         "thumb_psnr_db": round(psnr, 2),
+        "full_lossless": lossless_full,
+        "thumb_quality": thumb_quality,
     })
 (OUT / "manifest.json").write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
 print(json.dumps({"count": len(rows), "total_bytes": sum(row["bytes"] for row in rows), "rows": rows}, ensure_ascii=False, indent=2))

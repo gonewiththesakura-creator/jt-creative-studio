@@ -1,0 +1,42 @@
+{
+  "status": "complete",
+  "weight": 0.4,
+  "trigger": "jt_style321_v1",
+  "prompt": "1woman, adult woman, solo, elegant mature glamorous woman, long deep black flowing hair, long narrow elegant eyes, confident gaze, black off-shoulder velvet evening gown, ornate emerald ruby and sapphire chandelier earrings, layered gemstone necklaces, three-quarter view, bust shot, minimal warm cream and orange painterly background, retro 1980s-1990s Japanese manga fashion illustration,, vintage shoujo manga, josei manga aesthetic,, traditional hand-drawn illustration,, black ink linework,, colored pencil rendering,, alcohol marker coloring,, gouache-like highlights,, visible marker strokes,, slightly rough expressive linework,, textured paper,, scanned analog artwork,, , bold black shadow masses,, deep black hair,, high contrast,, sharp colorful hair highlights,, cyan, violet, magenta, pink and golden reflected light,, chromatic highlights,, colored reflected shadows,, , pale luminous skin,, blue-purple and peach skin shadows,, long narrow elegant eyes,, heavy detailed eyelashes,, delicate sharp facial features,, small glossy lips,, mature glamorous expression,, , luxurious fashion illustration,, ornate gemstone jewelry,, dangling earrings,, layered necklaces,, vintage high-fashion editorial feeling,, , dynamic flowing hair,, dramatic crop,, fashion portrait composition",
+  "negative": "worst quality, low quality, lowres, blurry,, photorealistic, realistic photography, 3d render, CGI,, smooth digital rendering, airbrushed skin, plastic skin,, modern anime screenshot, mobile game illustration, VTuber style,, chibi, kawaii, baby face, huge round eyes,, flat cel shading, clean vector lines, perfect uniform lineart,, cyberpunk, excessive neon glow,, bad anatomy, bad hands, extra fingers, missing fingers,, distorted face, asymmetrical eyes,, cluttered background,, text, watermark, logo, signature",
+  "rows": [
+    {
+      "seed": 32401,
+      "prompt_id": "fb5c028c-e347-4235-b20c-39896986bba0",
+      "bytes": 995793,
+      "sha256": "535f8c77a915004510c61199b070fa96f6ba76caadfc9889b54e663c6eca3f27",
+      "elapsed": 45.05,
+      "artifact": "style321_panel_preview_w04/PREVIEW_32401_00001_.png"
+    },
+    {
+      "seed": 32402,
+      "prompt_id": "558626f4-7c62-4e24-9954-c1aea475a2bb",
+      "bytes": 1300734,
+      "sha256": "1298dbd6736eb47e13beb45bc89983e30b94557a0bad5021ea8071f3c5514e48",
+      "elapsed": 45.05,
+      "artifact": "style321_panel_preview_w04/PREVIEW_32402_00001_.png"
+    },
+    {
+      "seed": 32403,
+      "prompt_id": "63caa07b-36f9-425e-9c86-327c97e46afa",
+      "bytes": 1188860,
+      "sha256": "db9fb21394db9cbd031de3584f4febaef2b000779537da8dba28cae94393c457",
+      "elapsed": 45.05,
+      "artifact": "style321_panel_preview_w04/PREVIEW_32403_00001_.png"
+    }
+  ],
+  "selected_seed": 32402,
+  "selected_artifact": "style321_panel_preview_w04/PREVIEW_32402_00001_.png",
+  "selection": "C2 selected after same-scale blind review of all 3 seeds",
+  "visual_review": {
+    "status": "PASS",
+    "score": 8.4,
+    "watermark_signature_text": "none visible",
+    "note": "formal creator preview; independent original-image review"
+  }
+}

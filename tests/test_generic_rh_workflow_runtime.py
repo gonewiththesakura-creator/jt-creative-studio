@@ -457,7 +457,10 @@ def test_comfy_output_names_cannot_escape_job_directory():
 
 
 def test_http_server_has_bounded_request_concurrency():
-    assert server.BoundedHTTPServer.max_workers <= 2
+    assert 16 <= server.BoundedHTTPServer.max_workers <= 64
+    assert server.BoundedHTTPServer.request_queue_size >= 64
+    assert server.CLIENT_SOCKET_TIMEOUT <= 10
+    assert server.MAX_REQUESTS_PER_CONNECTION == 1
     assert hasattr(server.BoundedHTTPServer, "process_request_thread")
 
 
