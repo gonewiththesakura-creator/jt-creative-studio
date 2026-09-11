@@ -6,6 +6,7 @@ import pytest
 
 ROOT = Path(r"D:/LAN-Share/lora/_work/comfy_panel")
 SCRIPT = ROOT / "tools" / "deploy_realism_release.py"
+RETRO_CLOUD_E2E = ROOT / "audit" / "retro_manga_panel_e2e_cloud_w04.json"
 SPEC = importlib.util.spec_from_file_location("deploy_realism_release", SCRIPT)
 
 
@@ -502,3 +503,47 @@ def test_release_requires_clean_git_tests_and_historical_e2e_records():
     manifest = json.loads((ROOT / "audit" / "private_realism_workflows" / "e2e_manifest.json").read_text(encoding="utf-8"))
     assert len(manifest["successful_workflows"]) == 7
     assert all(row["status"] == "SUCCESS" for row in manifest["successful_workflows"])
+
+
+def test_retro_creator_has_a_verified_cloud_e2e_release_gate():
+    module = load_module()
+    assert module.RETRO_CLOUD_E2E_MANIFEST == RETRO_CLOUD_E2E
+    assert module.validate_retro_cloud_e2e_manifest() == []
+    record = json.loads(RETRO_CLOUD_E2E.read_text(encoding="utf-8"))
+    actual = record["authoritative_remote_job_record"]
+    assert record["verification"] == "PASS"
+    assert record["rh_task_id"] == "2098333420378148866"
+    assert record["rh_coins"] == "6"
+    assert actual["client_request_id"] == "retro-cloud-w04-32421-final"
+    assert actual["status"] == "done" and actual["provider_status"] == "DONE"
+    assert actual["workflow"] == "anima02"
+    assert actual["style_id"] == "retro_manga_luxury"
+    assert actual["trigger"] == "jt_style321_v1"
+    assert actual["loras"] == {
+        "LORA1": "09_style321_v1_step200.safetensors",
+        "LORA2": "09_style321_v1_step200.safetensors",
+    }
+    assert actual["lora_strengths"] == {"LORA1": 0.4, "LORA2": 0.0}
+    assert (actual["width"], actual["height"], actual["batch"], actual["hd"], actual["seed"]) == (768, 1024, 1, 0, 32421)
+    assert record["artifact"]["sha256"] == "a11974ba1341a36c76499b815a8f84611303493594805d03e9fc26d87156b2da"
+    assert record["visual_review"]["functional_style_evidence"] == "PASS"
+    assert record["visual_review"]["strict_promotional_visual"] == "FAIL"
+
+
+def test_retro_cloud_e2e_tampering_blocks_release(tmp_path, monkeypatch):
+    module = load_module()
+    record = json.loads(RETRO_CLOUD_E2E.read_text(encoding="utf-8"))
+    record["authoritative_remote_job_record"]["lora_strengths"]["LORA1"] = 0.6
+    tampered = tmp_path / "retro.json"
+    tampered.write_text(json.dumps(record), encoding="utf-8")
+    monkeypatch.setattr(module, "RETRO_CLOUD_E2E_MANIFEST", tampered)
+    errors = module.validate_retro_cloud_e2e_manifest()
+    assert "retro cloud E2E LoRA mapping invalid" in errors
+    decision = module.preflight_decision(
+        complete_config(module),
+        "class Handler:\n    def _auth(self):\n        return True\n",
+        execute=True,
+        allow_unauthenticated_public=True,
+    )
+    assert decision["ready"] is False
+    assert "invalid retro creator cloud E2E" in decision["blockers"]

@@ -1,0 +1,88 @@
+{
+  "job_id": "09a55e27c771",
+  "client_request_id": "retro-cloud-w04-32421-final",
+  "status": "done",
+  "provider_status": "DONE",
+  "rh_task_id": "2098333420378148866",
+  "rh_coins": "6",
+  "seed": 32421,
+  "style_id": "retro_manga_luxury",
+  "style_variant": "default",
+  "width": 768,
+  "height": 1024,
+  "batch": 1,
+  "hd": 0,
+  "generation_backend": "cloud",
+  "elapsed_seconds": 32.4,
+  "wall_clock_seconds": 37.3,
+  "error": null,
+  "result_count": 1,
+  "results": [
+    {
+      "url": "https://rh-hk-images-1252422369.cos.ap-hongkong.myqcloud.com/a09fc1bfa31dfba7e932095363e6e3c3/output/Anima_JT/Base_CharStyle_Comic_00006_osuik_1789116669.png",
+      "remote": true,
+      "task_id": null,
+      "http_status": 200,
+      "bytes": 1042674,
+      "sha256": "a11974ba1341a36c76499b815a8f84611303493594805d03e9fc26d87156b2da",
+      "png_signature": true,
+      "jpeg_signature": false,
+      "webp_signature": false
+    }
+  ],
+  "expected_effective_mapping": {
+    "workflow_id": "2091826879766933505",
+    "trigger": "jt_style321_v1",
+    "lora": "09_style321_v1_step200.safetensors",
+    "strengths": {
+      "LORA1": 0.4,
+      "LORA2": 0.0
+    }
+  },
+  "submit_response_error": null,
+  "verification": "PASS",
+  "local_audit_artifact": "retro_manga_cloud_w04_32421.png",
+  "artifact_sha256": "a11974ba1341a36c76499b815a8f84611303493594805d03e9fc26d87156b2da",
+  "authoritative_remote_job_record": {
+    "source": "/home/admin/comfy-panel/panel_data/jobs.json",
+    "id": "09a55e27c771",
+    "client_request_id": "retro-cloud-w04-32421-final",
+    "status": "done",
+    "provider_status": "DONE",
+    "rh_task_id": "2098333420378148866",
+    "rh_coins": "6",
+    "workflow": "anima02",
+    "style_id": "retro_manga_luxury",
+    "style_variant": "default",
+    "loras": {
+      "LORA1": "09_style321_v1_step200.safetensors",
+      "LORA2": "09_style321_v1_step200.safetensors"
+    },
+    "lora_strengths": {
+      "LORA1": 0.4,
+      "LORA2": 0.0
+    },
+    "trigger": "jt_style321_v1",
+    "width": 768,
+    "height": 1024,
+    "batch": 1,
+    "hd": 0,
+    "seed": 32421,
+    "generation_backend": "cloud"
+  },
+  "artifact": {
+    "file": "retro_manga_cloud_w04_32421.png",
+    "format": "PNG",
+    "width": 768,
+    "height": 1024,
+    "bytes": 1042674,
+    "sha256": "a11974ba1341a36c76499b815a8f84611303493594805d03e9fc26d87156b2da"
+  },
+  "visual_review": {
+    "functional_style_evidence": "PASS",
+    "strict_promotional_visual": "FAIL",
+    "score": 7.6,
+    "watermark_signature_text": "none visible",
+    "note": "Valid cloud E2E style output; not used as the formal creator preview. Formal preview remains seed 32402."
+  }
+}

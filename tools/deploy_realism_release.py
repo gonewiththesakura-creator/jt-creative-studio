@@ -28,6 +28,7 @@ import urllib.request
 BASE = pathlib.Path(__file__).resolve().parents[1]
 E2E_MANIFEST = BASE / "audit" / "private_realism_workflows" / "e2e_manifest.json"
 SCAIL_E2E_MANIFEST = BASE / "audit" / "scail2_video_e2e.json"
+RETRO_CLOUD_E2E_MANIFEST = BASE / "audit" / "retro_manga_panel_e2e_cloud_w04.json"
 REMOTE_ROOT = "/home/admin/comfy-panel"
 PUBLIC_BASE = "http://8.210.125.65:8189"
 STAGE_SUFFIX = ".realism-release.new"
@@ -228,6 +229,54 @@ def validate_e2e_manifest(config):
     return errors
 
 
+def validate_retro_cloud_e2e_manifest():
+    try:
+        record = json.loads(RETRO_CLOUD_E2E_MANIFEST.read_text(encoding="utf-8"))
+    except Exception as error:
+        return [f"retro cloud E2E manifest unreadable: {error}"]
+    actual = record.get("authoritative_remote_job_record") or {}
+    artifact = record.get("artifact") or {}
+    visual = record.get("visual_review") or {}
+    errors = []
+    if record.get("verification") != "PASS":
+        errors.append("retro cloud E2E did not pass")
+    if record.get("rh_coins") != "6" or actual.get("rh_coins") != "6":
+        errors.append("retro cloud E2E billed coins invalid")
+    if not re.fullmatch(r"\d{16,24}", str(record.get("rh_task_id") or "")):
+        errors.append("retro cloud E2E task id invalid")
+    if actual.get("rh_task_id") != record.get("rh_task_id"):
+        errors.append("retro cloud E2E task id mismatch")
+    if actual.get("status") != "done" or actual.get("provider_status") != "DONE":
+        errors.append("retro cloud E2E provider status invalid")
+    if actual.get("client_request_id") != "retro-cloud-w04-32421-final":
+        errors.append("retro cloud E2E request id invalid")
+    if actual.get("workflow") != "anima02" or actual.get("style_id") != "retro_manga_luxury":
+        errors.append("retro cloud E2E route invalid")
+    if actual.get("trigger") != "jt_style321_v1":
+        errors.append("retro cloud E2E trigger invalid")
+    expected_loras = {"LORA1": "09_style321_v1_step200.safetensors", "LORA2": "09_style321_v1_step200.safetensors"}
+    if actual.get("loras") != expected_loras or actual.get("lora_strengths") != {"LORA1": 0.4, "LORA2": 0.0}:
+        errors.append("retro cloud E2E LoRA mapping invalid")
+    if tuple(actual.get(key) for key in ("width", "height", "batch", "hd", "seed")) != (768, 1024, 1, 0, 32421):
+        errors.append("retro cloud E2E generation parameters invalid")
+    if (not re.fullmatch(r"[0-9a-f]{64}", str(artifact.get("sha256") or ""))
+            or artifact.get("format") != "PNG"
+            or (artifact.get("width"), artifact.get("height")) != (768, 1024)
+            or artifact.get("bytes") != 1042674
+            or artifact.get("sha256") != "a11974ba1341a36c76499b815a8f84611303493594805d03e9fc26d87156b2da"):
+        errors.append("retro cloud E2E artifact invalid")
+    results = record.get("results") or []
+    if (record.get("result_count") != 1 or len(results) != 1
+            or results[0].get("bytes") != artifact.get("bytes")
+            or results[0].get("sha256") != artifact.get("sha256")
+            or results[0].get("png_signature") is not True
+            or record.get("artifact_sha256") != artifact.get("sha256")):
+        errors.append("retro cloud E2E result evidence mismatch")
+    if visual.get("functional_style_evidence") != "PASS" or visual.get("strict_promotional_visual") != "FAIL":
+        errors.append("retro cloud E2E visual classification invalid")
+    return errors
+
+
 def require_clean_git():
     result = subprocess.run(["git", "status", "--porcelain"], cwd=BASE, text=True,
                             capture_output=True, check=True)
@@ -307,6 +356,7 @@ def auth_is_disabled(server_source):
 def preflight_decision(config, server_source, execute=False, allow_unauthenticated_public=False):
     config_result = validate_release_config(config)
     scail_errors = validate_scail_video_config(config) + validate_scail_e2e_manifest()
+    retro_cloud_errors = validate_retro_cloud_e2e_manifest()
     unauthenticated = auth_is_disabled(server_source)
     blockers = []
     if config_result["missing_targets"]:
@@ -315,6 +365,8 @@ def preflight_decision(config, server_source, execute=False, allow_unauthenticat
         blockers.append("invalid or incomplete target schemas")
     if scail_errors:
         blockers.append("invalid SCAIL video schemas")
+    if retro_cloud_errors:
+        blockers.append("invalid retro creator cloud E2E")
     if not execute:
         blockers.append("--execute not supplied")
     if unauthenticated and not allow_unauthenticated_public:
@@ -328,6 +380,7 @@ def preflight_decision(config, server_source, execute=False, allow_unauthenticat
         "missing_targets": config_result["missing_targets"],
         "invalid_targets": config_result["invalid_targets"],
         "scail_video_errors": scail_errors,
+        "retro_cloud_e2e_errors": retro_cloud_errors,
         "blockers": blockers,
     }
 
