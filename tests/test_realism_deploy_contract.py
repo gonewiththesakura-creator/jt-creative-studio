@@ -350,9 +350,54 @@ def test_release_reads_back_the_new_creator_style_and_exact_preview_bytes():
         assert marker in deploy_body
     assert "verify_public_large_responses(public_base)" in deploy_body
     helper_body = source.split("def verify_public_large_responses(", 1)[1].split("def wait_for_health", 1)[0]
-    assert 'fetch_bytes(base, "/static/previews/style-retro-manga-luxury.webp")' in helper_body
+    assert '"/static/previews/style-retro-manga-luxury.webp"' in helper_body
+    assert "timeout=300" in helper_body
+    assert "attempts=3" in helper_body
+    assert "deadline=deadline" in helper_body
     assert "public creator preview mismatch" in helper_body
     assert "for attempt in range(3)" in helper_body
+    assert "accept_gzip=True" in helper_body
+    assert "timeout=300" in helper_body
+    assert "fetch_bytes_resilient" in helper_body
+    assert "PUBLIC_LARGE_VERIFY_TIMEOUT" in helper_body
+    assert "time.monotonic()" in helper_body
+    assert "public large response verification timeout" in helper_body
+
+
+def test_resilient_fetch_retries_within_a_single_wall_clock_budget(monkeypatch):
+    module = load_module()
+    calls = []
+    ticks = iter([0.0, 0.0, 0.0, 2.0, 2.0, 2.0])
+    monkeypatch.setattr(module.time, "monotonic", lambda: next(ticks, 2.0))
+    monkeypatch.setattr(module.time, "sleep", lambda seconds: None)
+
+    def flaky(base, path, timeout=60, accept_gzip=False):
+        calls.append(timeout)
+        if len(calls) < 3:
+            raise TimeoutError("transient")
+        return b"ok"
+
+    monkeypatch.setattr(module, "fetch_bytes", flaky)
+    assert module.fetch_bytes_resilient(
+        "http://test", "/large", timeout=20, attempts=3, deadline=30.0
+    ) == b"ok"
+    assert len(calls) == 3
+    assert all(0 < value <= 20 for value in calls)
+
+
+def test_resilient_fetch_stops_when_wall_clock_budget_is_exhausted(monkeypatch):
+    module = load_module()
+    ticks = iter([0.0, 31.0])
+    monkeypatch.setattr(module.time, "monotonic", lambda: next(ticks, 31.0))
+    monkeypatch.setattr(module.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(
+        module, "fetch_bytes",
+        lambda *args, **kwargs: (_ for _ in ()).throw(TimeoutError("transient")),
+    )
+    with pytest.raises(RuntimeError, match="public large response verification timeout"):
+        module.fetch_bytes_resilient(
+            "http://test", "/large", timeout=20, attempts=3, deadline=30.0
+        )
 
 
 def test_release_liveness_does_not_depend_on_local_comfy_tunnel():

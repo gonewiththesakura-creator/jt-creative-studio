@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import ast
 import base64
+import gzip
 import hashlib
 import hmac
 import json
@@ -36,6 +37,7 @@ WATCHDOG_SERVICE_UNIT = "/etc/systemd/system/comfy-panel-watchdog.service"
 WATCHDOG_TIMER_UNIT = "/etc/systemd/system/comfy-panel-watchdog.timer"
 WATCHDOG_EXECUTABLE = "/usr/local/libexec/comfy-panel-watchdog.py"
 SSH_HOST_KEY_SHA256 = "SHA256:TBBAqO1joLOjtttAHJaGdmYYolwwvpkDJaFXGqKEgWA"
+PUBLIC_LARGE_VERIFY_TIMEOUT = 15 * 60
 KNOWN_BASELINE_SCRIPT_FAILURES = {
     "test_restore_prompt_contract.py": (
         "restore endpoint False",
@@ -459,17 +461,58 @@ def fetch_json(base, path):
         return json.load(response)
 
 
-def fetch_bytes(base, path):
-    with urllib.request.urlopen(base.rstrip("/") + path, timeout=60) as response:
-        return response.read()
+def fetch_bytes(base, path, timeout=60, accept_gzip=False):
+    headers = {"Accept-Encoding": "gzip"} if accept_gzip else {}
+    request = urllib.request.Request(base.rstrip("/") + path, headers=headers)
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        body = response.read()
+        return gzip.decompress(body) if response.headers.get("Content-Encoding") == "gzip" else body
+
+
+def fetch_bytes_resilient(base, path, timeout=300, accept_gzip=False, attempts=3, deadline=None):
+    last_error = None
+    for attempt in range(1, attempts + 1):
+        remaining = None if deadline is None else deadline - time.monotonic()
+        if remaining is not None and remaining <= 0:
+            raise RuntimeError("public large response verification timeout") from last_error
+        request_timeout = timeout if remaining is None else min(timeout, remaining)
+        try:
+            return fetch_bytes(
+                base, path, timeout=request_timeout, accept_gzip=accept_gzip
+            )
+        except Exception as error:
+            last_error = error
+            if attempt == attempts:
+                raise
+            remaining = None if deadline is None else deadline - time.monotonic()
+            if remaining is not None and remaining <= 0:
+                raise RuntimeError("public large response verification timeout") from error
+            delay = attempt * 2
+            if remaining is not None:
+                delay = min(delay, remaining)
+            time.sleep(delay)
+    raise last_error
 
 
 def verify_public_large_responses(base):
     expected_creator = (BASE / "static" / "index.html").read_bytes()
     expected_preview = (BASE / "static" / "previews" / "style-retro-manga-luxury.webp").read_bytes()
+    deadline = time.monotonic() + PUBLIC_LARGE_VERIFY_TIMEOUT
     for attempt in range(3):
-        creator = fetch_bytes(base, "/?style=retro_manga_luxury")
-        preview = fetch_bytes(base, "/static/previews/style-retro-manga-luxury.webp")
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise RuntimeError("public large response verification timeout")
+        creator = fetch_bytes_resilient(
+            base, "/?style=retro_manga_luxury", timeout=300, accept_gzip=True,
+            attempts=3, deadline=deadline,
+        )
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise RuntimeError("public large response verification timeout")
+        preview = fetch_bytes_resilient(
+            base, "/static/previews/style-retro-manga-luxury.webp",
+            timeout=300, attempts=3, deadline=deadline,
+        )
         if creator != expected_creator:
             raise RuntimeError(f"public creator large response mismatch on attempt {attempt + 1}")
         if preview != expected_preview:

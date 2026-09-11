@@ -124,6 +124,11 @@ def test_large_response_uses_a_separate_write_timeout():
         restore_globals(old)
 
 
+def test_production_large_response_timeouts_cover_slow_public_links():
+    assert server.RESPONSE_SOCKET_TIMEOUT >= 180
+    assert server.RESPONSE_BODY_MAX_TIMEOUT >= 300
+
+
 def test_large_responses_are_bounded_and_small_responses_keep_capacity():
     old = globals_snapshot()
     server.MAX_LARGE_RESPONSE_WORKERS = 2
