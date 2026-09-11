@@ -348,8 +348,11 @@ def test_release_reads_back_the_new_creator_style_and_exact_preview_bytes():
     deploy_body = source.split("def deploy(", 1)[1].split("def parse_args", 1)[0]
     for marker in ["retro_manga_luxury", "jt_style321_v1", "style-retro-manga-luxury.webp"]:
         assert marker in deploy_body
-    assert 'fetch_bytes(public_base, "/static/previews/style-retro-manga-luxury.webp")' in deploy_body
-    assert "public creator preview mismatch" in deploy_body
+    assert "verify_public_large_responses(public_base)" in deploy_body
+    helper_body = source.split("def verify_public_large_responses(", 1)[1].split("def wait_for_health", 1)[0]
+    assert 'fetch_bytes(base, "/static/previews/style-retro-manga-luxury.webp")' in helper_body
+    assert "public creator preview mismatch" in helper_body
+    assert "for attempt in range(3)" in helper_body
 
 
 def test_release_liveness_does_not_depend_on_local_comfy_tunnel():

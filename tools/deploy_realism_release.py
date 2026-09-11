@@ -464,6 +464,19 @@ def fetch_bytes(base, path):
         return response.read()
 
 
+def verify_public_large_responses(base):
+    expected_creator = (BASE / "static" / "index.html").read_bytes()
+    expected_preview = (BASE / "static" / "previews" / "style-retro-manga-luxury.webp").read_bytes()
+    for attempt in range(3):
+        creator = fetch_bytes(base, "/?style=retro_manga_luxury")
+        preview = fetch_bytes(base, "/static/previews/style-retro-manga-luxury.webp")
+        if creator != expected_creator:
+            raise RuntimeError(f"public creator large response mismatch on attempt {attempt + 1}")
+        if preview != expected_preview:
+            raise RuntimeError(f"public creator preview mismatch on attempt {attempt + 1}")
+    return expected_creator, expected_preview
+
+
 def wait_for_health(base, timeout=60):
     deadline = time.time() + timeout
     last = None
@@ -659,8 +672,7 @@ def deploy(files, public_base=PUBLIC_BASE):
                 health = {"ok": False, "error": str(error)[:200]}
             realism = fetch_bytes(public_base, "/realism")
             home = fetch_bytes(public_base, "/")
-            creator = fetch_bytes(public_base, "/?style=retro_manga_luxury")
-            creator_preview = fetch_bytes(public_base, "/static/previews/style-retro-manga-luxury.webp")
+            creator, creator_preview = verify_public_large_responses(public_base)
             workflows = fetch_json(public_base, "/api/workflows")
             names = {str(item.get("name") or "") for item in workflows if isinstance(item, dict)}
             if b"/api/workflow-generate" not in realism or b"/realism" not in home:

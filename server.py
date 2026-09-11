@@ -39,6 +39,12 @@ MAX_REJECTION_WORKERS = 8
 OVERLOAD_DRAIN_TIMEOUT = 0.1
 MAX_OVERLOAD_HEADER_BYTES = 16 * 1024
 CLIENT_SOCKET_TIMEOUT = 10
+LARGE_RESPONSE_THRESHOLD = 256 * 1024
+MAX_LARGE_RESPONSE_WORKERS = 4
+RESPONSE_SOCKET_TIMEOUT = 60
+RESPONSE_BODY_BASE_TIMEOUT = 60
+RESPONSE_BODY_MIN_BYTES_PER_SECOND = 8 * 1024
+RESPONSE_BODY_MAX_TIMEOUT = 300
 REQUEST_HEADER_TIMEOUT = 15
 REQUEST_BODY_BASE_TIMEOUT = 15
 REQUEST_BODY_MIN_BYTES_PER_SECOND = 256 * 1024
@@ -1570,10 +1576,12 @@ class BoundedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     def __init__(self, *args, **kwargs):
         self._worker_slots = threading.BoundedSemaphore(self.max_workers)
         self._rejection_slots = threading.BoundedSemaphore(MAX_REJECTION_WORKERS)
+        self._large_response_slots = threading.BoundedSemaphore(MAX_LARGE_RESPONSE_WORKERS)
         self._large_request_slots = threading.BoundedSemaphore(MAX_LARGE_REQUESTS)
         self._metrics_lock = threading.Lock()
         self._active_workers = 0
         self._active_rejections = 0
+        self._active_large_responses = 0
         self._overload_rejections = 0
         super().__init__(*args, **kwargs)
 
@@ -1660,6 +1668,8 @@ class BoundedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
                 "max_workers": self.max_workers,
                 "active_rejections": self._active_rejections,
                 "max_rejection_workers": MAX_REJECTION_WORKERS,
+                "active_large_responses": self._active_large_responses,
+                "max_large_response_workers": MAX_LARGE_RESPONSE_WORKERS,
                 "overload_rejections": self._overload_rejections,
             }
 
@@ -1744,14 +1754,106 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self._large_request_slot_acquired = False
                 self.server._large_request_slots.release()
 
+    def _write_body(self, body, large_slot_acquired=False):
+        if not body:
+            return
+        is_large = len(body) >= LARGE_RESPONSE_THRESHOLD
+        acquired_here = False
+        if is_large and not large_slot_acquired:
+            if not self.server._large_response_slots.acquire(blocking=False):
+                raise RuntimeError("large response capacity busy")
+            acquired_here = True
+        deadline = None
+        if is_large:
+            with self.server._metrics_lock:
+                self.server._active_large_responses += 1
+        try:
+            if is_large:
+                self.connection.settimeout(RESPONSE_SOCKET_TIMEOUT)
+                timeout = min(
+                    RESPONSE_BODY_MAX_TIMEOUT,
+                    RESPONSE_BODY_BASE_TIMEOUT + len(body) / RESPONSE_BODY_MIN_BYTES_PER_SECOND,
+                )
+                deadline = self._start_absolute_deadline(timeout)
+            self.wfile.write(body)
+        finally:
+            self._cancel_absolute_deadline(deadline)
+            if is_large:
+                self.connection.settimeout(CLIENT_SOCKET_TIMEOUT)
+                with self.server._metrics_lock:
+                    self.server._active_large_responses -= 1
+                if acquired_here:
+                    self.server._large_response_slots.release()
+
     def _send(self, code, body=b"", ctype="application/json; charset=utf-8", headers=None):
-        self.send_response(code)
-        self.send_header("Content-Type", ctype)
-        self.send_header("Content-Length", str(len(body)))
-        if headers:
-            for k, v in headers.items(): self.send_header(k, v)
-        self.end_headers()
-        if body: self.wfile.write(body)
+        is_large = len(body) >= LARGE_RESPONSE_THRESHOLD
+        large_slot_acquired = False
+        if is_large:
+            large_slot_acquired = self.server._large_response_slots.acquire(blocking=False)
+        if is_large and not large_slot_acquired:
+            payload = b'{"error":"large response capacity busy"}'
+            self.send_response(503)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(payload)))
+            self.send_header("Retry-After", "2")
+            self.end_headers()
+            self.wfile.write(payload)
+            return
+        try:
+            self.send_response(code)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(body)))
+            if headers:
+                for k, v in headers.items(): self.send_header(k, v)
+            self.end_headers()
+            self._write_body(body, large_slot_acquired=large_slot_acquired)
+        finally:
+            if large_slot_acquired:
+                self.server._large_response_slots.release()
+
+    def _write_stream(self, path, ctype, download_name=None, cache_control="private, max-age=3600"):
+        path = pathlib.Path(path)
+        # Open first so a stat/open race cannot produce a 200 header followed
+        # by a second 404 response.
+        with path.open("rb") as source:
+            size = os.fstat(source.fileno()).st_size
+            is_large = size >= LARGE_RESPONSE_THRESHOLD
+            slot = False
+            if is_large:
+                slot = self.server._large_response_slots.acquire(blocking=False)
+            if is_large and not slot:
+                return self._send(503, b'{"error":"large response capacity busy"}', headers={"Retry-After": "2"})
+            deadline = None
+            if is_large:
+                with self.server._metrics_lock:
+                    self.server._active_large_responses += 1
+            try:
+                self.send_response(200)
+                self.send_header("Content-Type", ctype)
+                self.send_header("Content-Length", str(size))
+                if download_name:
+                    self.send_header("Content-Disposition", f'inline; filename="{download_name}"')
+                self.send_header("Cache-Control", cache_control)
+                self.end_headers()
+                if is_large:
+                    self.connection.settimeout(RESPONSE_SOCKET_TIMEOUT)
+                    timeout = min(
+                        RESPONSE_BODY_MAX_TIMEOUT,
+                        RESPONSE_BODY_BASE_TIMEOUT + size / RESPONSE_BODY_MIN_BYTES_PER_SECOND,
+                    )
+                    deadline = self._start_absolute_deadline(timeout)
+                while True:
+                    chunk = source.read(64 * 1024)
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+            finally:
+                self._cancel_absolute_deadline(deadline)
+                if is_large:
+                    self.connection.settimeout(CLIENT_SOCKET_TIMEOUT)
+                    with self.server._metrics_lock:
+                        self.server._active_large_responses -= 1
+                    self.server._large_response_slots.release()
 
     def _send_static(self, fp, ctype):
         """Serve text assets with validator caching and bounded gzip."""
@@ -2002,27 +2104,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     p = ensure_local_original(job, image)
                     with _lock_jobs:
                         save_jobs()
-                size = p.stat().st_size
-                self.send_response(200)
-                self.send_header("Content-Type", "image/png")
-                self.send_header("Content-Length", str(size))
-                self.send_header("Content-Disposition", f'inline; filename="{fname}"')
-                self.send_header("Cache-Control", "private, max-age=3600")
-                self.end_headers()
-                # Stream instead of constructing/writing one multi-MB response.
-                # Slow mobile links frequently canceled the previous all-at-once
-                # write and produced BrokenPipe while history loaded many images.
-                with p.open("rb") as f:
-                    while True:
-                        chunk = f.read(64 * 1024)
-                        if not chunk:
-                            break
-                        self.wfile.write(chunk)
+                self._write_stream(p, "image/png", download_name=fname)
             except ValueError:
                 self._send(403, b'{"error":"bad path"}')
-            except (BrokenPipeError, ConnectionResetError):
+            except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError,
+                    socket.timeout, TimeoutError):
                 # Browser canceled an image request (navigation/refresh). The file
-                # is intact; do not attempt to write a second 404 response.
+                # is intact; do not append a second HTTP response after 200.
                 return
             except FileNotFoundError:
                 self._send(404, b'{"error":"not found"}')
