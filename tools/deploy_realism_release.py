@@ -903,6 +903,17 @@ def write_transaction_phase(client, transaction, phase):
     command(client, "python3 -c " + shlex.quote(script))
 
 
+def fsync_remote_file(client, path):
+    """Flush one remote file and its containing directory before phase commit."""
+    script = (
+        "import os,pathlib;"
+        f"p=pathlib.Path({path!r});"
+        "f=open(p,'rb');os.fsync(f.fileno());f.close();"
+        "d=os.open(str(p.parent),os.O_RDONLY);os.fsync(d);os.close(d)"
+    )
+    command(client, "python3 -c " + shlex.quote(script))
+
+
 def stage_file_resilient(client, local, remote, transaction):
     """Upload and byte-verify one file inside this release transaction."""
     data = local.read_bytes()
@@ -920,6 +931,7 @@ def stage_file_resilient(client, local, remote, transaction):
                 if handle.read() != data:
                     raise RuntimeError(f"staging mismatch: {local}")
             command(client, "chmod 0600 -- " + shlex.quote(staged))
+            fsync_remote_file(client, staged)
             return staged
         except Exception as error:
             last_error = error
@@ -949,6 +961,7 @@ def backup_release(client, sftp, remote_paths, transaction):
         else:
             command(client, f"cp -- {shlex.quote(remote)} {shlex.quote(backup)}")
             command(client, f"chmod 0600 -- {shlex.quote(backup)}")
+            fsync_remote_file(client, backup)
             digest = command(client, "python3 -c " + shlex.quote(
                 f"import hashlib;print(hashlib.sha256(open({backup!r},'rb').read()).hexdigest())"
             )).strip()
@@ -967,11 +980,16 @@ def backup_release(client, sftp, remote_paths, transaction):
         f"manifest=pathlib.Path({transaction['manifest']!r});"
         f"manifest_tmp=pathlib.Path({manifest_tmp!r});"
         f"manifest_tmp.write_text({payload!r},encoding='utf-8');"
+        "f=open(manifest_tmp,'rb');os.fsync(f.fileno());f.close();"
         "os.replace(manifest_tmp,manifest);os.chmod(manifest,0o600);"
         f"manifest_sha256=pathlib.Path({transaction['manifest_sha256']!r});"
         f"manifest_sha256_tmp=pathlib.Path({manifest_sha256_tmp!r});"
         f"manifest_sha256_tmp.write_text({(manifest_digest + chr(10))!r},encoding='ascii');"
-        "os.replace(manifest_sha256_tmp,manifest_sha256);os.chmod(manifest_sha256,0o600)"
+        "f=open(manifest_sha256_tmp,'rb');os.fsync(f.fileno());f.close();"
+        "os.replace(manifest_sha256_tmp,manifest_sha256);os.chmod(manifest_sha256,0o600);"
+        "f=open(manifest,'rb');os.fsync(f.fileno());f.close();"
+        "f=open(manifest_sha256,'rb');os.fsync(f.fileno());f.close();"
+        "d=os.open(str(manifest.parent),os.O_RDONLY);os.fsync(d);os.close(d)"
     )
     command(client, "python3 -c " + shlex.quote(script))
     return manifest
@@ -1167,15 +1185,29 @@ def install_watchdog_units(client):
         raise RuntimeError("watchdog timer is not active")
 
 
+def watchdog_isolation_state(client):
+    script = """import subprocess
+def state(*args):
+    r=subprocess.run(['systemctl',*args],text=True,capture_output=True)
+    return (r.stdout or r.stderr).strip().splitlines()[0] if (r.stdout or r.stderr).strip() else ''
+print(state('is-active','comfy-panel-watchdog.timer'))
+print(state('is-active','comfy-panel-watchdog.service'))
+print(state('is-enabled','comfy-panel-watchdog.service'))
+"""
+    rows = command(client, "python3 -c " + shlex.quote(script)).splitlines()
+    if len(rows) != 3:
+        raise RuntimeError("watchdog isolation state probe failed")
+    return tuple(row.strip() for row in rows)
+
+
 def isolate_watchdog(client):
     """Fail closed unless both watchdog units cannot restart the panel."""
     command(client, "sudo systemctl disable --now comfy-panel-watchdog.timer")
     command(client, "sudo systemctl stop comfy-panel-watchdog.service")
     command(client, "sudo systemctl mask --runtime comfy-panel-watchdog.service")
-    timer_active = command(client, "systemctl is-active comfy-panel-watchdog.timer").strip()
-    service_active = command(client, "systemctl is-active comfy-panel-watchdog.service").strip()
-    service_enabled = command(client, "systemctl is-enabled comfy-panel-watchdog.service").strip()
-    if timer_active != "inactive" or service_active != "inactive" or service_enabled != "masked":
+    timer_active, service_active, service_enabled = watchdog_isolation_state(client)
+    if (timer_active != "inactive" or service_active != "inactive"
+            or service_enabled not in {"masked", "masked-runtime"}):
         raise RuntimeError(
             "watchdog isolation failed: "
             f"timer={timer_active} service={service_active} enabled={service_enabled}"
@@ -1198,13 +1230,14 @@ print(json.dumps({'service_exists':service_exists,'service_b64':service_b64,
                   'timer_exists':timer_exists,'timer_b64':timer_b64,
                   'executable_exists':executable_exists,'executable_b64':executable_b64,
                   'service_active':systemctl('is-active','comfy-panel-watchdog.service'),
+                  'service_enabled':systemctl('is-enabled','comfy-panel-watchdog.service'),
                   'timer_enabled':systemctl('is-enabled','comfy-panel-watchdog.timer'),
                   'timer_active':systemctl('is-active','comfy-panel-watchdog.timer')}))
 """
     state = json.loads(command(client, "python3 -c " + shlex.quote(script)))
     required = {"service_exists", "service_b64", "timer_exists", "timer_b64",
                 "executable_exists", "executable_b64",
-                "service_active", "timer_enabled", "timer_active"}
+                "service_active", "service_enabled", "timer_enabled", "timer_active"}
     if not isinstance(state, dict) or not required.issubset(state):
         raise RuntimeError("invalid watchdog state snapshot")
     return state
@@ -1238,6 +1271,8 @@ def restore_watchdog_state(client, state):
     active = str(state.get("timer_active") or "")
     if enabled == "masked":
         command(client, "sudo systemctl mask comfy-panel-watchdog.timer")
+    elif enabled == "masked-runtime":
+        command(client, "sudo systemctl mask --runtime comfy-panel-watchdog.timer")
     elif enabled in {"enabled", "enabled-runtime", "linked", "linked-runtime", "alias"}:
         command(client, "sudo systemctl enable comfy-panel-watchdog.timer")
     if active in {"active", "activating", "reloading"}:
@@ -1245,6 +1280,14 @@ def restore_watchdog_state(client, state):
     else:
         command(client, "sudo systemctl stop comfy-panel-watchdog.timer || true")
     service_active = str(state.get("service_active") or "")
+    service_enabled = str(state.get("service_enabled") or "")
+    if service_enabled == "masked":
+        command(client, "sudo systemctl mask comfy-panel-watchdog.service")
+    elif service_enabled == "masked-runtime":
+        command(client, "sudo systemctl mask --runtime comfy-panel-watchdog.service")
+    elif service_enabled in {"enabled", "enabled-runtime", "linked", "linked-runtime", "alias"}:
+        enable_flag = "--runtime " if service_enabled in {"enabled-runtime", "linked-runtime"} else ""
+        command(client, f"sudo systemctl enable {enable_flag}comfy-panel-watchdog.service")
     if service_active in {"active", "activating", "reloading"}:
         command(client, "sudo systemctl start comfy-panel-watchdog.service")
     else:
