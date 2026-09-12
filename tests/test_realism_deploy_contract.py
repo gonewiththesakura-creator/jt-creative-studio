@@ -535,9 +535,48 @@ def test_rollback_keeps_panel_stopped_when_liveness_check_raises(monkeypatch):
 def test_deploy_stops_and_masks_watchdog_service_and_timer_before_swap():
     source = SCRIPT.read_text(encoding="utf-8")
     deploy_body = source.split("def deploy(", 1)[1].split("def parse_args(", 1)[0]
-    assert "systemctl stop comfy-panel-watchdog.service" in deploy_body
-    assert "systemctl mask --runtime comfy-panel-watchdog.service" in deploy_body
-    assert "systemctl disable --now comfy-panel-watchdog.timer" in deploy_body
+    isolation_at = deploy_body.index("isolate_watchdog(client)")
+    stop_at = deploy_body.index('command(client, "sudo systemctl stop comfy-panel"')
+    swap_at = deploy_body.index("for remote in remote_paths:", stop_at)
+    assert isolation_at < stop_at < swap_at
+
+
+def test_watchdog_isolation_fails_closed_and_verifies_systemd_state(monkeypatch):
+    module = load_module()
+    calls = []
+    replies = iter(["inactive\n", "inactive\n", "masked\n"])
+
+    def fake_command(client, text, timeout=240):
+        calls.append(text)
+        if text.startswith("systemctl is-"):
+            return next(replies)
+        return ""
+
+    monkeypatch.setattr(module, "command", fake_command)
+    module.isolate_watchdog(object())
+    assert calls[:3] == [
+        "sudo systemctl disable --now comfy-panel-watchdog.timer",
+        "sudo systemctl stop comfy-panel-watchdog.service",
+        "sudo systemctl mask --runtime comfy-panel-watchdog.service",
+    ]
+    assert all("|| true" not in command for command in calls[:3])
+    assert calls[3:] == [
+        "systemctl is-active comfy-panel-watchdog.timer",
+        "systemctl is-active comfy-panel-watchdog.service",
+        "systemctl is-enabled comfy-panel-watchdog.service",
+    ]
+
+
+def test_watchdog_isolation_rejects_any_non_isolated_state(monkeypatch):
+    module = load_module()
+    for replies in (["active", "inactive", "masked"],
+                    ["inactive", "active", "masked"],
+                    ["inactive", "inactive", "disabled"]):
+        values = iter(replies)
+        monkeypatch.setattr(module, "command", lambda client, text, timeout=240:
+                            next(values) if text.startswith("systemctl is-") else "")
+        with pytest.raises(RuntimeError, match="watchdog isolation failed"):
+            module.isolate_watchdog(object())
 
 
 def test_deploy_keeps_lock_after_uncertain_rollback():

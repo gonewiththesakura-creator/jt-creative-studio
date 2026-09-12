@@ -1167,6 +1167,21 @@ def install_watchdog_units(client):
         raise RuntimeError("watchdog timer is not active")
 
 
+def isolate_watchdog(client):
+    """Fail closed unless both watchdog units cannot restart the panel."""
+    command(client, "sudo systemctl disable --now comfy-panel-watchdog.timer")
+    command(client, "sudo systemctl stop comfy-panel-watchdog.service")
+    command(client, "sudo systemctl mask --runtime comfy-panel-watchdog.service")
+    timer_active = command(client, "systemctl is-active comfy-panel-watchdog.timer").strip()
+    service_active = command(client, "systemctl is-active comfy-panel-watchdog.service").strip()
+    service_enabled = command(client, "systemctl is-enabled comfy-panel-watchdog.service").strip()
+    if timer_active != "inactive" or service_active != "inactive" or service_enabled != "masked":
+        raise RuntimeError(
+            "watchdog isolation failed: "
+            f"timer={timer_active} service={service_active} enabled={service_enabled}"
+        )
+
+
 def capture_watchdog_state(client):
     """Snapshot exact unit bytes plus enabled/active state before mutation."""
     script = """import base64,json,pathlib,subprocess
@@ -1292,9 +1307,7 @@ def deploy(files, public_base=PUBLIC_BASE):
         write_transaction_phase(client, transaction, "prepared")
 
         try:
-            command(client, "sudo systemctl disable --now comfy-panel-watchdog.timer || true")
-            command(client, "sudo systemctl stop comfy-panel-watchdog.service || true")
-            command(client, "sudo systemctl mask --runtime comfy-panel-watchdog.service || true")
+            isolate_watchdog(client)
             command(client, "sudo systemctl stop comfy-panel", timeout=240)
             write_transaction_phase(client, transaction, "swapping")
             for remote in remote_paths:
@@ -1351,9 +1364,7 @@ def deploy(files, public_base=PUBLIC_BASE):
             print("COMFY_DIAGNOSTIC", json.dumps(health, ensure_ascii=False))
             print("PUBLIC_MARKERS_OK")
         except Exception:
-            command(client, "sudo systemctl disable --now comfy-panel-watchdog.timer || true")
-            command(client, "sudo systemctl stop comfy-panel-watchdog.service || true")
-            command(client, "sudo systemctl mask --runtime comfy-panel-watchdog.service || true")
+            isolate_watchdog(client)
             try:
                 write_transaction_phase(client, transaction, "rolling-back")
                 rollback_release(client, sftp, remote_paths, transaction, public_base=public_base)
