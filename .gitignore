@@ -11,6 +11,7 @@ panel_data/
 evidence/
 reports/
 *.png
+!audit/dreamapi_creator_live_20260912.png
 *.jpg
 *.jpeg
 *.webp

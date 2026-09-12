@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-ROOT = Path(r"D:/LAN-Share/lora/_work/comfy_panel")
+ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "tools" / "deploy_realism_release.py"
 RETRO_CLOUD_E2E = ROOT / "audit" / "retro_manga_panel_e2e_cloud_w04.json"
 SPEC = importlib.util.spec_from_file_location("deploy_realism_release", SCRIPT)
@@ -142,6 +142,7 @@ def test_watchdog_rollback_restores_exact_unit_contents_and_states(monkeypatch):
         "service_b64": base64.b64encode(old_service).decode(),
         "timer_exists": False,
         "timer_b64": "",
+        "service_active": "inactive",
         "timer_enabled": "enabled",
         "timer_active": "active",
         "executable_exists": True,
@@ -185,34 +186,9 @@ def test_release_gate_runs_script_contracts_and_pytest_files(tmp_path, monkeypat
     assert any(call[:4] == [module.sys.executable, "-m", "pytest", "-q"] and str(pytest_test) in call for call in calls)
 
 
-def test_release_gate_has_one_strict_known_baseline_script_failure(tmp_path, monkeypatch):
+def test_release_gate_has_no_known_red_test_exceptions():
     module = load_module()
-    baseline = tmp_path / "test_restore_prompt_contract.py"
-    baseline.write_text("raise SystemExit(1)\n", encoding="utf-8")
-
-    class Result:
-        def __init__(self, code, stdout):
-            self.returncode = code
-            self.stdout = stdout
-
-    expected = "\n".join(module.KNOWN_BASELINE_SCRIPT_FAILURES[baseline.name]) + "\n"
-    monkeypatch.setattr(module.subprocess, "run", lambda *args, **kwargs: Result(1, expected))
-    module.run_release_tests(tmp_path)
-
-    monkeypatch.setattr(module.subprocess, "run", lambda *args, **kwargs: Result(0, ""))
-    with pytest.raises(RuntimeError, match="unexpectedly passed"):
-        module.run_release_tests(tmp_path)
-
-    monkeypatch.setattr(
-        module.subprocess, "run",
-        lambda *args, **kwargs: Result(1, "Traceback: SyntaxError\n"),
-    )
-    with pytest.raises(RuntimeError, match="baseline output changed"):
-        module.run_release_tests(tmp_path)
-
-    monkeypatch.setattr(module.subprocess, "run", lambda *args, **kwargs: Result(2, expected))
-    with pytest.raises(RuntimeError, match="baseline exit code changed"):
-        module.run_release_tests(tmp_path)
+    assert module.KNOWN_BASELINE_SCRIPT_FAILURES == {}
 
 
 def test_current_config_passes_without_credentials_or_ssh_needed():
@@ -296,7 +272,9 @@ def test_release_targets_match_all_six_active_private_workflows():
 def test_atomic_release_contract_contains_stage_backup_verify_and_rollback():
     text = SCRIPT.read_text(encoding="utf-8") if SCRIPT.exists() else ""
     required = [
-        ".realism-release.new",
+        "new_release_transaction",
+        "acquire_release_lock",
+        "release_release_lock",
         "backup_release",
         "rollback_release",
         "staging mismatch",
@@ -314,6 +292,31 @@ def test_atomic_release_contract_contains_stage_backup_verify_and_rollback():
     module = load_module()
     assert not any(path.startswith(("tests/", "audit/")) for path in module.RELEASE_RELATIVE_PATHS)
     assert "RUNNINGHUB_API_KEY=" not in text
+
+
+def test_release_uses_exclusive_remote_lock_and_unique_transaction_paths():
+    source = SCRIPT.read_text(encoding="utf-8")
+    assert 'RELEASE_LOCK_DIR = REMOTE_ROOT + "/.release.lock"' in source
+    assert 'RELEASE_TRANSACTIONS_DIR = REMOTE_ROOT + "/.release-transactions"' in source
+    assert "uuid.uuid4().hex" in source
+    deploy_body = source.split("def deploy(", 1)[1].split("def parse_args", 1)[0]
+    assert "transaction = new_release_transaction()" in deploy_body
+    assert "acquire_release_lock(client, transaction)" in deploy_body
+    assert "release_release_lock(client, transaction)" in deploy_body
+    assert "transaction_file(transaction" in deploy_body
+    assert deploy_body.index("acquire_release_lock") < deploy_body.index("stage_file_resilient")
+    assert deploy_body.rindex("release_release_lock") > deploy_body.index("rollback_release")
+
+
+def test_backup_manifest_is_atomically_written_and_hash_verified_before_restore():
+    source = SCRIPT.read_text(encoding="utf-8")
+    backup = source.split("def backup_release(", 1)[1].split("def rollback_release", 1)[0]
+    rollback = source.split("def rollback_release(", 1)[1].split("def fetch_json", 1)[0]
+    assert "manifest_tmp" in backup and "replace(" in backup
+    assert "manifest_sha256" in backup
+    assert "hashlib.sha256" in backup
+    assert "hmac.compare_digest" in rollback
+    assert rollback.index("hmac.compare_digest") < rollback.index("for remote in remote_paths")
 
 
 def test_release_pins_the_ssh_host_key_before_password_authentication():
@@ -431,56 +434,172 @@ def test_rollback_liveness_accepts_the_previous_release_without_api_live(monkeyp
 
 def test_release_rollback_uses_manifest_retry_and_post_restore_verification():
     text = SCRIPT.read_text(encoding="utf-8")
-    assert "BACKUP_MANIFEST" in text
+    assert "transaction['manifest']" in text
+    assert "transaction['manifest_sha256']" in text
     assert 'stat.st_size == 0' not in text
-    assert "wait_for_health" in text
+    assert "wait_for_live" in text
     assert "rollback verification mismatch" in text
     assert "rollback health failed" in text
 
 
-def test_rollback_attempts_to_start_panel_even_when_a_file_restore_fails(monkeypatch):
+def test_rollback_keeps_panel_stopped_when_a_file_restore_fails(monkeypatch):
     module = load_module()
-    remote_paths = ["/remote/a", "/remote/b"]
+    remote_paths = [module.REMOTE_ROOT + "/a", module.REMOTE_ROOT + "/b"]
     manifest = {
-        "/remote/a": {"exists": True, "sha256": "a" * 64},
-        "/remote/b": {"exists": True, "sha256": "b" * 64},
+        remote_paths[0]: {"exists": True, "sha256": "a" * 64, "mode": 0o640},
+        remote_paths[1]: {"exists": True, "sha256": "b" * 64, "mode": 0o600},
     }
+    manifest_raw = json.dumps(manifest, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    manifest_digest = module.hashlib.sha256(manifest_raw.encode("utf-8")).hexdigest()
     calls = []
 
     def fake_command(client, text, timeout=240):
         calls.append(text)
-        if "BACKUP_MANIFEST" in text or ".pre-realism-release-manifest.json" in text:
-            return json.dumps(manifest)
-        if text.startswith("cp --") and "/remote/b" in text:
+        if "/tx/manifest.sha256" in text:
+            return manifest_digest + "\n"
+        if "/tx/manifest.json" in text:
+            return manifest_raw
+        if text.startswith("cp --") and remote_paths[1] in text:
             raise RuntimeError("restore b failed")
-        if "hashlib.sha256" in text and "/remote/a" in text:
+        if "hashlib.sha256" in text and (remote_paths[0] in text or "/tx/backup/a" in text):
             return "a" * 64 + "\n"
-        if "hashlib.sha256" in text and "/remote/b" in text:
+        if "hashlib.sha256" in text and (remote_paths[1] in text or "/tx/backup/b" in text):
             return "b" * 64 + "\n"
         return ""
 
     monkeypatch.setattr(module, "command", fake_command)
     monkeypatch.setattr(module, "wait_for_live", lambda *args, **kwargs: {"ok": True})
+    transaction = {
+        "manifest": "/tx/manifest.json", "manifest_sha256": "/tx/manifest.sha256",
+        "backup_root": "/tx/backup",
+    }
     with pytest.raises(RuntimeError, match="restore b failed"):
-        module.rollback_release(object(), object(), remote_paths, public_base="http://test")
-    assert any("systemctl start comfy-panel" in text for text in calls)
+        module.rollback_release(object(), object(), remote_paths, transaction, public_base="http://test")
+    assert any("systemctl stop comfy-panel" in text for text in calls)
+    assert not any("systemctl start comfy-panel" in text for text in calls)
 
 
-def test_rollback_attempts_to_start_panel_when_backup_manifest_is_unreadable(monkeypatch):
+def test_rollback_keeps_panel_stopped_when_backup_manifest_is_unreadable(monkeypatch):
     module = load_module()
     calls = []
 
     def fake_command(client, text, timeout=240):
         calls.append(text)
-        if ".pre-realism-release-manifest.json" in text:
+        if "/tx/manifest.json" in text:
             return "not-json"
         return ""
 
     monkeypatch.setattr(module, "command", fake_command)
     monkeypatch.setattr(module, "wait_for_live", lambda *args, **kwargs: {"ok": True})
+    transaction = {"manifest": "/tx/manifest.json", "manifest_sha256": "/tx/manifest.sha256"}
     with pytest.raises(RuntimeError, match="backup manifest"):
-        module.rollback_release(object(), object(), ["/remote/a"], public_base="http://test")
-    assert any("systemctl start comfy-panel" in text for text in calls)
+        module.rollback_release(object(), object(), ["/remote/a"], transaction, public_base="http://test")
+    assert any("systemctl stop comfy-panel" in text for text in calls)
+    assert not any("systemctl start comfy-panel" in text for text in calls)
+
+
+def test_rollback_keeps_panel_stopped_when_liveness_check_raises(monkeypatch):
+    module = load_module()
+    remote = module.REMOTE_ROOT + "/a"
+    manifest = {remote: {"exists": True, "sha256": "a" * 64, "mode": 0o640}}
+    manifest_raw = json.dumps(manifest, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    manifest_digest = module.hashlib.sha256(manifest_raw.encode("utf-8")).hexdigest()
+    calls = []
+
+    def fake_command(client, text, timeout=240):
+        calls.append(text)
+        if "/tx/manifest.sha256" in text:
+            return manifest_digest + "\n"
+        if "/tx/manifest.json" in text:
+            return manifest_raw
+        if "hashlib.sha256" in text:
+            return "a" * 64 + "\n"
+        return ""
+
+    monkeypatch.setattr(module, "command", fake_command)
+    monkeypatch.setattr(module, "wait_for_live", lambda *args, **kwargs: (_ for _ in ()).throw(
+        RuntimeError("liveness timeout: connection refused")))
+    transaction = {
+        "manifest": "/tx/manifest.json", "manifest_sha256": "/tx/manifest.sha256",
+        "backup_root": "/tx/backup",
+    }
+    with pytest.raises(RuntimeError, match="rollback health"):
+        module.rollback_release(object(), object(), [remote], transaction,
+                                public_base="http://test")
+    start_index = max(i for i, text in enumerate(calls)
+                      if "systemctl start comfy-panel" in text)
+    assert any(i > start_index and "systemctl stop comfy-panel" in text
+               for i, text in enumerate(calls))
+
+
+def test_deploy_stops_and_masks_watchdog_service_and_timer_before_swap():
+    source = SCRIPT.read_text(encoding="utf-8")
+    deploy_body = source.split("def deploy(", 1)[1].split("def parse_args(", 1)[0]
+    assert "systemctl stop comfy-panel-watchdog.service" in deploy_body
+    assert "systemctl mask --runtime comfy-panel-watchdog.service" in deploy_body
+    assert "systemctl disable --now comfy-panel-watchdog.timer" in deploy_body
+
+
+def test_deploy_keeps_lock_after_uncertain_rollback():
+    source = SCRIPT.read_text(encoding="utf-8")
+    deploy_body = source.split("def deploy(", 1)[1].split("def parse_args(", 1)[0]
+    assert "rollback_uncertain" in deploy_body
+    assert 'if lock_acquired and not rollback_uncertain:' in deploy_body
+
+
+def test_watchdog_restore_failure_keeps_release_lock_and_marks_rollback_failed():
+    source = SCRIPT.read_text(encoding="utf-8")
+    deploy_body = source.split("def deploy(", 1)[1].split("def parse_args(", 1)[0]
+    restore_tail = deploy_body.split("restore_watchdog_state(client, watchdog_state)", 1)[1]
+    failure_block = restore_tail.split("raise\n            raise", 1)[0]
+    assert "except Exception:" in failure_block
+    assert "rollback_uncertain = True" in failure_block
+    assert 'write_transaction_phase(client, transaction, "rollback-failed")' in failure_block
+
+
+def test_release_transaction_permissions_metadata_and_cleanup_are_hardened():
+    source = SCRIPT.read_text(encoding="utf-8")
+    assert "chmod 0700" in source
+    assert "chmod 0600" in source
+    assert '"mode"' in source
+    assert "chmod" in source.split("def rollback_release", 1)[1].split("def fetch_json", 1)[0]
+    assert "cleanup_release_transaction" in source
+    assert "transaction retention" in source
+    acquire = source.split("def acquire_release_lock", 1)[1].split("def release_release_lock", 1)[0]
+    assert "trap" in acquire and "RELEASE_LOCK_DIR" in acquire
+
+
+def test_watchdog_snapshot_and_restore_include_oneshot_service_state():
+    source = SCRIPT.read_text(encoding="utf-8")
+    capture = source.split("def capture_watchdog_state", 1)[1].split("def restore_watchdog_state", 1)[0]
+    restore = source.split("def restore_watchdog_state", 1)[1].split("def remove_watchdog_units", 1)[0]
+    assert "service_active" in capture
+    assert "service_active" in restore
+    assert "comfy-panel-watchdog.service" in restore
+
+
+def test_release_transaction_persists_durable_phase_markers(monkeypatch):
+    module = load_module()
+    calls = []
+    monkeypatch.setattr(module, "command", lambda client, text, timeout=240: calls.append(text) or "")
+    transaction = {"root": "/tx/current"}
+    for phase in ("prepared", "swapping", "committed", "rollback-failed"):
+        module.write_transaction_phase(object(), transaction, phase)
+    joined = "\n".join(calls)
+    for phase in ("prepared", "swapping", "committed", "rollback-failed"):
+        assert phase in joined
+    assert "os.fsync" in joined
+    assert "os.replace" in joined
+    assert "0o600" in joined
+
+
+def test_deploy_records_each_transaction_phase():
+    source = SCRIPT.read_text(encoding="utf-8")
+    deploy_body = source.split("def deploy(", 1)[1].split("def parse_args(", 1)[0]
+    assert 'write_transaction_phase(client, transaction, "prepared")' in deploy_body
+    assert 'write_transaction_phase(client, transaction, "swapping")' in deploy_body
+    assert 'write_transaction_phase(client, transaction, "committed")' in deploy_body
+    assert 'write_transaction_phase(client, transaction, "rollback-failed")' in deploy_body
 
 
 def test_release_requires_clean_git_tests_and_historical_e2e_records():
@@ -490,16 +609,7 @@ def test_release_requires_clean_git_tests_and_historical_e2e_records():
     assert "validate_e2e_manifest" in text
     assert "require_clean_git" in text
     assert "run_release_tests" in text
-    assert module.KNOWN_BASELINE_SCRIPT_FAILURES == {
-        "test_restore_prompt_contract.py": (
-            "restore endpoint False", "bounded upload False", "PNG signature validation False",
-            "PNG text parser False", "prompt metadata extractor False", "history filename lookup False",
-            "parameter extraction False", "restore source confidence False", "no vision guessing False",
-            "upload control False", "restore button False", "restore status False",
-            "restore raw prompt False", "restore parameters False", "restore mapped selections False",
-            "restore uses raw upload False", "unmatched terms retained False",
-        )
-    }
+    assert module.KNOWN_BASELINE_SCRIPT_FAILURES == {}
     manifest = json.loads((ROOT / "audit" / "private_realism_workflows" / "e2e_manifest.json").read_text(encoding="utf-8"))
     assert len(manifest["successful_workflows"]) == 7
     assert all(row["status"] == "SUCCESS" for row in manifest["successful_workflows"])

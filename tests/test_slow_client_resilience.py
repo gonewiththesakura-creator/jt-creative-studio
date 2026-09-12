@@ -1,6 +1,6 @@
 import importlib.util,socket,threading,time,urllib.error,urllib.request
 from pathlib import Path
-ROOT=Path(r"D:/LAN-Share/lora/_work/comfy_panel");spec=importlib.util.spec_from_file_location('slowhard',ROOT/'server.py');m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+ROOT = Path(__file__).resolve().parents[1];spec=importlib.util.spec_from_file_location('slowhard',ROOT/'server.py');m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 assert m.MAX_HTTP_WORKERS>=16,m.MAX_HTTP_WORKERS
 assert 'def handle(self):' in (ROOT/'server.py').read_text(encoding='utf8').split('class Handler',1)[1]
 srv=m.BoundedHTTPServer(('127.0.0.1',0),m.Handler);threading.Thread(target=srv.serve_forever,daemon=True).start();port=srv.server_port

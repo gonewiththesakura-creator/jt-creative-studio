@@ -1,6 +1,6 @@
 from pathlib import Path
 import json,re,sys
-ROOT=Path(r"D:/LAN-Share/lora/_work/comfy_panel")
+ROOT = Path(__file__).resolve().parents[1]
 DESKTOP=Path(r"C:/Users/JT/Desktop/22")
 REALISM=(ROOT/'static/realism.html').read_text(encoding='utf8')
 CREATOR=(ROOT/'static/promptgen.html').read_text(encoding='utf8')

@@ -2,7 +2,7 @@ import hashlib
 import json
 from pathlib import Path
 
-ROOT = Path(r"D:/LAN-Share/lora/_work/comfy_panel")
+ROOT = Path(__file__).resolve().parents[1]
 ATTACHMENTS = Path(r"C:/Users/JT/AppData/Local/hermes/attachments")
 CONFIG = json.loads((ROOT / "config.json").read_text(encoding="utf-8"))
 BY_ID = {item["id"]: item for item in CONFIG["workflows"]}

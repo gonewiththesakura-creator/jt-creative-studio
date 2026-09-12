@@ -1,11 +1,11 @@
 from pathlib import Path
 import sys
-ROOT=Path(r"D:/LAN-Share/lora/_work/comfy_panel")
+ROOT=Path(__file__).resolve().parents[1]
 BUILDER=(ROOT/"build_unified_three_styles.py").read_text(encoding="utf8")
 HTML=(ROOT/"static"/"promptgen.html").read_text(encoding="utf8")
 checks={
- "mobile generation dock is fixed":'position:fixed;left:12px;right:12px;bottom:calc(8px + env(safe-area-inset-bottom))' in HTML and 'padding-bottom:calc(104px + env(safe-area-inset-bottom))' in HTML,
- "mobile generation dock stays one row":'@media(max-width:480px){.topbar-tools .connection-dot{display:none}.topbar-action{min-width:52px;padding:0 9px;font-size:11px}.generation-actions{grid-template-columns:1fr 1fr}' in HTML,
+ "mobile generation dock is fixed":'position:fixed;left:12px;right:12px;bottom:calc(8px + env(safe-area-inset-bottom))' in HTML and 'padding-bottom:calc(220px + env(safe-area-inset-bottom))' in HTML,
+ "mobile generation dock stays one row":'.generation-actions{grid-template-columns:repeat(3,minmax(0,1fr));' in HTML,
  "workbench shell":all(x in HTML for x in ['class="app-shell"','class="topbar"','class="studio-grid"']),
  "brand and primary nav":all(x in HTML for x in ['class="brand-mark"','JT 灵感工作台','class="topnav-link active"','创作台']),
  "original styles unified and video nav":all(x in HTML for x in ['data-style="original_sketch"','原始铅绘','data-style="original_graphic"','原始古风','href="/video"','视频']) and 'href="/original-sketch"' not in HTML,

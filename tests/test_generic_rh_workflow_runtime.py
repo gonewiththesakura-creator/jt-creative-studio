@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-ROOT = Path(r"D:/LAN-Share/lora/_work/comfy_panel")
+ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location("generic_rh_workflow_runtime", ROOT / "server.py")
 server = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(server)
@@ -136,7 +136,7 @@ def test_generic_schema_keeps_all_declared_controls_with_native_types():
         "seed": 246813579,
     }
     mapped = {(row["nodeId"], row["fieldName"]): row["fieldValue"]
-              for row in server.rh_build_generic_node_info({"media": media, "params": params}, workflow)}
+              for row in server.rh_build_generic_node_info({"provider_media": media, "params": params}, workflow)}
     assert mapped == {
         ("101", "image"): "api/uploaded.png",
         ("102", "text"): "保留脸型与服装",
@@ -162,8 +162,26 @@ def test_generic_schema_applies_defaults_without_dropping_false():
     assert params["steps"] == 20
     assert params["denoise"] == 0.55
     mapped = {(row["nodeId"], row["fieldName"]): row["fieldValue"]
-              for row in server.rh_build_generic_node_info({"media": media, "params": params}, workflow)}
+              for row in server.rh_build_generic_node_info({"provider_media": media, "params": params}, workflow)}
     assert mapped[("104", "enabled")] is False
+
+
+def test_video_media_fallback_overrides_author_sample_assets():
+    workflow = {
+        "rh_media": {
+            "main": {"node": "1", "field": "image", "type": "image", "required": True},
+            "angle": {"node": "2", "field": "image", "type": "image", "fallback_to": "main"},
+        },
+        "rh_params": {},
+    }
+    rows = server.rh_build_video_node_info(
+        {"provider_media": {"main": "api/user.png"}, "params": {}, "prompt": "", "negative_prompt": ""},
+        workflow,
+    )
+    assert rows == [
+        {"nodeId": "1", "fieldName": "image", "fieldValue": "api/user.png"},
+        {"nodeId": "2", "fieldName": "image", "fieldValue": "api/user.png"},
+    ]
 
 
 @pytest.mark.parametrize(
@@ -477,6 +495,31 @@ def test_load_jobs_marks_provider_task_for_recovery(tmp_path, monkeypatch):
     assert server._jobs["unknown"]["status"] == "error"
 
 
+def test_load_jobs_migrates_unicode_remote_result_urls_without_resubmitting(tmp_path, monkeypatch):
+    jobs_file = tmp_path / "jobs.json"
+    jobs_file.write_text(json.dumps({
+        "done": {
+            "id": "done", "status": "done", "generation_backend": "cloud",
+            "rh_task_id": "existing-task",
+            "images": [{
+                "url": "https://cdn.example.test/output/压缩文件.zip?name=结果",
+                "preview_url": "https://cdn.example.test/output/压缩文件.zip?name=结果",
+                "file": "压缩文件.zip", "remote": True,
+            }],
+        }
+    }, ensure_ascii=False), encoding="utf8")
+    monkeypatch.setattr(server, "JOBS_FILE", jobs_file)
+    saved = []
+    monkeypatch.setattr(server, "save_jobs", lambda: saved.append(True))
+    server.load_jobs()
+    job = server._jobs["done"]
+    assert job["status"] == "done" and job["rh_task_id"] == "existing-task"
+    assert job["images"][0]["url"].isascii()
+    assert "%E5%8E%8B%E7%BC%A9%E6%96%87%E4%BB%B6" in job["images"][0]["url"]
+    assert job["images"][0]["file"] == "压缩文件.zip"
+    assert saved == [True]
+
+
 def test_json_limit_preserves_existing_sixty_megabyte_video_upload_contract():
     encoded_sixty_mib = 4 * ((60 * 1024 * 1024 + 2) // 3)
     assert server.json_body_limit("/api/upload") > encoded_sixty_mib
@@ -503,7 +546,10 @@ def test_concurrent_favorite_requests_download_and_persist_once(tmp_path, monkey
     server.JOBS_FILE = tmp_path / "jobs.json"
     server.FAVORITES_FILE = tmp_path / "favorites.json"
     server._favorites = {}
+    session_id = "favorite-concurrency-session-1234567890"
+    cookie = "jt_session=" + server._encode_session_cookie(session_id)
     server._jobs = {"same-job": {"id": "same-job", "status": "done", "prompt": "<img id=pwn onerror=alert(1)>",
+        "request_session_hash": server._session_hash(session_id),
         "images": [{"url": "https://example.test/result.png", "remote": True}]}}
     downloads = []
     def fake_download(url, dest, timeout=120):
@@ -518,7 +564,7 @@ def test_concurrent_favorite_requests_download_and_persist_once(tmp_path, monkey
         barrier.wait()
         conn = http.client.HTTPConnection("127.0.0.1", httpd.server_port, timeout=10)
         body = json.dumps({"job_id": "same-job", "image_index": 0}).encode()
-        conn.request("POST", "/api/favorites", body, {"Content-Type": "application/json"})
+        conn.request("POST", "/api/favorites", body, {"Content-Type": "application/json", "Cookie": cookie})
         response = conn.getresponse(); results.append((response.status, json.loads(response.read())))
         conn.close()
     workers = [threading.Thread(target=post) for _ in range(2)]

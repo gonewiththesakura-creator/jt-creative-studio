@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-ROOT = Path(r"D:/LAN-Share/lora/_work/comfy_panel")
+ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location("path_safety", ROOT / "server.py")
 server = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(server)
@@ -64,9 +64,10 @@ def test_file_routes_return_explicit_denials_for_sibling_escape():
             connection.close()
             return code
 
-        assert status("/api/local-preview/job/../job2/secret.png") == 403
-        assert status("/api/preview/job/../job2/secret.png") == 403
-        assert status("/api/image/job/../job2/secret.png") == 403
+        # Public file routes fail closed without disclosing whether a target exists.
+        assert status("/api/local-preview/job/../job2/secret.png") == 404
+        assert status("/api/preview/job/../job2/secret.png") == 404
+        assert status("/api/image/job/../job2/secret.png") == 404
         assert status("/static/../server.py") == 404
     finally:
         httpd.shutdown()

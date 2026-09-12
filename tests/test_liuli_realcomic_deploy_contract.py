@@ -1,6 +1,6 @@
 from pathlib import Path
 import sys
-ROOT=Path(r"D:/LAN-Share/lora/_work/comfy_panel")
+ROOT = Path(__file__).resolve().parents[1]
 DEPLOY=ROOT/"tools"/"deploy_liuli_realcomic_release.py"
 text=DEPLOY.read_text(encoding="utf8") if DEPLOY.exists() else ""
 checks={

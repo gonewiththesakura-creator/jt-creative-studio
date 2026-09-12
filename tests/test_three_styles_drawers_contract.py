@@ -1,6 +1,6 @@
 from pathlib import Path
 import sys
-ROOT=Path(r"D:/LAN-Share/lora/_work/comfy_panel")
+ROOT = Path(__file__).resolve().parents[1]
 HTML=(ROOT/"static"/"promptgen.html").read_text(encoding="utf-8")
 SERVER=(ROOT/"server.py").read_text(encoding="utf-8")
 checks={
@@ -9,9 +9,9 @@ checks={
  "current style gets character feature": 'character_inspired' in HTML and '角色' in HTML,
  "drawer categories": all(x in HTML for x in ['"id":"character"','"id":"body"','"id":"outfit"','"id":"pose"','"id":"background"']),
  "drawers collapsed by default": '.drawer-body{display:none' in HTML and '.drawer.open .drawer-body{display:grid' in HTML,
- "fixed mapping cold": all(x in HTML for x in ['05_style3_v2_step1600.safetensors','04_style3_step800.safetensors','jt_style3_v2']),
- "fixed mapping sketch": all(x in HTML for x in ['01_style1_step900.safetensors','jt_style1_v1']),
- "fixed mapping graphic": all(x in HTML for x in ['02_style2_step900.safetensors','jt_style2_v1']),
+ "fixed mapping cold": all(x in SERVER for x in ['05_style3_v2_step1600.safetensors','04_style3_step800.safetensors','jt_style3_v2']) and '.safetensors' not in HTML,
+ "fixed mapping sketch": all(x in SERVER for x in ['01_style1_step900.safetensors','jt_style1_v1']) and '.safetensors' not in HTML,
+ "fixed mapping graphic": all(x in SERVER for x in ['02_style2_step900.safetensors','jt_style2_v1']) and '.safetensors' not in HTML,
  "only style3 uses v2": 'jt_style2_v2' not in HTML and 'jt_style1_v2' not in HTML,
  "style hidden fields sent": all(x in HTML for x in ['style_id:currentStyle','mode:currentMode','generation_backend:backend','selection_snapshot:{...snapshotSelections(),generation_backend:backend}']),
  "favorites restore style and mode": all(x in HTML for x in ["currentStyle=STYLE_CONFIGS[snapshot.style]?snapshot.style:'cold'","currentMode=snapshot.mode||'original'"]),

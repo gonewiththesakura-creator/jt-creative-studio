@@ -1,7 +1,7 @@
 import importlib.util,json
 from pathlib import Path
 import pytest
-ROOT=Path(r"D:/LAN-Share/lora/_work/comfy_panel")
+ROOT = Path(__file__).resolve().parents[1]
 CONFIG=json.loads((ROOT/'config.json').read_text(encoding='utf8'))
 BY_ID={w['id']:w for w in CONFIG['workflows']}
 spec=importlib.util.spec_from_file_location('scail_server',ROOT/'server.py');server=importlib.util.module_from_spec(spec);spec.loader.exec_module(server)

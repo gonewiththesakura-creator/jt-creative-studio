@@ -1,7 +1,7 @@
 from pathlib import Path
 import re,sys
 
-ROOT=Path(r"D:/LAN-Share/lora/_work/comfy_panel")
+ROOT = Path(__file__).resolve().parents[1]
 PAGES=[(ROOT/"static"/"promptgen.html").read_text(encoding="utf8")]
 BUILDERS=[(ROOT/"build_unified_three_styles.py").read_text(encoding="utf8")]
 PAGE_CODE=[re.sub(r"data:image/webp;base64,[A-Za-z0-9+/=]+","[embedded-preview]",page) for page in PAGES]

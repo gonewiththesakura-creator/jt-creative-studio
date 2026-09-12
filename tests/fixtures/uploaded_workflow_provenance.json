@@ -1,0 +1,404 @@
+{
+  "MinimaxH3视频编辑T3": {
+    "api_sha256": "472e4bc3fb879c6b9d9e75ce59c8d92da9c7f6b2af5968461826b814fd0df4a6",
+    "editor_sha256": "6534bf97ef07c8d5e3b9571d5819b4a69ca4bb18a934b4095760e729b8f87fd4",
+    "editor_workflow_id": "2098341701604966401",
+    "internal_id": "h3_edit_t3",
+    "media_projection": {
+      "source_video": {
+        "fallback_to": null,
+        "field": "file",
+        "node": "221",
+        "required": true,
+        "type": "video"
+      }
+    },
+    "param_projection": {
+      "duration": {
+        "field": "value",
+        "max": 15,
+        "min": 4,
+        "node": "132",
+        "required": true,
+        "step": 1,
+        "type": "float"
+      },
+      "long_edge": {
+        "field": "value",
+        "max": 2048,
+        "min": 512,
+        "node": "234",
+        "required": true,
+        "step": 8,
+        "type": "int"
+      },
+      "prompt": {
+        "field": "text",
+        "max": null,
+        "min": null,
+        "node": "196",
+        "required": true,
+        "step": null,
+        "type": "textarea"
+      },
+      "seed": {
+        "field": "noise_seed",
+        "max": 1125899906842624,
+        "min": 0,
+        "node": "129",
+        "required": true,
+        "step": null,
+        "type": "int"
+      }
+    },
+    "run_workflow_id": "2098330116945457154"
+  },
+  "N无限制 视频编辑-Minnimax-H3": {
+    "api_sha256": "6c8f2e61c77bd7145c6ccc0a18b6094632bccfa64900ccdf5afd0ba8ded4904f",
+    "editor_sha256": "431c5283f8bcc3b93755d2c63126d25e3a8d8b6fc2711b529e6408c49e9d76bf",
+    "editor_workflow_id": "2098341535964643329",
+    "internal_id": "h3_edit_n",
+    "media_projection": {
+      "reference_image": {
+        "fallback_to": null,
+        "field": "image",
+        "node": "293",
+        "required": true,
+        "type": "image"
+      },
+      "source_video": {
+        "fallback_to": null,
+        "field": "video",
+        "node": "275",
+        "required": true,
+        "type": "video"
+      }
+    },
+    "param_projection": {
+      "duration": {
+        "field": "value",
+        "max": 15,
+        "min": 4,
+        "node": "247",
+        "required": true,
+        "step": 1,
+        "type": "float"
+      },
+      "prompt": {
+        "field": "text",
+        "max": null,
+        "min": null,
+        "node": "244",
+        "required": true,
+        "step": null,
+        "type": "textarea"
+      },
+      "seed": {
+        "field": "noise_seed",
+        "max": 1125899906842624,
+        "min": 0,
+        "node": "222",
+        "required": true,
+        "step": null,
+        "type": "int"
+      },
+      "short_edge": {
+        "field": "value",
+        "max": 1024,
+        "min": 256,
+        "node": "251",
+        "required": true,
+        "step": 4,
+        "type": "int"
+      }
+    },
+    "run_workflow_id": "2098330246185926657"
+  },
+  "全能修改图生图": {
+    "api_sha256": "5f01ca2bb0c981fcc55c02ac906901270be3a8ed0ce136575347bef8fcaef1d6",
+    "editor_sha256": "4ff0394f19a2de6dd466a99ee1b2b5632695ba33f0621e185ce52d3b34fe1b1b",
+    "editor_workflow_id": "2098345504735592450",
+    "internal_id": "qwen_image_edit_zip",
+    "media_projection": {
+      "source_image": {
+        "fallback_to": null,
+        "field": "image",
+        "node": "7",
+        "required": true,
+        "type": "image"
+      }
+    },
+    "param_projection": {
+      "batch": {
+        "field": "value",
+        "max": 4,
+        "min": 1,
+        "node": "71",
+        "required": true,
+        "step": null,
+        "type": "int"
+      },
+      "prompt": {
+        "field": "text",
+        "max": null,
+        "min": null,
+        "node": "31",
+        "required": true,
+        "step": null,
+        "type": "textarea"
+      },
+      "seed": {
+        "field": "seed",
+        "max": 1125899906842624,
+        "min": 0,
+        "node": "2",
+        "required": true,
+        "step": null,
+        "type": "int"
+      }
+    },
+    "run_workflow_id": "2097924547454918658"
+  },
+  "动作迁移，抖动优化": {
+    "api_sha256": "b0475b22baf36f058514b49a335147667640ab45b55d92ca9d754a98e403344a",
+    "editor_sha256": "a717d3b361b83729b3f706c9520061131c4be8dd96c315f5cd01e7b3670eb211",
+    "editor_workflow_id": "2098345513989357570",
+    "internal_id": "wan_action_stabilized",
+    "media_projection": {
+      "driving_video": {
+        "fallback_to": null,
+        "field": "video",
+        "node": "1075",
+        "required": true,
+        "type": "video"
+      },
+      "reference_image": {
+        "fallback_to": null,
+        "field": "image",
+        "node": "1031",
+        "required": true,
+        "type": "image"
+      }
+    },
+    "param_projection": {
+      "duration": {
+        "field": "value",
+        "max": 5,
+        "min": 1,
+        "node": "1063",
+        "required": true,
+        "step": null,
+        "type": "int"
+      },
+      "height": {
+        "field": "value",
+        "max": 1280,
+        "min": 256,
+        "node": "1050",
+        "required": true,
+        "step": 16,
+        "type": "int"
+      },
+      "jitter": {
+        "field": "value",
+        "max": 1,
+        "min": 0,
+        "node": "1072",
+        "required": true,
+        "step": 0.05,
+        "type": "float"
+      },
+      "prompt": {
+        "field": "positive_prompt",
+        "max": null,
+        "min": null,
+        "node": "1062",
+        "required": true,
+        "step": null,
+        "type": "textarea"
+      },
+      "seed": {
+        "field": "seed",
+        "max": 1125899906842624,
+        "min": 0,
+        "node": "1036",
+        "required": true,
+        "step": null,
+        "type": "int"
+      },
+      "width": {
+        "field": "value",
+        "max": 1280,
+        "min": 256,
+        "node": "1049",
+        "required": true,
+        "step": 16,
+        "type": "int"
+      }
+    },
+    "run_workflow_id": "2097924526817800193"
+  },
+  "开源版MinimaxH3视频编辑去除人物去除物品去除元素": {
+    "api_sha256": "876da66c7a6e908145283852d2326b5214dc08710a64cd5bf7032b8ca80a8cbd",
+    "editor_sha256": "d42c537e400d8f4881e57175b44b4fd830ebafeb43492863f7ea9eb0c6eb6805",
+    "editor_workflow_id": "2098341695082573826",
+    "internal_id": "h3_edit_remove",
+    "media_projection": {
+      "source_video": {
+        "fallback_to": null,
+        "field": "file",
+        "node": "221",
+        "required": true,
+        "type": "video"
+      }
+    },
+    "param_projection": {
+      "duration": {
+        "field": "value",
+        "max": 15,
+        "min": 4,
+        "node": "132",
+        "required": true,
+        "step": 1,
+        "type": "float"
+      },
+      "long_edge": {
+        "field": "value",
+        "max": 2048,
+        "min": 512,
+        "node": "234",
+        "required": true,
+        "step": 8,
+        "type": "int"
+      },
+      "prompt": {
+        "field": "text",
+        "max": null,
+        "min": null,
+        "node": "196",
+        "required": true,
+        "step": null,
+        "type": "textarea"
+      },
+      "seed": {
+        "field": "noise_seed",
+        "max": 1125899906842624,
+        "min": 0,
+        "node": "129",
+        "required": true,
+        "step": null,
+        "type": "int"
+      }
+    },
+    "run_workflow_id": "2097937340852727809"
+  },
+  "最强动作迁移，角色替换": {
+    "api_sha256": "7fab1a5c29aabdc31e0a23a9ece6e227938906c1f030c54b8f02d009d0352c07",
+    "editor_sha256": "94d25510ae5d5380e235421d1fa6e8c79ef5d2b1e0a71c4a3b5d045be29bea71",
+    "editor_workflow_id": "2098345531529936898",
+    "internal_id": "scail2_action_replace",
+    "media_projection": {
+      "driving_video": {
+        "fallback_to": null,
+        "field": "video",
+        "node": "349",
+        "required": true,
+        "type": "video"
+      },
+      "reference_image": {
+        "fallback_to": null,
+        "field": "image",
+        "node": "360",
+        "required": true,
+        "type": "image"
+      },
+      "reference_image_2": {
+        "fallback_to": "reference_image",
+        "field": "image",
+        "node": "639",
+        "required": false,
+        "type": "image"
+      },
+      "reference_image_3": {
+        "fallback_to": "reference_image",
+        "field": "image",
+        "node": "643",
+        "required": false,
+        "type": "image"
+      },
+      "reference_image_4": {
+        "fallback_to": "reference_image",
+        "field": "image",
+        "node": "647",
+        "required": false,
+        "type": "image"
+      }
+    },
+    "param_projection": {
+      "duration": {
+        "field": "value",
+        "max": 15,
+        "min": 1,
+        "node": "347",
+        "required": true,
+        "step": null,
+        "type": "int"
+      },
+      "long_edge": {
+        "field": "value",
+        "max": 1280,
+        "min": 512,
+        "node": "473",
+        "required": true,
+        "step": 16,
+        "type": "int"
+      },
+      "people": {
+        "field": "value",
+        "max": 5,
+        "min": 1,
+        "node": "498",
+        "required": true,
+        "step": null,
+        "type": "int"
+      },
+      "prompt": {
+        "field": "text",
+        "max": null,
+        "min": null,
+        "node": "344",
+        "required": true,
+        "step": null,
+        "type": "textarea"
+      },
+      "replace_target": {
+        "field": "text",
+        "max": null,
+        "min": null,
+        "node": "686",
+        "required": true,
+        "step": null,
+        "type": "text"
+      },
+      "replacement_mode": {
+        "field": "value",
+        "max": null,
+        "min": null,
+        "node": "201",
+        "required": true,
+        "step": null,
+        "type": "boolean"
+      },
+      "seed": {
+        "field": "seed",
+        "max": 1125899906842624,
+        "min": 0,
+        "node": "479",
+        "required": true,
+        "step": null,
+        "type": "int"
+      }
+    },
+    "run_workflow_id": "2097870206308147201"
+  }
+}

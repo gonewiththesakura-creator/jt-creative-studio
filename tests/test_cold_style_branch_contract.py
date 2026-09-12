@@ -2,7 +2,7 @@ from pathlib import Path
 import json
 import re
 
-ROOT = Path(r"D:/LAN-Share/lora/_work/comfy_panel")
+ROOT = Path(__file__).resolve().parents[1]
 HTML = (ROOT / "static" / "promptgen.html").read_text(encoding="utf8")
 BUILDER = (ROOT / "build_unified_three_styles.py").read_text(encoding="utf8")
 SERVER = (ROOT / "server.py").read_text(encoding="utf8")

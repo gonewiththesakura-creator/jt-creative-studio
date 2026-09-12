@@ -1,6 +1,6 @@
 from pathlib import Path
 import sys
-ROOT=Path(r"D:/LAN-Share/lora/_work/comfy_panel")
+ROOT = Path(__file__).resolve().parents[1]
 HTML=(ROOT/"static"/"promptgen.html").read_text(encoding="utf8")
 SERVER=(ROOT/"server.py").read_text(encoding="utf8")
 CONFIG=(ROOT/"config.json").read_text(encoding="utf8")

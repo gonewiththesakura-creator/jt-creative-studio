@@ -1,6 +1,6 @@
 from pathlib import Path
 import json,sys
-ROOT=Path(r"D:/LAN-Share/lora/_work/comfy_panel")
+ROOT=Path(__file__).resolve().parents[1]
 SERVER=(ROOT/"server.py").read_text(encoding="utf8")
 CONFIG=json.loads((ROOT/"config.json").read_text(encoding="utf8"))
 BUILDER=ROOT/"build_realism_workbench.py"; PAGE=ROOT/"static"/"realism.html"; LEGACY=ROOT/"static"/"realcomic.html"
@@ -14,8 +14,8 @@ checks={
  'server v2 ai app adapter':all(x in SERVER for x in ['def rh_submit_ai_app','/run/ai-app/','def rh_build_ai_app_node_info','def rh_run_ai_app']),
  'server strict app routes':all(x in SERVER for x in ['/api/realcomic-upload','/api/ai-app-generate','kind") != "ai_app"']),
  'server fixed webapp id':"rh_ai_app_id" in SERVER and 'body.get("webappId")' not in SERVER,
- 'server idempotency and cloud lane':all(x in SERVER for x in ['client_request_id','existing_job_for_request','_submit_locks["cloud"]']),
- 'ai app rejects empty request id':'client_request_id is required' in SERVER.split('if path == "/api/ai-app-generate"',1)[1].split('if path == "/api/upload"',1)[0],
+ 'server idempotency and cloud lane':all(x in SERVER for x in ['client_request_id','idempotency_decision','effective_request_sha256','_idempotency_lock','_submit_locks["cloud"]']),
+ 'ai app rejects empty request id':'normalize_client_request_id(body.get("client_request_id"))' in SERVER.split('if path == "/api/ai-app-generate"',1)[1].split('if path == "/api/upload"',1)[0],
  'legacy route redirects':all(x in SERVER for x in ['if path == "/realcomic"','Location", "/realism?workflow=realcomic"']) and '/realism?workflow=realcomic' in legacy,
  'unified page one image optional text':all(x in html for x in ['renderImageControl','renderTextControl']) and w.get('name')=='快速真人化（原漫画转真人）',
  'unified app uses dedicated adapters':all(x in html for x in ["current.kind==='ai_app'","/api/realcomic-upload","/api/ai-app-generate"]),

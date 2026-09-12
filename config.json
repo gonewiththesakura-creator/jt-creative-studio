@@ -168,7 +168,8 @@
     "width": 768,
     "height": 1344,
     "duration": 7
-   }
+   },
+   "section": "视频生成"
   },
   {
    "id": "wardrobe",
@@ -238,7 +239,8 @@
     "width": 576,
     "height": 1024,
     "duration": 6
-   }
+   },
+   "section": "视频编辑"
   },
   {
    "id": "action",
@@ -300,7 +302,8 @@
    "params_defaults": {
     "width": 1280,
     "height": 720
-   }
+   },
+   "section": "动作迁移"
   },
   {
    "id": "h3_lightx2v",
@@ -338,7 +341,8 @@
     "prompt": "视频时长：[5]秒\nshot1:一个女人在街道上行走，身姿摇曳，低角度仰拍，镜头逐渐上移"
    },
    "prompt_placeholder": "视频时长：[5]秒\nshot1:画面描述…\nshot2:画面描述…",
-   "prompt_hint": "⚠️ 该工作流要求提示词包含「视频时长：[数字]秒」行，否则内部解析会失败。示例见输入框占位文字。"
+   "prompt_hint": "⚠️ 该工作流要求提示词包含「视频时长：[数字]秒」行，否则内部解析会失败。示例见输入框占位文字。",
+   "section": "视频生成"
   },
   {
    "id": "h3_4step",
@@ -388,7 +392,8 @@
    "params_defaults": {
     "duration": 5,
     "max_side": 1024
-   }
+   },
+   "section": "视频生成"
   },
   {
    "id": "realcomic",
@@ -1092,7 +1097,8 @@
    "fixed_features": [
     "当前API图不包含背景替换与黑背景视频分支"
    ],
-   "speed": "RunningHub云端，耗时按视频长度和队列而定"
+   "speed": "RunningHub云端，耗时按视频长度和队列而定",
+   "section": "动作迁移"
   },
   {
    "id": "scail2_multi",
@@ -1244,7 +1250,543 @@
    "fixed_features": [
     "当前API图不包含多图参考、骨骼图动作与背景替换分支"
    ],
-   "speed": "RunningHub云端，耗时按视频长度和队列而定"
+   "speed": "RunningHub云端，耗时按视频长度和队列而定",
+   "section": "动作迁移"
+  },
+  {
+   "id": "h3_edit_n",
+   "name": "MiniMax H3 · 双参考视频编辑",
+   "kind": "video",
+   "backend": "runninghub",
+   "rh_workflow_id": "2098330246185926657",
+   "source_editor_workflow_id": "2098341535964643329",
+   "source_editor_json_sha256": "431c5283f8bcc3b93755d2c63126d25e3a8d8b6fc2711b529e6408c49e9d76bf",
+   "source_api_json_sha256": "6c8f2e61c77bd7145c6ccc0a18b6094632bccfa64900ccdf5afd0ba8ded4904f",
+   "rh_schema_complete": true,
+   "desc": "参考图定义主体，参考视频提供动作和场景；按文字指令编辑并保留源视频音轨。",
+   "rh_media": {
+    "reference_image": {
+     "node": "293",
+     "field": "image",
+     "type": "image",
+     "label": "人物/主体参考图",
+     "required": true
+    },
+    "source_video": {
+     "node": "275",
+     "field": "video",
+     "type": "video",
+     "label": "待编辑视频",
+     "required": true
+    }
+   },
+   "rh_params": {
+    "prompt": {
+     "node": "244",
+     "field": "text",
+     "type": "textarea",
+     "label": "编辑指令",
+     "default": "保持原视频动作、背景、光线和镜头构图，只修改我描述的元素。",
+     "required": true,
+     "max_length": 2000
+    },
+    "duration": {
+     "node": "247",
+     "field": "value",
+     "type": "float",
+     "label": "时长（秒）",
+     "default": 5,
+     "required": true,
+     "min": 4,
+     "max": 15,
+     "step": 1,
+     "group": "common"
+    },
+    "short_edge": {
+     "node": "251",
+     "field": "value",
+     "type": "int",
+     "label": "生成最短边",
+     "default": 436,
+     "required": true,
+     "min": 256,
+     "max": 1024,
+     "step": 4,
+     "group": "advanced"
+    },
+    "seed": {
+     "node": "222",
+     "field": "noise_seed",
+     "type": "int",
+     "label": "随机种子",
+     "default": 403030338371891,
+     "required": true,
+     "min": 0,
+     "max": 1125899906842624,
+     "group": "advanced"
+    }
+   },
+   "params_defaults": {},
+   "speed": "RunningHub云端，耗时按视频长度和队列而定",
+   "ref": "1张参考图 + 1段待编辑视频",
+   "section": "视频编辑"
+  },
+  {
+   "id": "h3_edit_t3",
+   "name": "MiniMax H3 · 通用视频编辑 T3",
+   "kind": "video",
+   "backend": "runninghub",
+   "rh_workflow_id": "2098330116945457154",
+   "source_editor_workflow_id": "2098341701604966401",
+   "source_editor_json_sha256": "6534bf97ef07c8d5e3b9571d5819b4a69ca4bb18a934b4095760e729b8f87fd4",
+   "source_api_json_sha256": "472e4bc3fb879c6b9d9e75ce59c8d92da9c7f6b2af5968461826b814fd0df4a6",
+   "rh_schema_complete": true,
+   "desc": "提取源视频关键分镜后按文字指令编辑，输出编辑结果及对比结果。",
+   "rh_media": {
+    "source_video": {
+     "node": "221",
+     "field": "file",
+     "type": "video",
+     "label": "待编辑视频",
+     "required": true
+    }
+   },
+   "rh_params": {
+    "prompt": {
+     "node": "196",
+     "field": "text",
+     "type": "textarea",
+     "label": "编辑指令",
+     "default": "保持原视频动作、背景、光线和镜头构图，只修改我描述的元素。",
+     "required": true,
+     "max_length": 2000
+    },
+    "duration": {
+     "node": "132",
+     "field": "value",
+     "type": "float",
+     "label": "时长（秒）",
+     "default": 5,
+     "required": true,
+     "min": 4,
+     "max": 15,
+     "step": 1,
+     "group": "common"
+    },
+    "long_edge": {
+     "node": "234",
+     "field": "value",
+     "type": "int",
+     "label": "视频最长边",
+     "default": 832,
+     "required": true,
+     "min": 512,
+     "max": 2048,
+     "step": 8,
+     "group": "advanced"
+    },
+    "seed": {
+     "node": "129",
+     "field": "noise_seed",
+     "type": "int",
+     "label": "随机种子",
+     "default": 930724482124125,
+     "required": true,
+     "min": 0,
+     "max": 1125899906842624,
+     "group": "advanced"
+    }
+   },
+   "params_defaults": {},
+   "speed": "RunningHub云端，耗时按视频长度和队列而定",
+   "ref": "1段待编辑视频",
+   "section": "视频编辑",
+   "rh_result_labels": [
+    "编辑后主视频",
+    "原片 / 生成片对比"
+   ]
+  },
+  {
+   "id": "h3_edit_remove",
+   "name": "MiniMax H3 · 移除人物/物品/元素",
+   "kind": "video",
+   "backend": "runninghub",
+   "rh_workflow_id": "2097937340852727809",
+   "source_editor_workflow_id": "2098341695082573826",
+   "source_editor_json_sha256": "d42c537e400d8f4881e57175b44b4fd830ebafeb43492863f7ea9eb0c6eb6805",
+   "source_api_json_sha256": "876da66c7a6e908145283852d2326b5214dc08710a64cd5bf7032b8ca80a8cbd",
+   "rh_schema_complete": true,
+   "desc": "按指令移除视频中的人物、物品或元素，尽量保持其余画面与镜头不变。",
+   "rh_media": {
+    "source_video": {
+     "node": "221",
+     "field": "file",
+     "type": "video",
+     "label": "待编辑视频",
+     "required": true
+    }
+   },
+   "rh_params": {
+    "prompt": {
+     "node": "196",
+     "field": "text",
+     "type": "textarea",
+     "label": "移除指令",
+     "default": "移除视频中指定的人物、物品或元素，保持其余背景、光线、角色与镜头构图不变。",
+     "required": true,
+     "max_length": 2000
+    },
+    "duration": {
+     "node": "132",
+     "field": "value",
+     "type": "float",
+     "label": "时长（秒）",
+     "default": 5,
+     "required": true,
+     "min": 4,
+     "max": 15,
+     "step": 1,
+     "group": "common"
+    },
+    "long_edge": {
+     "node": "234",
+     "field": "value",
+     "type": "int",
+     "label": "视频最长边",
+     "default": 832,
+     "required": true,
+     "min": 512,
+     "max": 2048,
+     "step": 8,
+     "group": "advanced"
+    },
+    "seed": {
+     "node": "129",
+     "field": "noise_seed",
+     "type": "int",
+     "label": "随机种子",
+     "default": 437712791350939,
+     "required": true,
+     "min": 0,
+     "max": 1125899906842624,
+     "group": "advanced"
+    }
+   },
+   "params_defaults": {},
+   "speed": "RunningHub云端，耗时按视频长度和队列而定",
+   "ref": "1段待编辑视频",
+   "section": "视频编辑",
+   "rh_result_labels": [
+    "移除后主视频",
+    "原片 / 生成片对比"
+   ],
+   "fixed_features": [
+    "实验性质量提醒：实测人物快速抬手时可能出现手部模糊，请先用短片核对主视频。"
+   ]
+  },
+  {
+   "id": "qwen_image_edit_zip",
+   "name": "全能修改图生图",
+   "kind": "rh_workflow",
+   "backend": "runninghub",
+   "rh_workflow_id": "2097924547454918658",
+   "source_editor_workflow_id": "2098345504735592450",
+   "source_editor_json_sha256": "4ff0394f19a2de6dd466a99ee1b2b5632695ba33f0621e185ce52d3b34fe1b1b",
+   "source_api_json_sha256": "5f01ca2bb0c981fcc55c02ac906901270be3a8ed0ce136575347bef8fcaef1d6",
+   "rh_schema_complete": true,
+   "desc": "按文字要求修改一张图片，保持原图比例，结果由工作流打包下载。",
+   "rh_media": {
+    "source_image": {
+     "node": "7",
+     "field": "image",
+     "type": "image",
+     "label": "待修改图片",
+     "required": true,
+     "group": "common"
+    }
+   },
+   "rh_params": {
+    "prompt": {
+     "node": "31",
+     "field": "text",
+     "type": "textarea",
+     "label": "修改要求",
+     "default": "保持主体与构图，只按描述修改图像。",
+     "required": true,
+     "max_length": 2000,
+     "group": "common"
+    },
+    "batch": {
+     "node": "71",
+     "field": "value",
+     "type": "int",
+     "label": "生成批量",
+     "default": 1,
+     "required": true,
+     "min": 1,
+     "max": 4,
+     "group": "common"
+    },
+    "seed": {
+     "node": "2",
+     "field": "seed",
+     "type": "int",
+     "label": "随机种子",
+     "default": 377599756465785,
+     "required": true,
+     "min": 0,
+     "max": 1125899906842624,
+     "group": "advanced"
+    }
+   },
+   "params_defaults": {},
+   "fixed_features": [
+    "输出高度由作者工作流固定为1920，并按原图比例计算宽度。"
+   ],
+   "speed": "RunningHub云端，耗时按队列而定",
+   "ref": "1张待修改图片"
+  },
+  {
+   "id": "wan_action_stabilized",
+   "name": "动作迁移 · 抖动优化",
+   "kind": "video",
+   "backend": "runninghub",
+   "rh_workflow_id": "2097924526817800193",
+   "source_editor_workflow_id": "2098345513989357570",
+   "source_editor_json_sha256": "a717d3b361b83729b3f706c9520061131c4be8dd96c315f5cd01e7b3670eb211",
+   "source_api_json_sha256": "b0475b22baf36f058514b49a335147667640ab45b55d92ca9d754a98e403344a",
+   "rh_schema_complete": true,
+   "desc": "将参考视频动作迁移到目标人物，并通过作者抖动LoRA强度控制稳定程度。",
+   "rh_media": {
+    "reference_image": {
+     "node": "1031",
+     "field": "image",
+     "type": "image",
+     "label": "目标人物参考图",
+     "required": true
+    },
+    "driving_video": {
+     "node": "1075",
+     "field": "video",
+     "type": "video",
+     "label": "动作参考视频",
+     "required": true
+    }
+   },
+   "rh_params": {
+    "prompt": {
+     "node": "1062",
+     "field": "positive_prompt",
+     "type": "textarea",
+     "label": "画面提示词",
+     "default": "最佳质量，保持参考人物外观，准确迁移动作，减少抖动。",
+     "required": true,
+     "max_length": 1000
+    },
+    "duration": {
+     "node": "1063",
+     "field": "value",
+     "type": "int",
+     "label": "输出时长（秒）",
+     "default": 3,
+     "required": true,
+     "min": 1,
+     "max": 5,
+     "group": "common"
+    },
+    "width": {
+     "node": "1049",
+     "field": "value",
+     "type": "int",
+     "label": "输出宽度",
+     "default": 480,
+     "required": true,
+     "min": 256,
+     "max": 1280,
+     "step": 16,
+     "group": "common"
+    },
+    "height": {
+     "node": "1050",
+     "field": "value",
+     "type": "int",
+     "label": "输出高度",
+     "default": 832,
+     "required": true,
+     "min": 256,
+     "max": 1280,
+     "step": 16,
+     "group": "common"
+    },
+    "jitter": {
+     "node": "1072",
+     "field": "value",
+     "type": "float",
+     "label": "抖动优化强度",
+     "default": 0.35,
+     "required": true,
+     "min": 0,
+     "max": 1,
+     "step": 0.05,
+     "group": "advanced"
+    },
+    "seed": {
+     "node": "1036",
+     "field": "seed",
+     "type": "int",
+     "label": "随机种子",
+     "default": 42,
+     "required": true,
+     "min": 0,
+     "max": 1125899906842624,
+     "group": "advanced"
+    }
+   },
+   "params_defaults": {},
+   "fixed_features": [
+    "建议先用1–3秒测试；宽高应与人物参考图和动作视频方向一致。"
+   ],
+   "speed": "RunningHub云端，耗时按视频长度和队列而定",
+   "ref": "1张人物图 + 1段动作视频",
+   "section": "动作迁移"
+  },
+  {
+   "id": "scail2_action_replace",
+   "name": "SCAIL2 · 动作迁移/角色替换",
+   "kind": "video",
+   "backend": "runninghub",
+   "rh_workflow_id": "2097870206308147201",
+   "source_editor_workflow_id": "2098345531529936898",
+   "source_editor_json_sha256": "94d25510ae5d5380e235421d1fa6e8c79ef5d2b1e0a71c4a3b5d045be29bea71",
+   "source_api_json_sha256": "7fab1a5c29aabdc31e0a23a9ece6e227938906c1f030c54b8f02d009d0352c07",
+   "rh_schema_complete": true,
+   "desc": "SCAIL2动作迁移与角色替换二合一，支持最多4张人物参考图和最多5个角色。",
+   "rh_media": {
+    "reference_image": {
+     "node": "360",
+     "field": "image",
+     "type": "image",
+     "label": "主参考图",
+     "required": true
+    },
+    "reference_image_2": {
+     "node": "639",
+     "field": "image",
+     "type": "image",
+     "label": "多视角参考图2",
+     "required": false,
+     "fallback_to": "reference_image"
+    },
+    "reference_image_3": {
+     "node": "643",
+     "field": "image",
+     "type": "image",
+     "label": "多视角参考图3",
+     "required": false,
+     "fallback_to": "reference_image"
+    },
+    "reference_image_4": {
+     "node": "647",
+     "field": "image",
+     "type": "image",
+     "label": "多视角参考图4",
+     "required": false,
+     "fallback_to": "reference_image"
+    },
+    "driving_video": {
+     "node": "349",
+     "field": "video",
+     "type": "video",
+     "label": "动作迁移视频",
+     "required": true
+    }
+   },
+   "rh_params": {
+    "prompt": {
+     "node": "344",
+     "field": "text",
+     "type": "textarea",
+     "label": "视频提示词",
+     "default": "这个人在跳舞",
+     "required": true,
+     "max_length": 1000
+    },
+    "replace_target": {
+     "node": "686",
+     "field": "text",
+     "type": "text",
+     "label": "替换目标（英文）",
+     "default": "person",
+     "required": true,
+     "max_length": 200
+    },
+    "replacement_mode": {
+     "node": "201",
+     "field": "value",
+     "type": "boolean",
+     "label": "开启角色替换",
+     "default": false,
+     "required": true,
+     "group": "common"
+    },
+    "duration": {
+     "node": "347",
+     "field": "value",
+     "type": "int",
+     "label": "时长（秒）",
+     "default": 6,
+     "required": true,
+     "min": 1,
+     "max": 15,
+     "group": "common"
+    },
+    "long_edge": {
+     "node": "473",
+     "field": "value",
+     "type": "int",
+     "label": "视频最长边",
+     "default": 896,
+     "required": true,
+     "min": 512,
+     "max": 1280,
+     "step": 16,
+     "group": "common"
+    },
+    "people": {
+     "node": "498",
+     "field": "value",
+     "type": "int",
+     "label": "检测角色数",
+     "default": 1,
+     "required": true,
+     "min": 1,
+     "max": 5,
+     "group": "advanced"
+    },
+    "seed": {
+     "node": "479",
+     "field": "seed",
+     "type": "int",
+     "label": "随机种子",
+     "default": 201461839435830,
+     "required": true,
+     "min": 0,
+     "max": 1125899906842624,
+     "group": "advanced"
+    }
+   },
+   "params_defaults": {},
+   "fixed_features": [
+    "参考图与动作视频中的人物取景范围应尽量一致；输入视频需比输出时长更长。",
+    "实验性质量提醒：实测角色替换在快速过渡帧可能出现单帧重影，请先用短片核对主视频。"
+   ],
+   "speed": "长边896时，6秒参考耗时约8分钟，实际按队列而定",
+   "ref": "主参考图 + 动作视频；多视角图可选",
+   "section": "动作迁移",
+   "rh_result_labels": [
+    "动作迁移主视频",
+    "输入 / 参考 / 结果对比"
+   ]
   }
  ],
  "default_prompt_reset": true

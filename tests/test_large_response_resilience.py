@@ -5,7 +5,7 @@ import time
 import tempfile
 from pathlib import Path
 
-ROOT = Path(r"D:/LAN-Share/lora/_work/comfy_panel")
+ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("large_response_server", ROOT / "server.py")
 server = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(server)
@@ -209,6 +209,9 @@ def test_image_stream_timeout_never_appends_a_second_http_response(monkeypatch):
     handler = HarnessHandler(state, RecordingWriter(connection), connection)
     handler.path = "/api/image/job/image.png"
     handler._auth = lambda: True
+    session_id = "stream-owner-session-1234567890"
+    handler.headers = {"Cookie": "jt_session=" + server._encode_session_cookie(session_id)}
+    server._jobs = {"job": {"id": "job", "request_session_hash": server._session_hash(session_id)}}
     handler._write_stream = lambda *args, **kwargs: (_ for _ in ()).throw(socket.timeout("slow client"))
     server.JOBS_DIR = Path(tempfile.mkdtemp())
     path = server.JOBS_DIR / "job" / "image.png"

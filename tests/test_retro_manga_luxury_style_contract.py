@@ -1,6 +1,6 @@
 from pathlib import Path
 import hashlib,importlib.util,json,re,sys
-ROOT=Path(r"D:/LAN-Share/lora/_work/comfy_panel")
+ROOT = Path(__file__).resolve().parents[1]
 HTML=(ROOT/'static/promptgen.html').read_text(encoding='utf8')
 SERVER=(ROOT/'server.py').read_text(encoding='utf8')
 BUILD=(ROOT/'build_unified_three_styles.py').read_text(encoding='utf8')
@@ -8,7 +8,8 @@ PREVIEW_BUILD=(ROOT/'tools/build_preview_assets.py').read_text(encoding='utf8')
 match=re.search(r'const STYLE_CONFIGS=(.*?);const DRAWERS=',HTML,re.S)
 styles=json.loads(match.group(1)) if match else {}
 style=styles.get('retro_manga_luxury') or {}
-MODEL=Path(r'D:/ComfyUI_Mie/ComfyUI/models/loras/Anima_JT/09_style321_v1_step200.safetensors')
+E2E=json.loads((ROOT/'audit/retro_manga_panel_e2e_cloud_w04.json').read_text(encoding='utf8'))
+PREVIEW=ROOT/'static/previews/style-retro-manga-luxury.webp'
 core='''retro 1980s-1990s Japanese manga fashion illustration,
 vintage shoujo manga, josei manga aesthetic,
 traditional hand-drawn illustration,
@@ -71,11 +72,11 @@ checks={
  'style button':'data-style="retro_manga_luxury"' in HTML and '复古日漫奢华时尚手绘' in HTML,
  'eight style touch layout':'#styleSwitch{display:grid;grid-template-columns:repeat(4,minmax(0,1fr))}' in HTML,
  'trusted trigger':style.get('trigger')=='jt_style321_v1' and '"trigger": "jt_style321_v1"' in SERVER,
- 'exact lora':style.get('lora1')=='09_style321_v1_step200.safetensors' and style.get('lora2')=='09_style321_v1_step200.safetensors' and SERVER.count('09_style321_v1_step200.safetensors')>=2,
- 'recommended weight':style.get('strengths')=={'LORA1':0.4,'LORA2':0.0} and '"strengths": {"LORA1": 0.4, "LORA2": 0.0}' in SERVER,
- 'exact md5':MODEL.is_file() and hashlib.md5(MODEL.read_bytes()).hexdigest()=='78dfd94ea81daad0c65a566c6e8ccf73',
+ 'exact lora server trusted':'lora1' not in style and 'lora2' not in style and SERVER.count('09_style321_v1_step200.safetensors')>=2,
+ 'recommended weight server trusted':'strengths' not in style and '"strengths": {"LORA1": 0.4, "LORA2": 0.0}' in SERVER,
+ 'verified cloud mapping':E2E.get('verification')=='PASS' and E2E.get('expected_effective_mapping',{}).get('lora')=='09_style321_v1_step200.safetensors',
  'qualified preview':re.fullmatch(r'/static/previews/style-retro-manga-luxury\.webp\?v=[0-9a-f]{12}',style.get('preview','')) is not None and style.get('preview_thumb','').startswith('data:image/webp;base64,'),
- 'qualified preview source':'style321_panel_preview_w04/PREVIEW_32402_00001_.png' in PREVIEW_BUILD and 'style321_matrix/CORE_S200_W4_00001_.png' not in PREVIEW_BUILD and 'style321_multiseed/CORE_32301_S200_00001_.png' not in PREVIEW_BUILD,
+ 'qualified preview bytes':PREVIEW.is_file() and hashlib.sha256(PREVIEW.read_bytes()).hexdigest()=='2ebb09eea5c1f9944e3a0376991a42b46a5a75bc92d1a83e3033b7522b60bb22',
  'full core preserved':style.get('style')==core,
  'fixed negative preserved':style.get('negative')==negative,
  'adult base':all(x in style.get('head','') for x in ['1woman','adult woman']),

@@ -4,7 +4,7 @@ import threading
 import time
 from pathlib import Path
 
-ROOT=Path(r"D:/LAN-Share/lora/_work/comfy_panel")
+ROOT = Path(__file__).resolve().parents[1]
 spec=importlib.util.spec_from_file_location("preview_release_test",ROOT/"server.py")
 m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 root=Path(tempfile.mkdtemp());m.JOBS_DIR=root;m.JOBS_FILE=root/"jobs.json";m._jobs={}

@@ -1,7 +1,7 @@
 from pathlib import Path
 import json,re,sys
 
-ROOT=Path(r"D:/LAN-Share/lora/_work/comfy_panel")
+ROOT = Path(__file__).resolve().parents[1]
 HTML=(ROOT/"static"/"promptgen.html").read_text(encoding="utf8")
 MANIFEST=ROOT/"sources"/"pool_union_manifest.json"
 EXPECTED={

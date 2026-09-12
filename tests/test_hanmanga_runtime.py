@@ -1,6 +1,6 @@
 import importlib.util,json,tempfile
 from pathlib import Path
-P=Path(r"D:/LAN-Share/lora/_work/comfy_panel/server.py")
+P = Path(__file__).resolve().parents[1] / 'server.py'
 spec=importlib.util.spec_from_file_location('hanmanga_runtime',P);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 preset=m.STYLE_PRESETS['hanmanga']
 assert preset=={

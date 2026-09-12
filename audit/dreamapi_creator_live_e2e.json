@@ -1,0 +1,69 @@
+{
+  "verification": "PASS",
+  "verified_at": "2026-09-12T00:02:17+08:00",
+  "provider": "DreamAPI",
+  "endpoint_contract": {
+    "base_url": "https://dreamapi.club",
+    "path": "/responses",
+    "text_model": "gpt-5.6-sol",
+    "tool_type": "image_generation",
+    "tool_action": "generate"
+  },
+  "model_discovery": {
+    "http_status": 200,
+    "gpt_5_6_sol": true,
+    "gpt_image_2": true,
+    "gpt_image_2_5_flare": true,
+    "gpt_image_2_5_sunburst": true
+  },
+  "first_diagnostic_attempt": {
+    "client_request_id": "dreamapi-live-20260911-one",
+    "job_id": "7e7867993301",
+    "submit_attempts": 1,
+    "status": "error",
+    "error": "HTTP 502 Bad Gateway",
+    "automatic_retry": false,
+    "note": "Recorded honestly; no image was produced. A separate neutral diagnostic request was used after error-detail instrumentation and model discovery."
+  },
+  "successful_e2e": {
+    "client_request_id": "dreamapi-live-20260911-two-neutral",
+    "job_id": "e6c346eb2c78",
+    "submit_attempts": 1,
+    "status": "done",
+    "provider_status": "API_DONE",
+    "generation_backend": "api",
+    "api_model": "gpt-image-2.5-flare",
+    "api_quality": "low",
+    "api_fit": "cover",
+    "seed_supported": false,
+    "api_response_id_present": true,
+    "upstream_model_reported": "unknown",
+    "upstream_quality_reported": "low",
+    "upstream_size_reported": "1086x1448",
+    "source_size": "1086x1448",
+    "output_size": "768x1024",
+    "elapsed_seconds": 59.2,
+    "history_occurrences": 1
+  },
+  "artifact": {
+    "file": "dreamapi_creator_live_20260912.png",
+    "format": "PNG",
+    "width": 768,
+    "height": 1024,
+    "bytes": 507981,
+    "sha256": "4ba551a2a08cfb5101bb807cd52637f96ca002f7139bb30a5460a89dd110615a"
+  },
+  "visual_review": {
+    "status": "PASS",
+    "subject": "single red glazed ceramic cube",
+    "not_blank_or_corrupt": true,
+    "complete_subject": true,
+    "visible_text_logo_watermark": false,
+    "obvious_crop_problem": false
+  },
+  "credential_handling": {
+    "browser_received_key": false,
+    "repository_contains_key": false,
+    "remote_environment_file_mode": "root:root 600"
+  }
+}

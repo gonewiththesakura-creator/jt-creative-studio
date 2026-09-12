@@ -1,6 +1,6 @@
 from pathlib import Path
 import re, sys
-root=Path(r'D:/LAN-Share/lora/_work/comfy_panel')
+root = Path(__file__).resolve().parents[1]
 html=(root/'static'/'promptgen.html').read_text(encoding='utf8')
 server=(root/'server.py').read_text(encoding='utf8')
 checks={

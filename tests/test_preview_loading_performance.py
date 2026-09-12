@@ -1,7 +1,7 @@
 from pathlib import Path
 import re,json,sys
 from PIL import Image
-ROOT=Path(r"D:/LAN-Share/lora/_work/comfy_panel")
+ROOT = Path(__file__).resolve().parents[1]
 REALISM=(ROOT/'build_realism_workbench.py').read_text(encoding='utf8')
 CREATOR=(ROOT/'build_unified_three_styles.py').read_text(encoding='utf8')
 REALISM_HTML=(ROOT/'static/realism.html').read_text(encoding='utf8')

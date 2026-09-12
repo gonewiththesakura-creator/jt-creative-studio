@@ -5,7 +5,7 @@ import time
 import urllib.request
 from pathlib import Path
 
-ROOT = Path(r"D:/LAN-Share/lora/_work/comfy_panel")
+ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("large_upload_server", ROOT / "server.py")
 server = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(server)

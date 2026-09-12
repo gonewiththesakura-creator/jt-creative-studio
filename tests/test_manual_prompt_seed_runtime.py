@@ -1,6 +1,6 @@
 import importlib.util,json,tempfile
 from pathlib import Path
-P=Path(r"D:/LAN-Share/lora/_work/comfy_panel/server.py")
+P = Path(__file__).resolve().parents[1] / 'server.py'
 spec=importlib.util.spec_from_file_location('panel_server_test',P);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 
 def fields(rows):return {(x['nodeId'],x['fieldName']):x['fieldValue'] for x in rows}

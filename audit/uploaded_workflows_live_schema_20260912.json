@@ -1,0 +1,476 @@
+{
+  "verification": "PASS",
+  "verified_at": "2026-09-12T04:55:26+08:00",
+  "method": "RunningHub getJsonApiFormat via current production service account; read-only, no task submit",
+  "endpoint": "https://www.runninghub.ai/api/openapi/getJsonApiFormat",
+  "billing": "none (schema reads only)",
+  "records": [
+    {
+      "internal_id": "h3_edit_n",
+      "run_workflow_id": "2098330246185926657",
+      "http_status": 200,
+      "provider_code": 0,
+      "attachment_file": "N无限制 视频编辑-Minnimax-H3_api.json",
+      "node_count": 33,
+      "live_canonical_sha256": "7c6c55419b15ebe36208748bbc6ef328448278de1e3830a5fabdd58f7249db71",
+      "attachment_canonical_sha256": "3fc051b5dc5591c570cee635bbb402d6f5f24ebcee69cb423bfbb3f110afa7a5",
+      "canonical_equal": false,
+      "structural_equal": false,
+      "live_structural_sha256": "43181d536f2d71e78a6efe82a0ed9c409a384eedb7d3a0d79326690ad0cb15ca",
+      "attachment_structural_sha256": "e5bb9587256ecf909b8db9f2139f10e02990b365b25b42620a7c2dafd22d44a5",
+      "scalar_difference_count": 0,
+      "scalar_difference_locations": [],
+      "structural_difference_count": 1,
+      "structural_differences": [
+        {
+          "node": "228",
+          "field": "video-preview",
+          "difference": "field_missing_in_attachment"
+        }
+      ],
+      "mappings": [
+        {
+          "scope": "rh_media",
+          "key": "reference_image",
+          "node": "293",
+          "field": "image",
+          "live_present": true
+        },
+        {
+          "scope": "rh_media",
+          "key": "source_video",
+          "node": "275",
+          "field": "video",
+          "live_present": true
+        },
+        {
+          "scope": "rh_params",
+          "key": "prompt",
+          "node": "244",
+          "field": "text",
+          "live_present": true
+        },
+        {
+          "scope": "rh_params",
+          "key": "duration",
+          "node": "247",
+          "field": "value",
+          "live_present": true
+        },
+        {
+          "scope": "rh_params",
+          "key": "short_edge",
+          "node": "251",
+          "field": "value",
+          "live_present": true
+        },
+        {
+          "scope": "rh_params",
+          "key": "seed",
+          "node": "222",
+          "field": "noise_seed",
+          "live_present": true
+        }
+      ],
+      "all_mappings_present": true,
+      "allowed_structural_differences": [
+        {
+          "node": "228",
+          "field": "video-preview",
+          "difference": "field_missing_in_attachment",
+          "classification": "RunningHub SaveVideo preview-only field"
+        }
+      ],
+      "unexpected_structural_differences": [],
+      "missing_expected_structural_differences": [],
+      "verified": true
+    },
+    {
+      "internal_id": "h3_edit_t3",
+      "run_workflow_id": "2098330116945457154",
+      "http_status": 200,
+      "provider_code": 0,
+      "attachment_file": "MinimaxH3视频编辑T3_api.json",
+      "node_count": 34,
+      "live_canonical_sha256": "74179658ef12711f2a93dbf8b0cb357a19340132b67ed279020d92c320c606cb",
+      "attachment_canonical_sha256": "74179658ef12711f2a93dbf8b0cb357a19340132b67ed279020d92c320c606cb",
+      "canonical_equal": true,
+      "structural_equal": true,
+      "live_structural_sha256": "85840e449bcd86bd1b45956e466ae32b97667a093d69cc0a63a5c3b6c9ca57fe",
+      "attachment_structural_sha256": "85840e449bcd86bd1b45956e466ae32b97667a093d69cc0a63a5c3b6c9ca57fe",
+      "scalar_difference_count": 0,
+      "scalar_difference_locations": [],
+      "structural_difference_count": 0,
+      "structural_differences": [],
+      "mappings": [
+        {
+          "scope": "rh_media",
+          "key": "source_video",
+          "node": "221",
+          "field": "file",
+          "live_present": true
+        },
+        {
+          "scope": "rh_params",
+          "key": "prompt",
+          "node": "196",
+          "field": "text",
+          "live_present": true
+        },
+        {
+          "scope": "rh_params",
+          "key": "duration",
+          "node": "132",
+          "field": "value",
+          "live_present": true
+        },
+        {
+          "scope": "rh_params",
+          "key": "long_edge",
+          "node": "234",
+          "field": "value",
+          "live_present": true
+        },
+        {
+          "scope": "rh_params",
+          "key": "seed",
+          "node": "129",
+          "field": "noise_seed",
+          "live_present": true
+        }
+      ],
+      "all_mappings_present": true,
+      "allowed_structural_differences": [],
+      "unexpected_structural_differences": [],
+      "missing_expected_structural_differences": [],
+      "verified": true
+    },
+    {
+      "internal_id": "h3_edit_remove",
+      "run_workflow_id": "2097937340852727809",
+      "http_status": 200,
+      "provider_code": 0,
+      "attachment_file": "开源版MinimaxH3视频编辑去除人物去除物品去除元素_api.json",
+      "node_count": 34,
+      "live_canonical_sha256": "95808692e31e26225f220f5dfee7a32ef801c5e211118499b2bd14a825654049",
+      "attachment_canonical_sha256": "95808692e31e26225f220f5dfee7a32ef801c5e211118499b2bd14a825654049",
+      "canonical_equal": true,
+      "structural_equal": true,
+      "live_structural_sha256": "25d9d0e4cc2ed4b76984b42c3f48ec3de689c137006224bbb5a5893387f1dd7b",
+      "attachment_structural_sha256": "25d9d0e4cc2ed4b76984b42c3f48ec3de689c137006224bbb5a5893387f1dd7b",
+      "scalar_difference_count": 0,
+      "scalar_difference_locations": [],
+      "structural_difference_count": 0,
+      "structural_differences": [],
+      "mappings": [
+        {
+          "scope": "rh_media",
+          "key": "source_video",
+          "node": "221",
+          "field": "file",
+          "live_present": true
+        },
+        {
+          "scope": "rh_params",
+          "key": "prompt",
+          "node": "196",
+          "field": "text",
+          "live_present": true
+        },
+        {
+          "scope": "rh_params",
+          "key": "duration",
+          "node": "132",
+          "field": "value",
+          "live_present": true
+        },
+        {
+          "scope": "rh_params",
+          "key": "long_edge",
+          "node": "234",
+          "field": "value",
+          "live_present": true
+        },
+        {
+          "scope": "rh_params",
+          "key": "seed",
+          "node": "129",
+          "field": "noise_seed",
+          "live_present": true
+        }
+      ],
+      "all_mappings_present": true,
+      "allowed_structural_differences": [],
+      "unexpected_structural_differences": [],
+      "missing_expected_structural_differences": [],
+      "verified": true
+    },
+    {
+      "internal_id": "qwen_image_edit_zip",
+      "run_workflow_id": "2097924547454918658",
+      "http_status": 200,
+      "provider_code": 0,
+      "attachment_file": "全能修改图生图_api.json",
+      "node_count": 18,
+      "live_canonical_sha256": "49c268aba011930630a3b44c0832be77190eea42c5e3e1afc96df9683080f96f",
+      "attachment_canonical_sha256": "49c268aba011930630a3b44c0832be77190eea42c5e3e1afc96df9683080f96f",
+      "canonical_equal": true,
+      "structural_equal": true,
+      "live_structural_sha256": "98021327f704d6d5d7908098bfc44b576c5b1ec20e9bb78fa77277fce6703531",
+      "attachment_structural_sha256": "98021327f704d6d5d7908098bfc44b576c5b1ec20e9bb78fa77277fce6703531",
+      "scalar_difference_count": 0,
+      "scalar_difference_locations": [],
+      "structural_difference_count": 0,
+      "structural_differences": [],
+      "mappings": [
+        {
+          "scope": "rh_media",
+          "key": "source_image",
+          "node": "7",
+          "field": "image",
+          "live_present": true
+        },
+        {
+          "scope": "rh_params",
+          "key": "prompt",
+          "node": "31",
+          "field": "text",
+          "live_present": true
+        },
+        {
+          "scope": "rh_params",
+          "key": "batch",
+          "node": "71",
+          "field": "value",
+          "live_present": true
+        },
+        {
+          "scope": "rh_params",
+          "key": "seed",
+          "node": "2",
+          "field": "seed",
+          "live_present": true
+        }
+      ],
+      "all_mappings_present": true,
+      "allowed_structural_differences": [],
+      "unexpected_structural_differences": [],
+      "missing_expected_structural_differences": [],
+      "verified": true
+    },
+    {
+      "internal_id": "wan_action_stabilized",
+      "run_workflow_id": "2097924526817800193",
+      "http_status": 200,
+      "provider_code": 0,
+      "attachment_file": "动作迁移，抖动优化_api.json",
+      "node_count": 40,
+      "live_canonical_sha256": "52952dbde16d7885e06d233e39180a66b2e3fe79dcb6a6d91b692fb66126bf85",
+      "attachment_canonical_sha256": "52952dbde16d7885e06d233e39180a66b2e3fe79dcb6a6d91b692fb66126bf85",
+      "canonical_equal": true,
+      "structural_equal": true,
+      "live_structural_sha256": "aa673658fdc79a00cc785f428c8ea6fc3fb1f6342e2d2ac43b833f5ca277a283",
+      "attachment_structural_sha256": "aa673658fdc79a00cc785f428c8ea6fc3fb1f6342e2d2ac43b833f5ca277a283",
+      "scalar_difference_count": 0,
+      "scalar_difference_locations": [],
+      "structural_difference_count": 0,
+      "structural_differences": [],
+      "mappings": [
+        {
+          "scope": "rh_media",
+          "key": "reference_image",
+          "node": "1031",
+          "field": "image",
+          "live_present": true
+        },
+        {
+          "scope": "rh_media",
+          "key": "driving_video",
+          "node": "1075",
+          "field": "video",
+          "live_present": true
+        },
+        {
+          "scope": "rh_params",
+          "key": "prompt",
+          "node": "1062",
+          "field": "positive_prompt",
+          "live_present": true
+        },
+        {
+          "scope": "rh_params",
+          "key": "duration",
+          "node": "1063",
+          "field": "value",
+          "live_present": true
+        },
+        {
+          "scope": "rh_params",
+          "key": "width",
+          "node": "1049",
+          "field": "value",
+          "live_present": true
+        },
+        {
+          "scope": "rh_params",
+          "key": "height",
+          "node": "1050",
+          "field": "value",
+          "live_present": true
+        },
+        {
+          "scope": "rh_params",
+          "key": "jitter",
+          "node": "1072",
+          "field": "value",
+          "live_present": true
+        },
+        {
+          "scope": "rh_params",
+          "key": "seed",
+          "node": "1036",
+          "field": "seed",
+          "live_present": true
+        }
+      ],
+      "all_mappings_present": true,
+      "allowed_structural_differences": [],
+      "unexpected_structural_differences": [],
+      "missing_expected_structural_differences": [],
+      "verified": true
+    },
+    {
+      "internal_id": "scail2_action_replace",
+      "run_workflow_id": "2097870206308147201",
+      "http_status": 200,
+      "provider_code": 0,
+      "attachment_file": "最强动作迁移，角色替换_api.json",
+      "node_count": 61,
+      "live_canonical_sha256": "7ed58e2745fb22e5222ece2036a5ccc0c7ac517d85aef610d4bf4144930597f9",
+      "attachment_canonical_sha256": "d31088a3e51d1c5cfd61bde1d7f0a097ae3e03c846e4fa8e4eed8e81100cdca3",
+      "canonical_equal": false,
+      "structural_equal": false,
+      "live_structural_sha256": "5361d58b2baea3485f80360f0b0611392fab199e718675848cea0592f4c551bf",
+      "attachment_structural_sha256": "961118813c4b8039f11a937ba9fea5a5f43b5e8837737d574d44dbe6fc9138d4",
+      "scalar_difference_count": 0,
+      "scalar_difference_locations": [],
+      "structural_difference_count": 2,
+      "structural_differences": [
+        {
+          "node": "492",
+          "field": "Update inputs",
+          "difference": "field_missing_in_live"
+        },
+        {
+          "node": "494",
+          "field": "Update inputs",
+          "difference": "field_missing_in_live"
+        }
+      ],
+      "mappings": [
+        {
+          "scope": "rh_media",
+          "key": "reference_image",
+          "node": "360",
+          "field": "image",
+          "live_present": true
+        },
+        {
+          "scope": "rh_media",
+          "key": "reference_image_2",
+          "node": "639",
+          "field": "image",
+          "live_present": true
+        },
+        {
+          "scope": "rh_media",
+          "key": "reference_image_3",
+          "node": "643",
+          "field": "image",
+          "live_present": true
+        },
+        {
+          "scope": "rh_media",
+          "key": "reference_image_4",
+          "node": "647",
+          "field": "image",
+          "live_present": true
+        },
+        {
+          "scope": "rh_media",
+          "key": "driving_video",
+          "node": "349",
+          "field": "video",
+          "live_present": true
+        },
+        {
+          "scope": "rh_params",
+          "key": "prompt",
+          "node": "344",
+          "field": "text",
+          "live_present": true
+        },
+        {
+          "scope": "rh_params",
+          "key": "replace_target",
+          "node": "686",
+          "field": "text",
+          "live_present": true
+        },
+        {
+          "scope": "rh_params",
+          "key": "replacement_mode",
+          "node": "201",
+          "field": "value",
+          "live_present": true
+        },
+        {
+          "scope": "rh_params",
+          "key": "duration",
+          "node": "347",
+          "field": "value",
+          "live_present": true
+        },
+        {
+          "scope": "rh_params",
+          "key": "long_edge",
+          "node": "473",
+          "field": "value",
+          "live_present": true
+        },
+        {
+          "scope": "rh_params",
+          "key": "people",
+          "node": "498",
+          "field": "value",
+          "live_present": true
+        },
+        {
+          "scope": "rh_params",
+          "key": "seed",
+          "node": "479",
+          "field": "seed",
+          "live_present": true
+        }
+      ],
+      "all_mappings_present": true,
+      "allowed_structural_differences": [
+        {
+          "node": "492",
+          "field": "Update inputs",
+          "difference": "field_missing_in_live",
+          "classification": "ImageConcatMulti frontend dynamic-input refresh control"
+        },
+        {
+          "node": "494",
+          "field": "Update inputs",
+          "difference": "field_missing_in_live",
+          "classification": "ImageConcatMulti frontend dynamic-input refresh control"
+        }
+      ],
+      "unexpected_structural_differences": [],
+      "missing_expected_structural_differences": [],
+      "verified": true
+    }
+  ]
+}

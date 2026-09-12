@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 import io
 import urllib.error
-ROOT=Path(r"D:/LAN-Share/lora/_work/comfy_panel")
+ROOT = Path(__file__).resolve().parents[1]
 SCRIPT=ROOT/'tools/panel_liveness_watchdog.py'
 
 def load():

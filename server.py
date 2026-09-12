@@ -9,8 +9,8 @@ Env:
   PANEL_TOKEN required (auth)
   PANEL_DIR   default ./panel_data (jobs + images)
 """
-import json, os, re, sys, time, uuid, threading, urllib.request, urllib.parse, math
-import http.server, socketserver, pathlib, secrets, hashlib
+import json, os, re, sys, time, uuid, threading, urllib.request, urllib.parse, urllib.error, math
+import http.server, http.cookies, socketserver, pathlib, secrets, hashlib, hmac
 import socket, base64, struct, subprocess, io, gzip
 
 BASE = pathlib.Path(__file__).resolve().parent
@@ -18,16 +18,36 @@ COMFY_URL = os.environ.get("COMFY_URL", "http://127.0.0.1:8188").rstrip("/")
 CONTROL_URL = os.environ.get("CONTROL_URL", "http://127.0.0.1:8198").rstrip("/")
 PORT = int(os.environ.get("PANEL_PORT", "8189"))
 TOKEN = os.environ.get("PANEL_TOKEN", "")
+_SESSION_SECRET_SOURCE = os.environ.get("PANEL_SESSION_SECRET") or TOKEN or secrets.token_urlsafe(32)
+SESSION_SECRET = hashlib.sha256(("jt-session-signing:" + _SESSION_SECRET_SOURCE).encode("utf-8")).digest()
 DATA_DIR = pathlib.Path(os.environ.get("PANEL_DIR", str(BASE / "panel_data")))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 JOBS_DIR = DATA_DIR / "jobs"; JOBS_DIR.mkdir(exist_ok=True)
 JOBS_FILE = DATA_DIR / "jobs.json"
 FAVORITES_DIR = DATA_DIR / "favorites"; FAVORITES_DIR.mkdir(exist_ok=True)
 FAVORITES_FILE = DATA_DIR / "favorites.json"
+UPLOAD_CAPABILITIES_FILE = DATA_DIR / "upload_capabilities.json"
+UPLOAD_USAGE_FILE = DATA_DIR / "upload_usage.json"
 
 # RunningHub API 适配
 RH_BASE = "https://www.runninghub.ai/openapi/v2"
 RH_KEY = os.environ.get("RUNNINGHUB_API_KEY", "")
+
+# DreamAPI Responses image-generation adapter. The browser never sees this key
+# or controls the upstream URL/text model; only an allowlisted image model,
+# quality and fit mode can be selected through the creator endpoint.
+DREAMAPI_KEY = os.environ.get("DREAMAPI_KEY", "")
+DREAMAPI_BASE_URL = os.environ.get("DREAMAPI_BASE_URL", "https://dreamapi.club").rstrip("/")
+DREAMAPI_TEXT_MODEL = "gpt-5.6-sol"
+DREAMAPI_TIMEOUT = 600
+DREAMAPI_MAX_RESPONSE_BYTES = 96 * 1024 * 1024
+DREAMAPI_MAX_IMAGE_BYTES = 32 * 1024 * 1024
+DREAMAPI_MAX_SOURCE_PIXELS = 32 * 1024 * 1024
+DREAMAPI_IMAGE_QUALITIES = {
+    "gpt-image-2": {"low", "medium", "high", "auto"},
+    "gpt-image-2.5-flare": {"low", "medium", "high", "xhigh", "max", "auto"},
+    "gpt-image-2.5-sunburst": {"low", "medium", "high", "xhigh", "max", "auto"},
+}
 RH_TIMEOUT_SUBMIT = 60
 RH_TIMEOUT_QUERY = 30
 RH_SUBMIT_HARD_TIMEOUT = 120  # wall-clock cap for the whole submit (all retries)
@@ -54,6 +74,15 @@ MAX_LARGE_REQUESTS = 2
 LARGE_REQUEST_THRESHOLD = 1024 * 1024
 REALISM_HISTORY_LIMIT = 50
 MAX_FAVORITES = 200
+UPLOAD_CAPABILITY_TTL = 24 * 60 * 60
+MAX_UPLOAD_CAPABILITIES = 2000
+UPLOAD_SESSION_HOURLY_LIMIT = 20
+UPLOAD_GLOBAL_HOURLY_LIMIT = 100
+UPLOAD_SESSION_HOURLY_BYTES = 500 * 1024 * 1024
+UPLOAD_GLOBAL_HOURLY_BYTES = 2 * 1024 * 1024 * 1024
+BILLABLE_GLOBAL_HOURLY_LIMIT = 10
+BILLABLE_GLOBAL_DAILY_LIMIT = 30
+BILLABLE_SESSION_HOURLY_LIMIT = 4
 # V2 query exposes only real task states, not a stable percentage. Keep these
 # conservative and fixed; never manufacture progress from elapsed/poll count.
 RH_STAGE_PROGRESS = {"QUEUED": 0.02, "RUNNING": 0.10}
@@ -177,8 +206,11 @@ RETIRED_SEQUENCE_MODES = {"sketch3", "sketch4"}
 # Cloud and local image generation have independent resources. Keep each
 # backend serial, but allow one RunningHub job and one local-ComfyUI job to run
 # at the same time. Video jobs are async cloud tasks and may run concurrently.
-_submit_locks = {"cloud": threading.Lock(), "local": threading.Lock(), "video": threading.Lock()}
-VIDEO_MAX_CONCURRENT = 3   # max simultaneous RH video tasks (RH queues the rest)
+_submit_locks = {
+    "cloud": threading.Lock(), "local": threading.Lock(), "api": threading.Lock(),
+    "video": threading.Lock(),
+}
+VIDEO_MAX_CONCURRENT = 2   # live RunningHub personal API limit verified by code 421
 _jobs = {}                        # job_id -> job dict
 _lock_jobs = threading.Lock()
 _LORA_CACHE = {"t": 0.0, "list": []}
@@ -187,6 +219,12 @@ _favorites = {}
 _archive_locks = {}
 _archive_locks_guard = threading.Lock()
 _favorite_operation_lock = threading.Lock()
+_upload_capabilities = {}
+_upload_capabilities_lock = threading.Lock()
+_upload_usage = []
+_upload_usage_lock = threading.Lock()
+_billable_quota_lock = threading.Lock()
+_idempotency_lock = threading.Lock()
 
 # ---------- minimal WebSocket client (stdlib only) for real sampling progress ----------
 def _ws_connect(host, port, path):
@@ -257,11 +295,48 @@ def _ws_loop():
 
 threading.Thread(target=_ws_loop, daemon=True).start()
 
+
+def _ascii_remote_url(url):
+    """Return an urllib-safe ASCII form without changing URL semantics."""
+    parsed = urllib.parse.urlsplit(str(url or ""))
+    if (parsed.scheme.lower() not in ("http", "https") or not parsed.netloc
+            or parsed.username is not None or parsed.password is not None):
+        return "", None
+    try:
+        hostname = (parsed.hostname or "").encode("idna").decode("ascii")
+    except UnicodeError:
+        return "", None
+    host = f"[{hostname}]" if ":" in hostname and not hostname.startswith("[") else hostname
+    if parsed.port is not None:
+        host += f":{parsed.port}"
+    raw_name = pathlib.PurePosixPath(parsed.path).name
+    display_name = pathlib.PurePosixPath(urllib.parse.unquote(raw_name)).name
+    path = urllib.parse.quote(parsed.path, safe="/%:@!$&'()*+,;=-._~")
+    query = urllib.parse.quote(parsed.query, safe="=&%/:?@!$'()*+,;~-._")
+    fragment = urllib.parse.quote(parsed.fragment, safe="=&%/:?@!$'()*+,;~-._")
+    return urllib.parse.urlunsplit((parsed.scheme.lower(), host, path, query, fragment)), display_name
+
+
 def load_jobs():
     global _jobs
     if JOBS_FILE.exists():
         try: _jobs = json.loads(JOBS_FILE.read_text(encoding="utf-8"))
         except Exception: _jobs = {}
+    # Normalize legacy provider URLs before the browser or urllib uses them.
+    # This migration is local-only and never submits or polls a provider task.
+    for j in _jobs.values():
+        for image in j.get("images") or []:
+            if not isinstance(image, dict) or not image.get("remote"):
+                continue
+            for key in ("url", "preview_url"):
+                value = image.get(key)
+                if not isinstance(value, str) or not value:
+                    continue
+                normalized, display_name = _ascii_remote_url(value)
+                if normalized:
+                    image[key] = normalized
+                    if key == "url" and display_name:
+                        image["file"] = display_name
     # Cloud jobs with a provider task id are resumable without another submit.
     for j in _jobs.values():
         if j.get("status") == "running":
@@ -294,11 +369,219 @@ def load_favorites():
     if FAVORITES_FILE.exists():
         try: _favorites = json.loads(FAVORITES_FILE.read_text(encoding="utf-8"))
         except Exception: _favorites = {}
+    changed = False
+    for item in _favorites.values():
+        if isinstance(item, dict) and "selection_snapshot" in item:
+            clean = public_selection_snapshot(item.get("selection_snapshot"))
+            if clean != item.get("selection_snapshot"):
+                item["selection_snapshot"] = clean
+                changed = True
+    if changed:
+        save_favorites()
+
+
+def public_favorite(item):
+    result = dict(item) if isinstance(item, dict) else {}
+    result["selection_snapshot"] = public_selection_snapshot(result.get("selection_snapshot"))
+    for private_key in ("provider_media", "image_path", "original_url"):
+        result.pop(private_key, None)
+    return result
 
 def save_favorites():
     tmp = FAVORITES_FILE.with_suffix(".tmp")
     tmp.write_text(json.dumps(_favorites, ensure_ascii=False, indent=1), encoding="utf-8")
     tmp.replace(FAVORITES_FILE)
+
+
+def _upload_token_hash(value):
+    return hashlib.sha256(str(value or "").encode("utf-8")).hexdigest()
+
+
+def _encode_session_cookie(session_id):
+    session_id = str(session_id or "")
+    if not re.fullmatch(r"[A-Za-z0-9_-]{20,100}", session_id):
+        raise ValueError("invalid session id")
+    signature = base64.urlsafe_b64encode(
+        hmac.new(SESSION_SECRET, session_id.encode("ascii"), hashlib.sha256).digest()
+    ).decode("ascii").rstrip("=")
+    return session_id + "." + signature
+
+
+def _decode_session_cookie(value):
+    value = str(value or "")
+    try:
+        session_id, signature = value.rsplit(".", 1)
+    except ValueError:
+        return ""
+    if (not re.fullmatch(r"[A-Za-z0-9_-]{20,100}", session_id)
+            or not re.fullmatch(r"[A-Za-z0-9_-]{43}", signature)):
+        return ""
+    expected = _encode_session_cookie(session_id).rsplit(".", 1)[1]
+    return session_id if hmac.compare_digest(signature, expected) else ""
+
+
+def session_owns_record(session_id, record, owner_key="request_session_hash"):
+    expected = str((record or {}).get(owner_key) or "")
+    return bool(session_id and expected and hmac.compare_digest(expected, _session_hash(session_id)))
+
+
+def _session_hash(value):
+    return hashlib.sha256(("jt-session:" + str(value or "")).encode("utf-8")).hexdigest()
+
+
+def load_upload_capabilities():
+    global _upload_capabilities
+    if UPLOAD_CAPABILITIES_FILE.exists():
+        try:
+            loaded = json.loads(UPLOAD_CAPABILITIES_FILE.read_text(encoding="utf-8"))
+            _upload_capabilities = loaded if isinstance(loaded, dict) else {}
+        except Exception:
+            _upload_capabilities = {}
+    prune_upload_capabilities(save=False)
+
+
+def load_upload_usage():
+    global _upload_usage
+    if UPLOAD_USAGE_FILE.exists():
+        try:
+            loaded = json.loads(UPLOAD_USAGE_FILE.read_text(encoding="utf-8"))
+            _upload_usage = loaded if isinstance(loaded, list) else []
+        except Exception:
+            _upload_usage = []
+    prune_upload_usage(save=False)
+
+
+def save_upload_usage():
+    tmp = UPLOAD_USAGE_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(_upload_usage, ensure_ascii=False, indent=1), encoding="utf-8")
+    tmp.replace(UPLOAD_USAGE_FILE)
+
+
+def prune_upload_usage(now=None, save=True):
+    now = time.time() if now is None else float(now)
+    cutoff = now - 3600
+    _upload_usage[:] = [
+        row for row in _upload_usage
+        if isinstance(row, dict) and float(row.get("created", 0)) > cutoff
+        and int(row.get("bytes", 0)) >= 0
+    ]
+    if save:
+        save_upload_usage()
+
+
+def reserve_upload_attempt(session_id, byte_count, now=None):
+    """Atomically account one validated provider upload before network I/O."""
+    now = time.time() if now is None else float(now)
+    byte_count = int(byte_count)
+    if byte_count < 1:
+        raise ValueError("empty upload")
+    digest = _session_hash(session_id)
+    with _upload_usage_lock:
+        prune_upload_usage(now=now, save=False)
+        session_rows = [row for row in _upload_usage if row.get("session_hash") == digest]
+        checks = (
+            ("session_hour", len(session_rows), UPLOAD_SESSION_HOURLY_LIMIT),
+            ("session_bytes", sum(int(row["bytes"]) for row in session_rows), UPLOAD_SESSION_HOURLY_BYTES - byte_count + 1),
+            ("global_hour", len(_upload_usage), UPLOAD_GLOBAL_HOURLY_LIMIT),
+            ("global_bytes", sum(int(row["bytes"]) for row in _upload_usage), UPLOAD_GLOBAL_HOURLY_BYTES - byte_count + 1),
+        )
+        for scope, used, limit in checks:
+            if used >= limit:
+                rows = session_rows if scope.startswith("session") else _upload_usage
+                oldest = min((float(row.get("created", now)) for row in rows), default=now)
+                return {"blocked": True, "scope": scope,
+                        "retry_after": max(1, math.ceil(oldest + 3600 - now))}
+        _upload_usage.append({"created": now, "bytes": byte_count, "session_hash": digest})
+        save_upload_usage()
+    return None
+
+
+def save_upload_capabilities():
+    tmp = UPLOAD_CAPABILITIES_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(_upload_capabilities, ensure_ascii=False, indent=1), encoding="utf-8")
+    tmp.replace(UPLOAD_CAPABILITIES_FILE)
+
+
+def prune_upload_capabilities(save=True):
+    now = time.time()
+    stale = [key for key, row in _upload_capabilities.items()
+             if not isinstance(row, dict) or float(row.get("expires", 0)) <= now]
+    for key in stale:
+        _upload_capabilities.pop(key, None)
+    if len(_upload_capabilities) > MAX_UPLOAD_CAPABILITIES:
+        ordered = sorted(_upload_capabilities,
+                         key=lambda key: float(_upload_capabilities[key].get("created", 0)))
+        for key in ordered[:len(_upload_capabilities) - MAX_UPLOAD_CAPABILITIES]:
+            _upload_capabilities.pop(key, None)
+    if save:
+        save_upload_capabilities()
+
+
+def issue_upload_capability(provider_name, workflow_id, input_key, media_type,
+                            original_filename, session_id):
+    token = "upl_" + secrets.token_urlsafe(32)
+    now = time.time()
+    row = {
+        "provider_name": str(provider_name), "workflow": str(workflow_id),
+        "input_key": str(input_key), "media_type": str(media_type).lower(),
+        "filename": str(original_filename), "session_hash": _session_hash(session_id),
+        "created": now, "expires": now + UPLOAD_CAPABILITY_TTL,
+    }
+    with _upload_capabilities_lock:
+        _upload_capabilities[_upload_token_hash(token)] = row
+        prune_upload_capabilities(save=True)
+    return token
+
+
+def resolve_upload_capabilities(workflow, submitted_media, session_id):
+    if not isinstance(submitted_media, dict):
+        raise ValueError("media must be an object")
+    provider_media, public_media = {}, {}
+    now = time.time()
+    with _upload_capabilities_lock:
+        for key, mapping in (workflow.get("rh_media") or {}).items():
+            token = submitted_media.get(key)
+            if token in (None, ""):
+                if mapping.get("required"):
+                    label = str(mapping.get("label") or key)
+                    raise ValueError(f"missing upload for input {key} ({label})")
+                continue
+            token = str(token)
+            if not re.fullmatch(r"upl_[A-Za-z0-9_-]{30,100}", token):
+                raise ValueError("upload token invalid")
+            row = _upload_capabilities.get(_upload_token_hash(token))
+            if not isinstance(row, dict) or float(row.get("expires", 0)) <= now:
+                raise ValueError("upload token invalid or expired")
+            if not secrets.compare_digest(str(row.get("session_hash") or ""), _session_hash(session_id)):
+                raise ValueError("upload session mismatch")
+            if row.get("workflow") != workflow.get("id"):
+                raise ValueError("upload workflow mismatch")
+            if row.get("input_key") != key:
+                raise ValueError("upload input mismatch")
+            expected_type = str(mapping.get("type") or "").lower()
+            if row.get("media_type") != expected_type:
+                raise ValueError("upload media type mismatch")
+            provider_media[key] = str(row["provider_name"])
+            public_media[key] = str(row.get("filename") or "uploaded")[:255]
+    return provider_media, public_media
+
+
+def upload_bound_snapshot(workflow, public_media, trusted_params, raw_snapshot, source_page):
+    raw = raw_snapshot if isinstance(raw_snapshot, dict) else {}
+    raw_names = raw.get("media_names") if isinstance(raw.get("media_names"), dict) else {}
+    names = {}
+    for key, fallback_name in public_media.items():
+        candidate = raw_names.get(key) or fallback_name
+        name = re.split(r"[\\/]", str(candidate or ""))[-1].strip()
+        if name and re.fullmatch(r"[^\x00-\x1f\x7f]{1,255}", name):
+            names[key] = name
+    return {
+        "source_page": source_page,
+        "workflow": workflow["id"],
+        "params": _json_safe_integer_metadata(dict(trusted_params)),
+        "media": {},
+        "media_names": names,
+    }
 
 
 def prune_favorites():
@@ -373,9 +656,9 @@ def download_file_resilient(url, dest, timeout=900):
         raise RuntimeError("downloaded result is empty")
     with part.open("rb") as f:
         magic = f.read(16)
-    if not image_content_type(magic, dest.name):
+    if not downloaded_media_content_type(magic, dest.name):
         part.unlink(missing_ok=True)
-        raise RuntimeError("downloaded result is not a supported image")
+        raise RuntimeError("downloaded result is not a supported media file")
     part.replace(dest)
     return dest.stat().st_size
 
@@ -557,14 +840,74 @@ def archive_local_originals(job):
     with _lock_jobs:
         save_jobs()
 
-def existing_job_for_request(client_request_id, generation_backend):
-    """Return a previously accepted job for an idempotent browser submit."""
-    if not client_request_id:
-        return None
+def billable_quota_status(session_id, now=None):
+    now = time.time() if now is None else float(now)
+    hour_start, day_start = now - 3600, now - 86400
+    session_digest = _session_hash(session_id)
     with _lock_jobs:
-        return next((j for j in _jobs.values()
-                     if j.get("client_request_id") == client_request_id
-                     and j.get("generation_backend", "cloud") == generation_backend), None)
+        billable = [job for job in _jobs.values()
+                    if job.get("billable_quota_recorded") is True
+                    and job.get("generation_backend") in ("cloud", "api")
+                    and isinstance(job.get("created"), (int, float))]
+        global_hour = sum(1 for job in billable if job["created"] >= hour_start)
+        global_day = sum(1 for job in billable if job["created"] >= day_start)
+        session_hour = sum(1 for job in billable
+                           if job["created"] >= hour_start
+                           and secrets.compare_digest(str(job.get("quota_session_hash") or ""), session_digest))
+    retry_after = max(1, int(3600 - (now % 3600)))
+    return {
+        "global_hour": global_hour, "global_day": global_day,
+        "session_hour": session_hour,
+        "blocked": (global_hour >= BILLABLE_GLOBAL_HOURLY_LIMIT
+                    or global_day >= BILLABLE_GLOBAL_DAILY_LIMIT
+                    or session_hour >= BILLABLE_SESSION_HOURLY_LIMIT),
+        "retry_after": retry_after,
+    }
+
+
+def register_billable_job(job, session_id):
+    """Atomically enforce public spend limits and persist one accepted paid job."""
+    with _billable_quota_lock:
+        status = billable_quota_status(session_id)
+        if status["blocked"]:
+            return status
+        job["quota_session_hash"] = _session_hash(session_id)
+        job["billable_quota_recorded"] = True
+        with _lock_jobs:
+            _jobs[job["id"]] = job
+            save_jobs()
+    return None
+
+
+def normalize_client_request_id(value):
+    text = str(value or "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9._:-]{1,96}", text):
+        raise ValueError("client_request_id must be 1-96 safe characters")
+    return text
+
+
+def effective_request_sha256(payload):
+    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True,
+                     separators=(",", ":"), allow_nan=False).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
+def idempotency_decision(client_request_id, session_id, request_sha256):
+    """Return (new|duplicate|conflict, job, session_hash) for one caller."""
+    session_hash = _session_hash(session_id)
+    if not client_request_id or not re.fullmatch(r"[0-9a-f]{64}", str(request_sha256 or "")):
+        raise ValueError("invalid idempotency binding")
+    with _lock_jobs:
+        matches = [
+            job for job in _jobs.values()
+            if job.get("client_request_id") == client_request_id
+            and secrets.compare_digest(str(job.get("request_session_hash") or ""), session_hash)
+        ]
+    if not matches:
+        return "new", None, session_hash
+    duplicate = next((job for job in matches
+                      if secrets.compare_digest(str(job.get("effective_request_sha256") or ""), request_sha256)), None)
+    return ("duplicate", duplicate, session_hash) if duplicate else ("conflict", matches[0], session_hash)
 
 
 def _json_safe_integer_metadata(value):
@@ -587,17 +930,22 @@ def public_workflow(w):
                    "placeholder", "max_length", "options", "min", "max", "step", "allow_blank", "depends_on"}
         return {key: {name: value for name, value in mapping.items() if name in allowed}
                 for key, mapping in (rows or {}).items()}
+    description = str(w.get("desc") or "")
+    description = re.sub(r"(?:人物|画风)?LoRA(?:\([^)]*\))?", "服务端可信画风配置", description,
+                         flags=re.IGNORECASE)
+    description = re.sub(r"触发词\s+[^\s·,，()（）]+", "", description)
+    description = re.sub(r"[^\s·,，()（）]+\.safetensors", "服务端可信模型", description)
+    description = re.sub(r"(?:·\s*){2,}", "· ", description).strip(" ·")
     result = {
-        "id": w["id"], "name": w["name"], "desc": w["desc"],
+        "id": w["id"], "name": w["name"], "desc": description,
+        "section": w.get("section", "其他"),
         "speed": w.get("speed", "—"), "ref": w.get("ref", "—"),
         "prompt_default": w.get("prompt_default", ""),
         "size_mode": w.get("size_mode", "native"),
         "size_presets": w.get("size_presets", []),
         "batch_max": w.get("batch_max", 1), "hd": w.get("hd", []),
-        "needs_ollama": w.get("needs_ollama", False),
-        "loras": w.get("loras", []), "trigger_default": w.get("trigger_default"),
         "translate_default": w.get("translate_default", True),
-        "backend": w.get("backend"), "kind": w.get("kind", "image"),
+        "kind": w.get("kind", "image"),
         "rh_media": public_controls(w.get("rh_media", {})),
         "rh_params": public_controls(w.get("rh_params", {})),
         "params_defaults": w.get("params_defaults", {}),
@@ -650,6 +998,52 @@ def normalize_realism_snapshot(w, trusted_media, trusted_params, snapshot):
         "params": _json_safe_integer_metadata(dict(trusted_params)),
         "media": dict(trusted_media),
         "media_names": media_names,
+    }
+
+
+def public_job_media(media):
+    result = {}
+    if not isinstance(media, dict):
+        return result
+    for key, value in media.items():
+        text = str(value or "").strip()
+        if (not text or text.startswith(("api/", "upl_"))
+                or "/" in text or "\\" in text
+                or re.search(r"[\x00-\x1f\x7f]", text)):
+            continue
+        result[str(key)[:100]] = text[:255]
+    return result
+
+
+def public_job_error(job):
+    error = str((job or {}).get("error") or "").strip()
+    if not error:
+        return None
+    job_id = str((job or {}).get("id") or "unknown")[:64]
+    backend = str((job or {}).get("generation_backend") or "cloud")
+    if backend == "local":
+        return f"本地任务失败；请使用面板任务号 {job_id} 联系维护人员"
+    if backend == "api":
+        return f"API任务失败；请使用面板任务号 {job_id} 联系维护人员"
+    return f"云端任务失败；请使用面板任务号 {job_id} 联系维护人员"
+
+
+def public_selection_snapshot(snapshot):
+    """Return replay-safe metadata; provider assets and upload tokens never leave the server."""
+    raw = snapshot if isinstance(snapshot, dict) else {}
+    names = raw.get("media_names") if isinstance(raw.get("media_names"), dict) else {}
+    clean_names = {}
+    for key, value in names.items():
+        name = re.split(r"[\\/]", str(value or ""))[-1].strip()
+        if name and re.fullmatch(r"[^\x00-\x1f\x7f]{1,255}", name):
+            clean_names[str(key)[:100]] = name
+    return {
+        "source_page": str(raw.get("source_page") or "")[:40],
+        "workflow": str(raw.get("workflow") or "")[:100],
+        "params": _json_safe_integer_metadata(
+            dict(raw.get("params")) if isinstance(raw.get("params"), dict) else {}),
+        "media": {},
+        "media_names": clean_names,
     }
 
 
@@ -1046,8 +1440,10 @@ def _rh_wait_task(job, task_id, deadline, progress_base=0, progress_span=100):
         time.sleep(8)
     raise RuntimeError("RH task timeout")
 
-def _rh_results_to_images(results, task_id, stage_id=None, stage_label=None):
+
+def _rh_results_to_images(results, task_id, stage_id=None, stage_label=None, result_labels=None):
     images = []
+    labels = result_labels if isinstance(result_labels, list) else []
     for idx, im in enumerate(results, 1):
         url = im.get("url") or im.get("fileUrl") or ""
         if not url:
@@ -1058,14 +1454,22 @@ def _rh_results_to_images(results, task_id, stage_id=None, stage_label=None):
         if (parsed.scheme.lower() not in ("http", "https") or not parsed.netloc
                 or parsed.username is not None or parsed.password is not None):
             continue
+        url, display_name = _ascii_remote_url(url)
+        if not url:
+            continue
+        parsed = urllib.parse.urlsplit(url)
+        raw_type = str(im.get("file_type") or im.get("fileType") or im.get("outputType") or im.get("output_type") or im.get("type") or im.get("mimeType") or "").lower()
+        suffix = pathlib.PurePosixPath(parsed.path).suffix.lower()
+        is_image = raw_type.startswith("image/") or raw_type in {"png", "jpg", "jpeg", "webp", "gif", "avif"} or suffix in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".avif"}
         images.append({
             "url": url,
-            "preview_url": url + ("&" if "?" in url else "?") + "imageMogr2/thumbnail/640x640",
+            "preview_url": url + (("&" if "?" in url else "?") + "imageMogr2/thumbnail/640x640" if is_image else ""),
+            "file_type": raw_type or suffix.lstrip(".") or "unknown",
             "remote": True,
-            "file": pathlib.PurePosixPath(urllib.parse.urlparse(url).path).name or f"rh_{task_id}_{idx}.png",
+            "file": display_name or pathlib.PurePosixPath(urllib.parse.unquote(parsed.path)).name or f"rh_{task_id}_{idx}.png",
             "size": None,
             "stage_id": stage_id,
-            "stage_label": stage_label,
+            "stage_label": labels[idx - 1] if idx <= len(labels) else stage_label,
         })
     return images
 
@@ -1079,11 +1483,71 @@ def image_content_type(data, filename=""):
         return "image/webp"
     return None
 
+
+def downloaded_media_content_type(data, filename=""):
+    image = image_content_type(data, filename)
+    if image:
+        return image
+    suffix = pathlib.Path(str(filename or "")).suffix.lower()
+    if len(data) >= 12 and data[4:8] == b"ftyp" and suffix in {".mp4", ".mov"}:
+        return "video/quicktime" if suffix == ".mov" else "video/mp4"
+    if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"AVI " and suffix == ".avi":
+        return "video/x-msvideo"
+    if data[:4] == b"\x1aE\xdf\xa3" and suffix in {".mkv", ".webm"}:
+        return "video/webm" if suffix == ".webm" else "video/x-matroska"
+    return None
+
+
+def _safe_upload_filename(value):
+    value = str(value or "")
+    if (not value or len(value) > 255 or value in (".", "..")
+            or pathlib.PurePath(value).name != value
+            or "/" in value or "\\" in value
+            or re.search(r"[\x00-\x1f\x7f\"']", value)):
+        raise ValueError("unsafe upload filename")
+    return value
+
+
+def upload_media_content_type(data, filename, expected_type):
+    """Validate media by magic/container bytes and require a matching suffix."""
+    filename = _safe_upload_filename(filename)
+    suffix = pathlib.Path(filename).suffix.lower()
+    expected_type = str(expected_type or "").lower()
+    if expected_type == "image":
+        ctype = image_content_type(data, filename)
+        allowed = {
+            "image/png": {".png"}, "image/jpeg": {".jpg", ".jpeg"},
+            "image/webp": {".webp"},
+        }
+        if not ctype or suffix not in allowed[ctype]:
+            raise ValueError("invalid image media or extension")
+        return ctype
+    if expected_type != "video":
+        raise ValueError("unsupported upload media type")
+    if len(data) >= 12 and data[4:8] == b"ftyp" and suffix in {".mp4", ".mov"}:
+        return "video/quicktime" if suffix == ".mov" else "video/mp4"
+    if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"AVI " and suffix == ".avi":
+        return "video/x-msvideo"
+    if data[:4] == b"\x1aE\xdf\xa3" and suffix in {".mkv", ".webm"}:
+        return "video/webm" if suffix == ".webm" else "video/x-matroska"
+    raise ValueError("invalid video media or extension")
+
+
+def validate_workflow_upload(workflow, input_key, filename, raw):
+    mapping = (workflow.get("rh_media") or {}).get(str(input_key or ""))
+    if not mapping:
+        raise ValueError("unknown upload input")
+    safe_name = _safe_upload_filename(filename)
+    media_type = str(mapping.get("type") or "").lower()
+    ctype = upload_media_content_type(raw, safe_name, media_type)
+    return safe_name, ctype, media_type
+
+
 def rh_build_ai_app_node_info(job, w):
     """Build only public editable fields from the trusted server config."""
     nodes = []
     for key, mapping in (w.get("rh_media") or {}).items():
-        value = (job.get("media") or {}).get(key)
+        value = (job.get("provider_media") or {}).get(key)
         if value:
             nodes.append({"nodeId": str(mapping["node"]), "fieldName": mapping["field"], "fieldValue": value})
     for key, mapping in (w.get("rh_params") or {}).items():
@@ -1203,7 +1667,7 @@ def rh_build_generic_node_info(job, w):
     """Serialize every declared generic control, including explicit false/0."""
     nodes = []
     for key, mapping in (w.get("rh_media") or {}).items():
-        value = (job.get("media") or {}).get(key)
+        value = (job.get("provider_media") or {}).get(key)
         if value not in (None, ""):
             nodes.append({"nodeId": str(mapping["node"]),
                           "fieldName": mapping["field"], "fieldValue": value})
@@ -1251,7 +1715,9 @@ def resume_cloud_job(job):
         raise RuntimeError("recovering cloud job has no provider task id")
     try:
         results = _rh_wait_task(job, task_id, time.time() + 2400, 12, 88)
-        images = _rh_results_to_images(results, task_id)
+        workflow = WORKFLOWS.get(job.get("workflow")) or {}
+        images = _rh_results_to_images(
+            results, task_id, result_labels=workflow.get("rh_result_labels"))
         if not images:
             raise RuntimeError("recovered task returned no downloadable result")
         job.update({"images": images, "status": "done", "provider_status": "DONE",
@@ -1320,6 +1786,211 @@ def rh_run(job, jobdir, w):
             return images
     raise RuntimeError("RH task timeout")
 
+
+def _bounded_request_int(value, default=0, max_digits=20):
+    """Parse a small HTTP integer without constructing attacker-sized Python ints."""
+    if value in (None, ""):
+        return int(default)
+    if isinstance(value, bool) or isinstance(value, (dict, list, tuple)):
+        raise ValueError("invalid integer")
+    if isinstance(value, int):
+        if abs(value).bit_length() > 64:
+            raise ValueError("integer too large")
+        return value
+    if isinstance(value, float):
+        if not math.isfinite(value) or not value.is_integer() or abs(value) > 2**63 - 1:
+            raise ValueError("invalid integer")
+        return int(value)
+    text = str(value).strip()
+    if len(text) > max_digits + 1 or not re.fullmatch(r"[+-]?\d+", text):
+        raise ValueError("invalid integer")
+    return int(text, 10)
+
+
+def _dreamapi_size(width, height):
+    width = _bounded_request_int(width)
+    height = _bounded_request_int(height)
+    if width <= 0 or height <= 0:
+        raise ValueError("API width and height must be positive")
+    pixels = width * height
+    ratio = max(width, height) / min(width, height)
+    if width % 16 or height % 16:
+        raise ValueError("API width and height must be multiples of 16")
+    if width > 3840 or height > 3840 or ratio > 3:
+        raise ValueError("API size is outside the supported dimensions")
+    if not 655360 <= pixels <= 8294400:
+        raise ValueError("API total pixels are outside the supported range")
+    return f"{width}x{height}"
+
+
+def _dreamapi_redact_error(detail):
+    detail = str(detail or "upstream error")
+    if DREAMAPI_KEY:
+        detail = detail.replace(DREAMAPI_KEY, "[REDACTED]")
+    detail = re.sub(r"(?i)(bearer\s+)[A-Za-z0-9._~+/=-]{8,}", r"\1[REDACTED]", detail)
+    detail = re.sub(r"(?i)((?:api[_ -]?key|token|secret)\s*[:=]?\s*)[A-Za-z0-9._~+/=-]{8,}", r"\1[REDACTED]", detail)
+    return re.sub(r"[\x00-\x1f\x7f]+", " ", detail).strip()[:500]
+
+
+def _dreamapi_read_json(response):
+    chunks, total = [], 0
+    while True:
+        chunk = response.read(65536)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > DREAMAPI_MAX_RESPONSE_BYTES:
+            raise RuntimeError("DreamAPI response is too large")
+        chunks.append(chunk)
+    try:
+        return json.loads(b"".join(chunks).decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise RuntimeError("DreamAPI returned malformed response") from error
+
+
+def _dreamapi_request_json(request, data, timeout):
+    """Bound connect plus the complete response body by one wall-clock deadline."""
+    box = {}
+
+    def worker():
+        try:
+            with _urlopen_bounded(request, data, timeout) as response:
+                box["result"] = _dreamapi_read_json(response)
+        except urllib.error.HTTPError as error:
+            raw = error.read(8192)
+            try:
+                body = json.loads(raw.decode("utf-8", "replace"))
+                detail = str((body.get("error") or {}).get("message") or body.get("message") or error.reason)
+            except Exception:
+                detail = str(error.reason or "upstream error")
+            box["error"] = RuntimeError(
+                f"DreamAPI HTTP {error.code}: {_dreamapi_redact_error(detail)}"
+            )
+        except Exception as error:
+            box["error"] = error
+
+    thread = threading.Thread(target=worker, daemon=True)
+    thread.start()
+    thread.join(timeout)
+    if thread.is_alive():
+        raise TimeoutError(f"DreamAPI hard timeout after {timeout}s")
+    if "error" in box:
+        raise box["error"]
+    if "result" not in box:
+        raise RuntimeError("DreamAPI request ended without a response")
+    return box["result"]
+
+
+def dreamapi_run_image(job, jobdir):
+    """Generate one image with DreamAPI Responses and archive an exact-size PNG."""
+    if not DREAMAPI_KEY:
+        raise RuntimeError("DREAMAPI_KEY is not configured")
+    model = str(job.get("api_model") or "gpt-image-2.5-flare")
+    quality = str(job.get("api_quality") or "medium")
+    fit = str(job.get("api_fit") or "cover")
+    if model not in DREAMAPI_IMAGE_QUALITIES:
+        raise ValueError("unknown DreamAPI image model")
+    if quality not in DREAMAPI_IMAGE_QUALITIES[model]:
+        raise ValueError("quality is not supported by the DreamAPI image model")
+    if fit not in {"cover", "contain"}:
+        raise ValueError("unknown DreamAPI fit mode")
+    size = _dreamapi_size(job["width"], job["height"])
+    prompt = str(job.get("prompt") or "").strip()
+    negative = str(job.get("negative_prompt") or "").strip()
+    orientation = "square" if job["width"] == job["height"] else (
+        "landscape" if job["width"] > job["height"] else "portrait")
+    bridged = [
+        f"Required canvas: exactly {size}, {orientation} composition.",
+        "Keep the important subject inside the center safe area so a final crop will not cut it off.",
+        prompt,
+    ]
+    if negative:
+        bridged.append("Avoid: " + negative)
+    payload = {
+        "model": DREAMAPI_TEXT_MODEL,
+        "input": "\n".join(bridged),
+        "stream": False,
+        "tools": [{
+            "type": "image_generation", "action": "generate", "model": model,
+            "size": size, "quality": quality,
+        }],
+    }
+    request = urllib.request.Request(
+        DREAMAPI_BASE_URL + "/responses",
+        headers={"Authorization": f"Bearer {DREAMAPI_KEY}", "Content-Type": "application/json"},
+        method="POST",
+    )
+    job["provider_status"] = "API_GENERATING"
+    job["provider_started"] = time.time()
+    result = _dreamapi_request_json(
+        request, json.dumps(payload).encode("utf-8"), DREAMAPI_TIMEOUT
+    )
+    if not isinstance(result, dict) or not isinstance(result.get("output"), list):
+        raise RuntimeError("DreamAPI returned malformed response")
+    if any(not isinstance(item, dict) for item in result["output"]):
+        raise RuntimeError("DreamAPI returned malformed response")
+    image_item = next((item for item in result["output"]
+                       if isinstance(item, dict)
+                       and item.get("type") == "image_generation_call"
+                       and isinstance(item.get("result"), str) and item.get("result")), None)
+    if not image_item:
+        raise RuntimeError("DreamAPI returned no completed image")
+    encoded = image_item["result"]
+    if len(encoded) > ((DREAMAPI_MAX_IMAGE_BYTES + 2) // 3) * 4 + 4:
+        raise RuntimeError("DreamAPI image data is too large")
+    try:
+        source = base64.b64decode(encoded, validate=True)
+    except Exception as error:
+        raise RuntimeError("DreamAPI returned invalid image data") from error
+    if len(source) > DREAMAPI_MAX_IMAGE_BYTES:
+        raise RuntimeError("DreamAPI image data is too large")
+    from PIL import Image, ImageOps, UnidentifiedImageError
+    try:
+        opened = Image.open(io.BytesIO(source))
+    except (UnidentifiedImageError, OSError) as error:
+        raise RuntimeError("DreamAPI returned undecodable image data") from error
+    with opened as decoded:
+        if decoded.width <= 0 or decoded.height <= 0 or decoded.width * decoded.height > DREAMAPI_MAX_SOURCE_PIXELS:
+            raise RuntimeError("DreamAPI source image dimensions are too large")
+        if decoded.format not in {"PNG", "JPEG", "WEBP"}:
+            raise RuntimeError("DreamAPI returned unsupported image format")
+        try:
+            decoded.load()
+        except Exception as error:
+            raise RuntimeError("DreamAPI returned invalid image data") from error
+        source_size = f"{decoded.width}x{decoded.height}"
+        converted = decoded.convert("RGB")
+        target = (int(job["width"]), int(job["height"]))
+        if fit == "cover":
+            output = ImageOps.fit(converted, target, method=Image.Resampling.LANCZOS,
+                                  centering=(0.5, 0.5))
+        else:
+            output = ImageOps.contain(converted, target, method=Image.Resampling.LANCZOS)
+            canvas = Image.new("RGB", target, "white")
+            canvas.paste(output, ((target[0] - output.width) // 2, (target[1] - output.height) // 2))
+            output = canvas
+        jobdir = pathlib.Path(jobdir)
+        jobdir.mkdir(parents=True, exist_ok=True)
+        filename = "dreamapi.png"
+        destination = jobdir / filename
+        output.save(destination, "PNG", optimize=True)
+    job.update({
+        "api_response_id": str(result.get("id") or ""),
+        "api_upstream_model": str(image_item.get("model") or "unknown"),
+        "api_upstream_quality": str(image_item.get("quality") or "unknown"),
+        "api_upstream_size": str(image_item.get("size") or "unknown"),
+        "provider_finished": time.time(), "download_finished": time.time(),
+        "provider_status": "API_DONE", "progress_pct": 100,
+        "images": [{
+            "url": f"/api/image/{job['id']}/{filename}",
+            "preview_url": f"/api/image/{job['id']}/{filename}",
+            "file": filename, "size": destination.stat().st_size, "remote": False,
+            "source_size": source_size, "output_size": size, "archive_status": "ready",
+        }],
+    })
+    return job["images"]
+
+
 def local_run_image(job, jobdir, w, prompt=None, negative_prompt=None,
                     batch_size=None, hd=None, seed=None, stage_id=None,
                     stage_label=None, stage_index=0, stage_total=1):
@@ -1384,6 +2055,10 @@ def rh_upload_file(data, filename, ctype="application/octet-stream", timeout=120
     """Upload a binary (image/video) to RunningHub. Returns the RH fileName
     (relative path) to be placed into LoadImage/LoadVideo fieldValue."""
     boundary = "----rh" + uuid.uuid4().hex
+    safe_suffix = pathlib.Path(_safe_upload_filename(filename)).suffix.lower()
+    if not re.fullmatch(r"\.[a-z0-9]{1,8}", safe_suffix):
+        raise ValueError("unsafe upload extension")
+    provider_filename = "upload_" + uuid.uuid4().hex + safe_suffix
     def _field(name, val):
         return (f"--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n"
                 f"{val}\r\n").encode()
@@ -1393,7 +2068,7 @@ def rh_upload_file(data, filename, ctype="application/octet-stream", timeout=120
     body = b"".join([
         _field("apiKey", RH_KEY),
         _field("fileType", "input"),
-        _file("file", filename, ctype),
+        _file("file", provider_filename, ctype),
         data, b"\r\n",
         f"--{boundary}--\r\n".encode(),
     ])
@@ -1408,8 +2083,10 @@ def rh_upload_file(data, filename, ctype="application/octet-stream", timeout=120
     if resp.get("code") != 0:
         raise RuntimeError(f"RH upload failed: {resp.get('code')} {resp.get('msg')}")
     fname = (resp.get("data") or {}).get("fileName")
-    if not fname:
+    if not isinstance(fname, str) or not re.fullmatch(r"api/[A-Za-z0-9._/-]{1,900}", fname):
         raise RuntimeError("RH upload returned no fileName")
+    if ".." in pathlib.PurePosixPath(fname).parts:
+        raise RuntimeError("RH upload returned unsafe fileName")
     return fname
 
 
@@ -1424,7 +2101,8 @@ def rh_build_video_node_info(job, w):
     node_list = []
     media_map = w.get("rh_media") or {}
     for key, m in media_map.items():
-        fname = (job.get("media") or {}).get(key)
+        media = job.get("provider_media") or {}
+        fname = media.get(key) or media.get(m.get("fallback_to"))
         if not fname:
             continue
         node_list.append({"nodeId": str(m["node"]), "fieldName": m["field"], "fieldValue": fname})
@@ -1468,7 +2146,8 @@ def rh_run_video(job, w):
             job["provider_finished"] = time.time()
             job["provider_status"] = "DONE"
             job["progress_pct"] = 100
-            images = _rh_results_to_images(results, task_id)
+            images = _rh_results_to_images(
+                results, task_id, result_labels=w.get("rh_result_labels"))
             if not images:
                 raise RuntimeError("RH SUCCESS but no downloadable result URL was returned")
             job["images"] = images
@@ -1502,6 +2181,10 @@ def run_job(job):
             job["status"] = "done"
             job["progress_pct"] = 100
             job["provider_status"] = "LOCAL_DONE"
+        elif generation_backend == "api":
+            dreamapi_run_image(job, jobdir)
+            job["status"] = "done"
+            job["progress_pct"] = 100
         else:
             raise RuntimeError("unknown generation backend")
     except Exception as e:
@@ -1690,6 +2373,54 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def log_message(self, *a): pass
 
+    def _upload_session(self, create=False):
+        session_id = ""
+        try:
+            cookie = http.cookies.SimpleCookie(self.headers.get("Cookie", ""))
+            encoded = cookie.get("jt_session").value if cookie.get("jt_session") else ""
+            session_id = _decode_session_cookie(encoded)
+        except (http.cookies.CookieError, AttributeError):
+            session_id = ""
+        if not session_id and create:
+            session_id = secrets.token_urlsafe(32)
+            encoded = _encode_session_cookie(session_id)
+            header = (f"jt_session={encoded}; Path=/; Max-Age={UPLOAD_CAPABILITY_TTL}; "
+                      "HttpOnly; SameSite=Strict")
+            return session_id, header
+        return session_id, None
+
+    def _require_session(self):
+        session_id, _ = self._upload_session(create=False)
+        if not session_id:
+            self._send(428, json.dumps({
+                "error": "open the panel page before submitting a generation task",
+            }).encode())
+            return ""
+        return session_id
+
+    def _upload_quota_rejection(self, status):
+        if not status:
+            return False
+        payload = {
+            "error": "public upload limit reached; please wait before uploading another media file",
+            "scope": status["scope"],
+            "retry_after": status["retry_after"],
+        }
+        self._send(429, json.dumps(payload).encode(),
+                   headers={"Retry-After": str(status["retry_after"])})
+        return True
+
+    def _billable_quota_rejection(self, status):
+        if not status:
+            return False
+        payload = {
+            "error": "public billable task limit reached; please wait before submitting a new paid task",
+            "quota": {key: status[key] for key in ("global_hour", "global_day", "session_hour")},
+        }
+        self._send(429, json.dumps(payload).encode(),
+                   headers={"Retry-After": str(status["retry_after"])})
+        return True
+
     def _start_absolute_deadline(self, seconds):
         state = {"expired": False, "armed": True, "lock": threading.Lock()}
 
@@ -1860,6 +2591,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         raw = fp.read_bytes()
         etag = '"' + hashlib.sha256(raw).hexdigest()[:24] + '"'
         cache = "no-cache, must-revalidate" if fp.suffix == ".html" else "public, max-age=3600, must-revalidate"
+        _, cookie_header = self._upload_session(create=True) if fp.suffix == ".html" else ("", None)
         request = urllib.parse.urlparse(self.path)
         if request.path.startswith("/static/previews/") and fp.suffix == ".webp" and re.fullmatch(r"v=[0-9a-f]{12}", request.query):
             cache = "public, max-age=31536000, immutable"
@@ -1868,10 +2600,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_header("ETag", etag)
             self.send_header("Cache-Control", cache)
             self.send_header("Vary", "Accept-Encoding")
+            if cookie_header:
+                self.send_header("Set-Cookie", cookie_header)
             self.end_headers()
             return
         body = raw
         response_headers = {"ETag": etag, "Cache-Control": cache, "Vary": "Accept-Encoding"}
+        if cookie_header:
+            response_headers["Set-Cookie"] = cookie_header
         accepted = self.headers.get("Accept-Encoding", "").lower()
         if "gzip" in accepted and len(raw) >= 1024 and ctype.startswith(("text/", "application/javascript")):
             body = gzip.compress(raw, compresslevel=6, mtime=0)
@@ -1908,30 +2644,40 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._send(200, json.dumps(payload, separators=(",", ":")).encode())
         elif path == "/api/health":
             ok, msg = comfy_ok()
-            self._send(200, json.dumps({"ok": ok, "comfy": msg, "local_comfy_ok": ok,
-                                        "running_cloud": self._running_job_id("cloud"),
-                                        "running_local": self._running_job_id("local")}).encode())
+            self._send(200, json.dumps({"ok": ok, "comfy": bool(ok), "local_comfy_ok": ok,
+                                        "dreamapi_configured": bool(DREAMAPI_KEY),
+                                        "cloud_busy": self._running_job_id("cloud") is not None,
+                                        "local_busy": self._running_job_id("local") is not None,
+                                        "api_busy": self._running_job_id("api") is not None}).encode())
         elif path == "/api/comfy/status":
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
             ok, control_ok, detail = comfy_status_detail()
-            self._send(200, json.dumps({"comfy_ok": ok, "control_ok": control_ok, "detail": detail}).encode())
+            self._send(200, json.dumps({"comfy_ok": ok, "control_ok": control_ok,
+                                        "detail": "ready" if ok else "unavailable"}).encode())
         elif path == "/api/workflows":
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
             lst = [public_workflow(w) for w in WORKFLOWS.values()]
-            self._send(200, json.dumps(lst, ensure_ascii=False).encode())
+            _, cookie_header = self._upload_session(create=True)
+            headers = {"Set-Cookie": cookie_header} if cookie_header else None
+            self._send(200, json.dumps(lst, ensure_ascii=False).encode(), headers=headers)
         elif path == "/api/loras":
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
             self._send(200, json.dumps({"loras": get_lora_list()}).encode())
         elif path == "/api/favorites":
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
+            session_id, _ = self._upload_session(create=False)
             with _lock_jobs:
-                items = sorted(_favorites.values(), key=lambda x: x.get("created", 0), reverse=True)
+                items = [public_favorite(item) for item in sorted(
+                    _favorites.values(), key=lambda x: x.get("created", 0), reverse=True)
+                    if session_owns_record(session_id, item, "owner_session_hash")]
             self._send(200, json.dumps(items, ensure_ascii=False).encode())
         elif path.startswith("/api/favorite-preview/"):
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
             fid = path.split("/api/favorite-preview/", 1)[1]
             with _lock_jobs: fav = _favorites.get(fid)
-            if not fav: return self._send(404, b'{"error":"favorite not found"}')
+            session_id, _ = self._upload_session(create=False)
+            if not fav or not session_owns_record(session_id, fav, "owner_session_hash"):
+                return self._send(404, b'{"error":"favorite not found"}')
             if str(fav.get("favorite_media_type") or "").startswith("video/"):
                 return self._send(415, b'{"error":"video favorites do not have image previews"}')
             try:
@@ -1952,7 +2698,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
             fid = path.split("/api/favorite-image/", 1)[1]
             with _lock_jobs: fav = _favorites.get(fid)
-            if not fav: return self._send(404, b'{"error":"favorite not found"}')
+            session_id, _ = self._upload_session(create=False)
+            if not fav or not session_owns_record(session_id, fav, "owner_session_hash"):
+                return self._send(404, b'{"error":"favorite not found"}')
             try:
                 p = safe_child_path(FAVORITES_DIR, pathlib.Path(fav.get("image_path", "")))
             except ValueError:
@@ -1966,21 +2714,27 @@ class Handler(http.server.BaseHTTPRequestHandler):
             jid = path.split("/api/job/", 1)[1]
             with _lock_jobs:
                 src = _jobs.get(jid)
-                if not src:
+                session_id, _ = self._upload_session(create=False)
+                if not src or not session_owns_record(session_id, src):
                     return self._send(404, b'{"error":"job not found"}')
                 allowed = (
-                    "id", "workflow", "status", "provider_status", "rh_task_id",
+                    "id", "workflow", "status", "provider_status",
                     "progress_pct", "error", "elapsed", "created", "wf_name", "rh_coins",
                     "width", "height", "batch", "hd", "images",
                     "submit_started", "provider_started", "provider_finished",
                     "download_started", "download_finished", "selection_snapshot",
                     "prompt", "negative_prompt", "prompt_mode", "seed", "seed_mode", "style_id", "style_variant", "mode",
-                    "sequence_mode", "sequence_seed", "rh_task_ids", "stage_status", "generation_backend",
+                    "sequence_mode", "sequence_seed", "stage_status", "generation_backend",
+                    "seed_supported", "api_model", "api_quality", "api_fit",
+                    "api_upstream_model", "api_upstream_quality", "api_upstream_size",
                     "media", "params",
-                    "client_request_id", "comfy_prompt_id", "prompt_ids",
+                    "client_request_id",
                     "transfer_index", "transfer_total", "transfer_started", "transfer_finished",
                 )
                 j = {k: src.get(k) for k in allowed}
+                j["error"] = public_job_error(src)
+                j["media"] = public_job_media(src.get("media"))
+                j["selection_snapshot"] = public_selection_snapshot(src.get("selection_snapshot"))
             self._send(200, json.dumps(j, ensure_ascii=False).encode())
         elif path == "/api/jobs":
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
@@ -1993,19 +2747,25 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 scope = (query.get("scope") or [None])[0]
                 style = (query.get("style") or [None])[0]
                 sources = scoped_history_jobs(list(_jobs.values()), scope, style)
+                session_id, _ = self._upload_session(create=False)
+                sources = [src for src in sources if session_owns_record(session_id, src)]
                 for src in sources:
                     allowed = (
-                        "id", "workflow", "status", "provider_status", "rh_task_id",
+                        "id", "workflow", "status", "provider_status",
                         "progress_pct", "error", "elapsed", "created", "wf_name", "rh_coins",
                         "width", "height", "batch", "hd", "images",
                         "submit_started", "provider_started", "provider_finished",
                         "download_started", "download_finished", "selection_snapshot",
                         "style_id", "style_variant", "mode", "seed", "seed_mode", "prompt_mode",
-                        "sequence_mode", "sequence_seed", "rh_task_ids", "stage_status", "generation_backend",
-                        "client_request_id", "comfy_prompt_id",
+                        "sequence_mode", "sequence_seed", "stage_status", "generation_backend",
+                        "seed_supported", "api_model", "api_quality", "api_fit",
+                        "client_request_id",
                         "transfer_index", "transfer_total", "transfer_started", "transfer_finished",
                     )
                     j = {k: src.get(k) for k in allowed}
+                    j["error"] = public_job_error(src)
+                    j["media"] = public_job_media(src.get("media"))
+                    j["selection_snapshot"] = public_selection_snapshot(src.get("selection_snapshot"))
                     items.append(j)
             self._send(200, json.dumps(items, ensure_ascii=False).encode())
         elif path.startswith("/api/local-preview/"):
@@ -2013,6 +2773,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             try:
                 rest = path.split("/api/local-preview/", 1)[1]
                 jobid, fname = rest.split("/", 1)
+                session_id, _ = self._upload_session(create=False)
+                with _lock_jobs:
+                    job = _jobs.get(jobid)
+                if not job or not session_owns_record(session_id, job):
+                    return self._send(404, b'{"error":"preview not found"}')
                 p = safe_child_path(JOBS_DIR / jobid, fname)
                 data = p.read_bytes()
                 self._send(200, data, "image/webp", {"Cache-Control": "private, max-age=86400"})
@@ -2023,12 +2788,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
             except (BrokenPipeError, ConnectionResetError):
                 return
             except Exception as error:
-                self._send(500, json.dumps({"error": str(error)[:200]}).encode())
+                self._send(500, b'{"error":"preview temporarily unavailable"}')
         elif path.startswith("/api/preview/"):
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
             try:
                 rest = path.split("/api/preview/", 1)[1]
                 jobid, fname = rest.split("/", 1)
+                session_id, _ = self._upload_session(create=False)
+                with _lock_jobs:
+                    job = _jobs.get(jobid)
+                if not job or not session_owns_record(session_id, job):
+                    return self._send(404, b'{"error":"not found"}')
                 jobroot = (JOBS_DIR / jobid).resolve()
                 src = safe_child_path(jobroot, fname)
                 if not src.exists():
@@ -2052,7 +2822,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             except (BrokenPipeError, ConnectionResetError):
                 return
             except Exception as e:
-                self._send(500, json.dumps({"error": str(e)[:200]}).encode())
+                self._send(500, b'{"error":"preview temporarily unavailable"}')
         elif path.startswith("/api/rh-preview/"):
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
             # On-demand thumbnail for remote RunningHub result. It is NOT part
@@ -2061,10 +2831,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 rest = path.split("/api/rh-preview/", 1)[1]
                 jobid, idx_s = rest.split("/", 1)
                 idx = int(idx_s)
+                session_id, _ = self._upload_session(create=False)
                 with _lock_jobs:
                     job = _jobs.get(jobid)
                     images = list((job or {}).get("images") or [])
-                if idx < 0 or idx >= len(images) or not images[idx].get("remote"):
+                if (not session_owns_record(session_id, job)
+                        or idx < 0 or idx >= len(images) or not images[idx].get("remote")):
                     return self._send(404, b'{"error":"remote image not found"}')
                 jobroot = (JOBS_DIR / jobid).resolve(); jobroot.mkdir(parents=True, exist_ok=True)
                 preview = jobroot / f"remote_preview_{idx}.jpg"
@@ -2087,12 +2859,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
             except (BrokenPipeError, ConnectionResetError):
                 return
             except Exception as e:
-                self._send(500, json.dumps({"error": str(e)[:200]}).encode())
+                self._send(500, b'{"error":"preview temporarily unavailable"}')
         elif path.startswith("/api/image/"):
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
             try:
                 rest = path.split("/api/image/", 1)[1]
                 jobid, fname = rest.split("/", 1)
+                session_id, _ = self._upload_session(create=False)
+                with _lock_jobs:
+                    owned_job = _jobs.get(jobid)
+                if not owned_job or not session_owns_record(session_id, owned_job):
+                    return self._send(404, b'{"error":"not found"}')
                 p = safe_child_path(JOBS_DIR / jobid, fname)
                 if not p.exists():
                     with _lock_jobs:
@@ -2115,7 +2892,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             except FileNotFoundError:
                 self._send(404, b'{"error":"not found"}')
             except Exception as e:
-                self._send(500, json.dumps({"error": str(e)[:200]}).encode())
+                self._send(500, b'{"error":"preview temporarily unavailable"}')
         elif path == "/realcomic":
             self.send_response(302)
             self.send_header("Location", "/realism?workflow=realcomic")
@@ -2153,7 +2930,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def _running_job_id(self, generation_backend=None):
         with _lock_jobs:
             for j in _jobs.values():
-                if j.get("status") in ("running",) and (generation_backend is None or j.get("generation_backend", "cloud") == generation_backend):
+                if j.get("status") in ("running", "recovering") and (generation_backend is None or j.get("generation_backend", "cloud") == generation_backend):
                     return j["id"]
         return None
 
@@ -2177,30 +2954,34 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 workflow_id = str(body.get("workflow") or "")
                 input_key = str(body.get("input_key") or "")
                 w = WORKFLOWS.get(workflow_id)
-                mapping = (w or {}).get("rh_media", {}).get(input_key)
                 if not w or w.get("backend") != "runninghub" or w.get("kind") not in ("rh_workflow", "ai_app"):
                     return self._send(400, b'{"error":"unknown workflow"}')
-                if not mapping or mapping.get("type") not in ("image", "IMAGE"):
-                    return self._send(400, json.dumps({"error": "未知或不支持的素材字段"}, ensure_ascii=False).encode())
-                filename = re.split(r"[\\\\/]", str(body.get("filename") or "source.png"))[-1]
                 raw = base64.b64decode(body.get("data", ""), validate=True)
+                filename, ctype, media_type = validate_workflow_upload(
+                    w, input_key, body.get("filename") or "", raw)
+            except ValueError as error:
+                return self._send(400, json.dumps({"error": str(error)}, ensure_ascii=False).encode())
             except Exception:
                 return self._send(400, json.dumps({"error": "图片数据无效"}, ensure_ascii=False).encode())
             if not raw:
                 return self._send(400, json.dumps({"error": "请选择图片"}, ensure_ascii=False).encode())
             if len(raw) > 30 * 1024 * 1024:
                 return self._send(400, json.dumps({"error": "图片超过30MB限制"}, ensure_ascii=False).encode())
-            ctype = image_content_type(raw, filename)
-            if not ctype:
-                return self._send(400, json.dumps({"error": "只支持有效的PNG、JPEG或WebP图片"}, ensure_ascii=False).encode())
+            session_id, cookie_header = self._upload_session(create=True)
+            upload_quota = reserve_upload_attempt(session_id, len(raw))
+            if self._upload_quota_rejection(upload_quota):
+                return
             try:
                 remote_name = rh_upload_file(raw, filename, ctype)
+                upload_token = issue_upload_capability(
+                    remote_name, workflow_id, input_key, media_type, filename, session_id)
             except Exception as error:
-                return self._send(502, json.dumps({"error": f"RunningHub上传失败：{str(error)[:200]}"}, ensure_ascii=False).encode())
+                return self._send(502, json.dumps({"error": "RunningHub上传失败，请稍后重试"}, ensure_ascii=False).encode())
+            headers = {"Set-Cookie": cookie_header} if cookie_header else None
             return self._send(200, json.dumps({
-                "fileName": remote_name, "filename": filename,
+                "uploadToken": upload_token, "filename": filename,
                 "mediaType": ctype, "input_key": input_key,
-            }, ensure_ascii=False).encode())
+            }, ensure_ascii=False).encode(), headers=headers)
         if path == "/api/workflow-generate":
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
             try:
@@ -2211,28 +2992,42 @@ class Handler(http.server.BaseHTTPRequestHandler):
             w = WORKFLOWS.get(workflow_id)
             if not w or w.get("backend") != "runninghub" or w.get("kind") not in ("rh_workflow", "ai_app"):
                 return self._send(400, b'{"error":"unknown workflow"}')
+            session_id = self._require_session()
+            if not session_id:
+                return
             try:
-                trusted_media, trusted_params = normalize_rh_workflow_inputs(
-                    w, body.get("media") or {}, body.get("params") or {})
+                provider_media, public_media = resolve_upload_capabilities(
+                    w, body.get("media") or {}, session_id)
+                _, trusted_params = normalize_rh_workflow_inputs(
+                    w, public_media, body.get("params") or {})
             except ValueError as error:
                 return self._send(400, json.dumps({"error": str(error)}, ensure_ascii=False).encode())
-            client_request_id = str(body.get("client_request_id") or "").strip()[:96]
-            if not client_request_id:
-                return self._send(400, b'{"error":"client_request_id is required"}')
-            selection_snapshot = normalize_realism_snapshot(
-                w, trusted_media, trusted_params, body.get("selection_snapshot"))
-            with _submit_locks["cloud"]:
-                existing_job = existing_job_for_request(client_request_id, "cloud")
-                if existing_job:
+            try:
+                client_request_id = normalize_client_request_id(body.get("client_request_id"))
+            except ValueError as error:
+                return self._send(400, json.dumps({"error": str(error)}).encode())
+            selection_snapshot = upload_bound_snapshot(
+                w, public_media, trusted_params, body.get("selection_snapshot"), "realism")
+            request_sha256 = effective_request_sha256({
+                "workflow": workflow_id, "generation_backend": "cloud",
+                "provider_media": provider_media, "params": trusted_params,
+            })
+            with _idempotency_lock, _submit_locks["cloud"]:
+                decision, existing_job, session_hash = idempotency_decision(
+                    client_request_id, session_id, request_sha256)
+                if decision == "duplicate":
                     return self._send(200, json.dumps({
                         "job_id": existing_job["id"], "existing_job": existing_job["id"],
                         "deduplicated": True, "message": "same request already accepted",
+                    }).encode())
+                if decision == "conflict":
+                    return self._send(409, json.dumps({
+                        "error": "client_request_id already used with different request payload",
                     }).encode())
                 active_id = self._running_job_id("cloud")
                 if active_id:
                     return self._send(429, json.dumps({
                         "error": "云端已有任务正在运行，请等待完成后再提交",
-                        "running_job": active_id, "running_jobs": [active_id],
                     }, ensure_ascii=False).encode())
                 prompt = ""
                 for key in ("prompt", "instruction", "requirements", "text", "positive"):
@@ -2242,7 +3037,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 job = {
                     "id": uuid.uuid4().hex[:12], "workflow": workflow_id,
                     "prompt": prompt, "negative_prompt": str(trusted_params.get("negative") or ""),
-                    "prompt_mode": "manual", "media": trusted_media, "params": trusted_params,
+                    "prompt_mode": "manual", "media": public_media,
+                    "provider_media": provider_media, "params": trusted_params,
                     "width": int(trusted_params.get("width") or 0),
                     "height": int(trusted_params.get("height") or 0),
                     "batch": int(trusted_params.get("batch") or 1),
@@ -2257,32 +3053,49 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "generation_backend": "cloud", "sequence_mode": "off",
                     "selection_snapshot": selection_snapshot,
                     "client_request_id": client_request_id,
+                    "request_session_hash": session_hash,
+                    "effective_request_sha256": request_sha256,
                 }
-                with _lock_jobs:
-                    _jobs[job["id"]] = job
-                    save_jobs()
+                quota_status = register_billable_job(job, session_id)
+                if self._billable_quota_rejection(quota_status):
+                    return
                 threading.Thread(target=run_job, args=(job,), daemon=True).start()
                 return self._send(200, json.dumps({"job_id": job["id"]}).encode())
         if path == "/api/realcomic-upload":
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
             try:
                 body = self._read_json()
-                filename = re.split(r"[\\\\/]", str(body.get("filename") or "source.png"))[-1]
+                workflow_id = str(body.get("workflow") or "realcomic")
+                input_key = str(body.get("input_key") or "source_image")
+                w = WORKFLOWS.get(workflow_id)
+                if not w or w.get("kind") != "ai_app" or w.get("backend") != "runninghub":
+                    return self._send(400, b'{"error":"unknown AI App"}')
                 raw = base64.b64decode(body.get("data", ""), validate=True)
+                filename, ctype, media_type = validate_workflow_upload(
+                    w, input_key, body.get("filename") or "", raw)
+            except ValueError as error:
+                return self._send(400, json.dumps({"error": str(error)}, ensure_ascii=False).encode())
             except Exception:
                 return self._send(400, json.dumps({"error": "图片数据无效"}, ensure_ascii=False).encode())
             if not raw:
                 return self._send(400, json.dumps({"error": "请选择二次元图片"}, ensure_ascii=False).encode())
             if len(raw) > 30 * 1024 * 1024:
                 return self._send(400, json.dumps({"error": "图片超过30MB限制"}, ensure_ascii=False).encode())
-            ctype = image_content_type(raw, filename)
-            if not ctype:
-                return self._send(400, json.dumps({"error": "只支持有效的PNG、JPEG或WebP图片"}, ensure_ascii=False).encode())
+            session_id, cookie_header = self._upload_session(create=True)
+            upload_quota = reserve_upload_attempt(session_id, len(raw))
+            if self._upload_quota_rejection(upload_quota):
+                return
             try:
                 remote_name = rh_upload_file(raw, filename, ctype)
-            except Exception as e:
-                return self._send(502, json.dumps({"error": f"RunningHub上传失败：{str(e)[:200]}"}, ensure_ascii=False).encode())
-            return self._send(200, json.dumps({"fileName": remote_name, "filename": filename, "mediaType": ctype}, ensure_ascii=False).encode())
+                upload_token = issue_upload_capability(
+                    remote_name, workflow_id, input_key, media_type, filename, session_id)
+            except Exception as error:
+                return self._send(502, json.dumps({"error": "RunningHub上传失败，请稍后重试"}, ensure_ascii=False).encode())
+            headers = {"Set-Cookie": cookie_header} if cookie_header else None
+            return self._send(200, json.dumps({
+                "uploadToken": upload_token, "filename": filename,
+                "mediaType": ctype, "input_key": input_key,
+            }, ensure_ascii=False).encode(), headers=headers)
         if path == "/api/ai-app-generate":
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
             try: body = self._read_json()
@@ -2291,30 +3104,43 @@ class Handler(http.server.BaseHTTPRequestHandler):
             w = WORKFLOWS.get(wf)
             if not w or w.get("kind") != "ai_app" or w.get("backend") != "runninghub":
                 return self._send(400, b'{"error":"unknown AI App"}')
-            media = body.get("media") or {}
+            submitted_media = body.get("media") or {}
             params = body.get("params") or {}
-            if not isinstance(media, dict) or not isinstance(params, dict):
+            if not isinstance(submitted_media, dict) or not isinstance(params, dict):
                 return self._send(400, b'{"error":"media and params must be objects"}')
-            required = [k for k, mapping in (w.get("rh_media") or {}).items() if mapping.get("required")]
-            missing = [k for k in required if not media.get(k)]
-            if missing:
-                return self._send(400, json.dumps({"error": f"缺少必传素材：{', '.join(missing)}"}, ensure_ascii=False).encode())
-            trusted_media = {k: str(media[k]) for k in (w.get("rh_media") or {}) if media.get(k)}
-            defaults = w.get("params_defaults") or {}
-            trusted_params = {k: str(params.get(k, defaults.get(k, "")))[:1000] for k in (w.get("rh_params") or {})}
-            client_request_id = str(body.get("client_request_id") or "").strip()[:96]
-            if not client_request_id:
-                return self._send(400, b'{"error":"client_request_id is required"}')
-            with _submit_locks["cloud"]:
-                existing_job = existing_job_for_request(client_request_id, "cloud")
-                if existing_job:
+            session_id = self._require_session()
+            if not session_id:
+                return
+            try:
+                provider_media, public_media = resolve_upload_capabilities(
+                    w, submitted_media, session_id)
+                _, trusted_params = normalize_rh_workflow_inputs(w, public_media, params)
+            except ValueError as error:
+                return self._send(400, json.dumps({"error": str(error)}, ensure_ascii=False).encode())
+            try:
+                client_request_id = normalize_client_request_id(body.get("client_request_id"))
+            except ValueError as error:
+                return self._send(400, json.dumps({"error": str(error)}).encode())
+            request_sha256 = effective_request_sha256({
+                "workflow": wf, "generation_backend": "cloud",
+                "provider_media": provider_media, "params": trusted_params,
+            })
+            with _idempotency_lock, _submit_locks["cloud"]:
+                decision, existing_job, session_hash = idempotency_decision(
+                    client_request_id, session_id, request_sha256)
+                if decision == "duplicate":
                     return self._send(200, json.dumps({"job_id": existing_job["id"], "existing_job": existing_job["id"], "deduplicated": True, "message": "same request already accepted"}).encode())
+                if decision == "conflict":
+                    return self._send(409, json.dumps({
+                        "error": "client_request_id already used with different request payload",
+                    }).encode())
                 active_id = self._running_job_id("cloud")
                 if active_id:
-                    return self._send(429, json.dumps({"error": "云端已有任务正在运行，请等待完成后再提交", "running_job": active_id}, ensure_ascii=False).encode())
+                    return self._send(429, json.dumps({"error": "云端已有任务正在运行，请等待完成后再提交"}, ensure_ascii=False).encode())
                 job = {"id": uuid.uuid4().hex[:12], "workflow": wf,
                        "prompt": trusted_params.get("requirements", ""), "negative_prompt": "", "prompt_mode": "manual",
-                       "media": trusted_media, "params": trusted_params,
+                       "media": public_media, "provider_media": provider_media,
+                       "params": trusted_params,
                        "width": 0, "height": 0, "batch": 1, "hd": 0, "seed": 0, "seed_mode": "random",
                        "loras": {}, "lora_strengths": {}, "trigger": None, "translate": False,
                        "status": "running", "progress": 0, "progress_pct": 0, "images": [],
@@ -2322,41 +3148,52 @@ class Handler(http.server.BaseHTTPRequestHandler):
                        "submit_started": None, "provider_started": None, "provider_finished": None,
                        "download_started": None, "download_finished": None,
                        "style_id": "realcomic", "mode": "original", "generation_backend": "cloud",
-                       "sequence_mode": "off", "selection_snapshot": body.get("selection_snapshot") or {},
-                       "client_request_id": client_request_id, "provider_attribution": w.get("provider_attribution")}
-                with _lock_jobs:
-                    _jobs[job["id"]] = job
-                    save_jobs()
+                       "sequence_mode": "off", "selection_snapshot": upload_bound_snapshot(
+                           w, public_media, trusted_params, body.get("selection_snapshot"), "realism"),
+                       "client_request_id": client_request_id,
+                       "request_session_hash": session_hash,
+                       "effective_request_sha256": request_sha256,
+                       "provider_attribution": w.get("provider_attribution")}
+                quota_status = register_billable_job(job, session_id)
+                if self._billable_quota_rejection(quota_status):
+                    return
                 threading.Thread(target=run_job, args=(job,), daemon=True).start()
                 return self._send(200, json.dumps({"job_id": job["id"]}).encode())
         if path == "/api/upload":
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
-            # Browser posts raw bytes: body = {filename, data_base64} JSON (small files)
-            # or multipart. Use JSON base64 for simplicity and reliability.
             try:
                 body = self._read_json(MAX_UPLOAD_JSON_BYTES)
-                filename = str(body.get("filename", "upload.bin"))
-                raw = base64.b64decode(body.get("data", ""))
+                workflow_id = str(body.get("workflow") or "")
+                input_key = str(body.get("input_key") or "")
+                w = WORKFLOWS.get(workflow_id)
+                if not w or w.get("kind") != "video" or w.get("backend") != "runninghub":
+                    return self._send(400, b'{"error":"unknown workflow"}')
+                raw = base64.b64decode(body.get("data", ""), validate=True)
+                filename, ctype, media_type = validate_workflow_upload(
+                    w, input_key, body.get("filename") or "", raw)
+            except ValueError as error:
+                return self._send(400, json.dumps({"error": str(error)}, ensure_ascii=False).encode())
             except Exception:
-                return self._send(400, b'{"error":"bad json (need filename + data base64)"}')
+                return self._send(400, b'{"error":"bad json (need workflow, input_key, filename and base64 data)"}')
             if not raw:
                 return self._send(400, b'{"error":"empty file"}')
             if len(raw) > 60 * 1024 * 1024:
                 return self._send(400, b'{"error":"file too large (>60MB)"}')
-            ctype = "image/png"
-            low = filename.lower()
-            if low.endswith(".jpg") or low.endswith(".jpeg"): ctype = "image/jpeg"
-            elif low.endswith(".webp"): ctype = "image/webp"
-            elif low.endswith(".mp4"): ctype = "video/mp4"
-            elif low.endswith(".mov"): ctype = "video/quicktime"
-            elif low.endswith(".avi"): ctype = "video/x-msvideo"
-            elif low.endswith(".mkv"): ctype = "video/x-matroska"
-            elif low.endswith(".zip"): ctype = "application/zip"
+            session_id, cookie_header = self._upload_session(create=True)
+            upload_quota = reserve_upload_attempt(session_id, len(raw))
+            if self._upload_quota_rejection(upload_quota):
+                return
             try:
-                fname = rh_upload_file(raw, filename, ctype)
-            except Exception as e:
-                return self._send(502, json.dumps({"error": f"RH upload failed: {str(e)[:200]}"}, ensure_ascii=False).encode())
-            return self._send(200, json.dumps({"fileName": fname}).encode())
+                remote_name = rh_upload_file(raw, filename, ctype)
+                upload_token = issue_upload_capability(
+                    remote_name, workflow_id, input_key, media_type, filename, session_id)
+            except Exception as error:
+                return self._send(502, json.dumps({"error": "RunningHub上传失败，请稍后重试"}, ensure_ascii=False).encode())
+            headers = {"Set-Cookie": cookie_header} if cookie_header else None
+            return self._send(200, json.dumps({
+                "uploadToken": upload_token, "filename": filename,
+                "mediaType": ctype, "input_key": input_key,
+            }, ensure_ascii=False).encode(), headers=headers)
         if path == "/api/video-generate":
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
             try: body = self._read_json()
@@ -2371,13 +3208,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if not prompt:
                 return self._send(400, b'{"error":"prompt empty"}')
             negative_prompt = str(body.get("negative_prompt", "")).strip()
-            media = body.get("media") or {}
-            if not isinstance(media, dict):
-                return self._send(400, b'{"error":"media must be object {key: fileName}"}')
-            required = [k for k, m in (w.get("rh_media") or {}).items() if m.get("required")]
-            missing = [k for k in required if not media.get(k)]
-            if missing:
-                return self._send(400, json.dumps({"error": f"missing media: {', '.join(missing)}"}, ensure_ascii=False).encode())
+            submitted_media = body.get("media") or {}
+            if not isinstance(submitted_media, dict):
+                return self._send(400, b'{"error":"media must be object {key: uploadToken}"}')
             params = body.get("params") or {}
             if not isinstance(params, dict):
                 return self._send(400, b'{"error":"params must be object"}')
@@ -2388,22 +3221,38 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 schema_params["prompt"] = prompt
             if "negative" in (w.get("rh_params") or {}) and "negative" not in schema_params:
                 schema_params["negative"] = negative_prompt
+            session_id = self._require_session()
+            if not session_id:
+                return
             try:
-                media, params = normalize_rh_workflow_inputs(w, media, schema_params)
+                provider_media, public_media = resolve_upload_capabilities(
+                    w, submitted_media, session_id)
+                _, params = normalize_rh_workflow_inputs(w, public_media, schema_params)
             except ValueError as error:
                 return self._send(400, json.dumps({"error": str(error)}, ensure_ascii=False).encode())
             prompt = str(params.get("prompt", prompt)).strip()
             negative_prompt = str(params.get("negative", negative_prompt)).strip()
-            client_request_id = str(body.get("client_request_id") or "").strip()[:96]
-            if not client_request_id:
-                return self._send(400, b'{"error":"client_request_id is required"}')
-            # Video jobs are async cloud tasks: allow a small concurrent pool
-            # (RH queues them itself). Image jobs stay serial via /api/generate.
-            with _submit_locks["video"]:
-                existing_job = existing_job_for_request(client_request_id, "cloud")
-                if existing_job:
+            try:
+                client_request_id = normalize_client_request_id(body.get("client_request_id"))
+            except ValueError as error:
+                return self._send(400, json.dumps({"error": str(error)}).encode())
+            request_sha256 = effective_request_sha256({
+                "workflow": wf, "generation_backend": "cloud",
+                "provider_media": provider_media, "prompt": prompt,
+                "negative_prompt": negative_prompt, "params": params,
+            })
+            # Serialize idempotency admission across all billable routes, then
+            # apply the provider's verified two-video concurrency limit.
+            with _idempotency_lock, _submit_locks["video"]:
+                decision, existing_job, session_hash = idempotency_decision(
+                    client_request_id, session_id, request_sha256)
+                if decision == "duplicate":
                     return self._send(200, json.dumps({"job_id": existing_job["id"],
                         "deduplicated": True, "message": "same request already accepted"}).encode())
+                if decision == "conflict":
+                    return self._send(409, json.dumps({
+                        "error": "client_request_id already used with different request payload",
+                    }).encode())
                 with _lock_jobs:
                     running_videos = [j for j in _jobs.values()
                                       if j.get("generation_backend") == "cloud"
@@ -2413,11 +3262,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 if len(running_videos) >= VIDEO_MAX_CONCURRENT:
                     return self._send(429, json.dumps({
                         "error": f"视频任务已达并发上限（{VIDEO_MAX_CONCURRENT}个），请等待其中一个完成",
-                        "running_jobs": [j["id"] for j in running_videos],
                     }, ensure_ascii=False).encode())
                 job = {"id": uuid.uuid4().hex[:12], "workflow": wf, "prompt": prompt,
                    "negative_prompt": negative_prompt, "prompt_mode": "manual",
-                   "media": media, "params": params,
+                   "media": public_media, "provider_media": provider_media,
+                   "params": params,
                    "width": 0, "height": 0, "batch": 1, "hd": 0,
                    "seed": 0, "seed_mode": "random", "loras": {}, "lora_strengths": {},
                    "trigger": None, "translate": False,
@@ -2428,11 +3277,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
                    "provider_finished": None, "download_started": None,
                    "download_finished": None, "style_id": "video", "mode": "original",
                    "generation_backend": "cloud",
-                   "sequence_mode": "off", "selection_snapshot": body.get("selection_snapshot") or {},
-                   "client_request_id": client_request_id}
-                with _lock_jobs:
-                    _jobs[job["id"]] = job
-                    save_jobs()
+                   "sequence_mode": "off", "selection_snapshot": upload_bound_snapshot(
+                       w, public_media, params, body.get("selection_snapshot"), "video"),
+                   "client_request_id": client_request_id,
+                   "request_session_hash": session_hash,
+                   "effective_request_sha256": request_sha256}
+                quota_status = register_billable_job(job, session_id)
+                if self._billable_quota_rejection(quota_status):
+                    return
                 threading.Thread(target=run_job, args=(job,), daemon=True).start()
                 return self._send(200, json.dumps({"job_id": job["id"]}).encode())
         if path == "/api/favorites":
@@ -2440,20 +3292,30 @@ class Handler(http.server.BaseHTTPRequestHandler):
             try: body = self._read_json()
             except Exception: return self._send(400, b'{"error":"bad json"}')
             jid = str(body.get("job_id", "")); idx = int(body.get("image_index", -1))
+            session_id, _ = self._upload_session(create=False)
             with _favorite_operation_lock:
                 with _lock_jobs:
                     job = _jobs.get(jid)
                     existing_favorite = next((fav for fav in _favorites.values()
-                        if fav.get("job_id") == jid and fav.get("image_index") == idx), None)
+                        if fav.get("job_id") == jid and fav.get("image_index") == idx
+                        and session_owns_record(session_id, fav, "owner_session_hash")), None)
                 if existing_favorite:
-                    return self._send(200, json.dumps(existing_favorite, ensure_ascii=False).encode())
-                if not job or job.get("status") != "done": return self._send(404, b'{"error":"completed job not found"}')
+                    return self._send(200, json.dumps(public_favorite(existing_favorite), ensure_ascii=False).encode())
+                if (not job or job.get("status") != "done"
+                        or not session_owns_record(session_id, job)):
+                    return self._send(404, b'{"error":"completed job not found"}')
                 images = job.get("images") or []
                 if idx < 0 or idx >= len(images): return self._send(400, b'{"error":"bad image index"}')
                 im = images[idx]; fid = uuid.uuid4().hex[:12]
                 remote_suffix = pathlib.PurePosixPath(urllib.parse.urlparse(im.get("url", "")).path).suffix.lower()
                 allowed_suffixes = {".png", ".jpg", ".jpeg", ".webp", ".mp4", ".mov", ".webm", ".avi", ".mkv"}
-                suffix = remote_suffix if remote_suffix in allowed_suffixes else ".bin"
+                type_suffixes = {
+                    "png": ".png", "image/png": ".png", "jpg": ".jpg", "jpeg": ".jpg", "image/jpeg": ".jpg",
+                    "webp": ".webp", "image/webp": ".webp", "mp4": ".mp4", "video/mp4": ".mp4",
+                    "mov": ".mov", "video/quicktime": ".mov", "webm": ".webm", "video/webm": ".webm",
+                    "avi": ".avi", "video/x-msvideo": ".avi", "mkv": ".mkv", "video/x-matroska": ".mkv",
+                }
+                suffix = remote_suffix if remote_suffix in allowed_suffixes else type_suffixes.get(str(im.get("file_type") or "").lower(), ".bin")
                 dest = FAVORITES_DIR / f"{fid}{suffix}"
                 try:
                     if im.get("remote"):
@@ -2462,7 +3324,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         src = ensure_local_original(job, im)
                         dest.write_bytes(src.read_bytes())
                 except Exception as e:
-                    return self._send(502, json.dumps({"error": f"收藏图片失败：{str(e)[:200]}"}, ensure_ascii=False).encode())
+                    return self._send(502, json.dumps({"error": "收藏结果失败，请稍后重试"}, ensure_ascii=False).encode())
                 favorite_data = dest.read_bytes()
                 video_mimes = {".mp4": "video/mp4", ".mov": "video/quicktime", ".webm": "video/webm", ".avi": "video/x-msvideo", ".mkv": "video/x-matroska"}
                 favorite_media_type = image_content_type(favorite_data, dest.name) or video_mimes.get(suffix) or "application/octet-stream"
@@ -2471,6 +3333,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "image_url": f"/api/favorite-image/{fid}",
                     "preview_url": f"/api/favorite-preview/{fid}", "original_url": im.get("url"),
                     "image_path": str(dest), "favorite_media_type": favorite_media_type,
+                    "owner_session_hash": _session_hash(session_id),
                     "prompt": job.get("prompt", ""), "negative_prompt": job.get("negative_prompt", ""),
                     "prompt_mode": job.get("prompt_mode", "options"),
                     "seed": job.get("seed"), "seed_mode": job.get("seed_mode"),
@@ -2483,7 +3346,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     _favorites[fid] = fav
                     prune_favorites()
                     save_favorites()
-                return self._send(200, json.dumps(fav, ensure_ascii=False).encode())
+                return self._send(200, json.dumps(public_favorite(fav), ensure_ascii=False).encode())
         if path == "/api/comfy/start":
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
             started, msg = start_comfy_remote()
@@ -2501,6 +3364,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if wf not in WORKFLOWS:
             return self._send(400, b'{"error":"unknown workflow"}')
         w = WORKFLOWS[wf]
+        if wf != "anima02" or w.get("kind") in ("video", "ai_app", "rh_workflow"):
+            return self._send(400, b'{"error":"not a creator image workflow"}')
+        session_id = self._require_session()
+        if not session_id:
+            return
         prompt = str(body.get("prompt", "")).strip()
         if not prompt:
             return self._send(400, b'{"error":"prompt empty"}')
@@ -2509,11 +3377,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if prompt_mode not in ("options", "manual"):
             return self._send(400, b'{"error":"unknown prompt_mode"}')
         generation_backend = str(body.get("generation_backend") or "cloud")
-        if generation_backend not in ("cloud", "local"):
+        if generation_backend not in ("cloud", "local", "api"):
             return self._send(400, b'{"error":"unknown generation_backend"}')
-        client_request_id = str(body.get("client_request_id") or "").strip()[:96]
-        if not client_request_id:
-            return self._send(400, b'{"error":"client_request_id is required"}')
+        try:
+            client_request_id = normalize_client_request_id(body.get("client_request_id"))
+        except ValueError as error:
+            return self._send(400, json.dumps({"error": str(error)}).encode())
         try:
             numeric_values = {
                 "batch": body.get("batch", 1),
@@ -2523,32 +3392,36 @@ class Handler(http.server.BaseHTTPRequestHandler):
             }
             if any(isinstance(value, (bool, dict, list)) for value in numeric_values.values()):
                 raise TypeError("numeric parameter must be scalar")
-            batch = max(1, min(int(1 if numeric_values["batch"] in (None, "") else numeric_values["batch"]), w["batch_max"]))
-            hd = int(0 if numeric_values["hd"] in (None, "") else numeric_values["hd"])
-            width = int(0 if numeric_values["width"] in (None, "") else numeric_values["width"])
-            height = int(0 if numeric_values["height"] in (None, "") else numeric_values["height"])
+            batch = max(1, min(_bounded_request_int(numeric_values["batch"], 1), w["batch_max"]))
+            hd = _bounded_request_int(numeric_values["hd"], 0)
+            width = _bounded_request_int(numeric_values["width"], 0)
+            height = _bounded_request_int(numeric_values["height"], 0)
         except (TypeError, ValueError, OverflowError):
             return self._send(400, b'{"error":"invalid numeric parameters"}')
         hd_options = w.get("hd") or ["关闭"]
         if hd < 0 or hd >= len(hd_options):
             return self._send(400, b'{"error":"hd out of range"}')
-        with _submit_locks[generation_backend]:
-            # Browser submission retries reuse this id. If the first response was
-            # lost, return the same accepted task instead of generating twice.
-            existing_job = existing_job_for_request(client_request_id, generation_backend)
-            if existing_job:
-                return self._send(200, json.dumps({
-                    "job_id": existing_job["id"], "existing_job": existing_job["id"],
-                    "deduplicated": True, "message": "same request already accepted",
-                }).encode())
-            active_id = self._running_job_id(generation_backend)
-            if active_id:
-                # Return the active job id: this is an expected busy state, not
-                # a provider failure. 429 has clearer semantics than a raw 409.
-                return self._send(429, json.dumps({
-                    "error": "已有任务正在运行，请等待完成后再提交",
-                    "running_job": active_id,
-                }, ensure_ascii=False).encode())
+        api_model = str(body.get("api_model") or "gpt-image-2.5-flare")
+        api_quality = str(body.get("api_quality") or "medium")
+        api_fit = str(body.get("api_fit") or "cover")
+        if generation_backend == "api":
+            if len(prompt) > 2000 or len(negative_prompt) > 2000:
+                return self._send(400, b'{"error":"prompt too long (max 2000 characters)"}')
+            if batch != 1:
+                return self._send(400, b'{"error":"API generation supports one image per task"}')
+            if hd != 0:
+                return self._send(400, b'{"error":"API generation does not use the local HD pipeline"}')
+            if api_model not in DREAMAPI_IMAGE_QUALITIES:
+                return self._send(400, b'{"error":"unknown DreamAPI image model"}')
+            if api_quality not in DREAMAPI_IMAGE_QUALITIES[api_model]:
+                return self._send(400, b'{"error":"quality is not supported by the DreamAPI image model"}')
+            if api_fit not in {"cover", "contain"}:
+                return self._send(400, b'{"error":"unknown DreamAPI fit mode"}')
+            try:
+                _dreamapi_size(width, height)
+            except (TypeError, ValueError, ZeroDivisionError) as error:
+                return self._send(400, json.dumps({"error": str(error)}).encode())
+        with _idempotency_lock, _submit_locks[generation_backend]:
             if w["size_mode"] == "native":
                 presets = w["size_presets"]
                 if not (width > 0 and height > 0):
@@ -2585,6 +3458,37 @@ class Handler(http.server.BaseHTTPRequestHandler):
             lora_strengths = dict(preset["strengths"])
             trigger = preset["trigger"]
             translate = False
+            request_payload = {
+                "workflow": wf, "generation_backend": generation_backend,
+                "prompt": prompt, "negative_prompt": negative_prompt,
+                "prompt_mode": prompt_mode, "width": width, "height": height,
+                "batch": batch, "hd": hd,
+                "seed": seed if seed_mode == "fixed" else "random",
+                "seed_mode": seed_mode, "style_id": style_id,
+                "style_variant": preset["id"], "mode": mode,
+                "api_model": api_model if generation_backend == "api" else None,
+                "api_quality": api_quality if generation_backend == "api" else None,
+                "api_fit": api_fit if generation_backend == "api" else None,
+            }
+            request_sha256 = effective_request_sha256(request_payload)
+            cookie_header = None
+            decision, existing_job, session_hash = idempotency_decision(
+                client_request_id, session_id, request_sha256)
+            response_headers = {"Set-Cookie": cookie_header} if cookie_header else None
+            if decision == "duplicate":
+                return self._send(200, json.dumps({
+                    "job_id": existing_job["id"], "existing_job": existing_job["id"],
+                    "deduplicated": True, "message": "same request already accepted",
+                }).encode(), headers=response_headers)
+            if decision == "conflict":
+                return self._send(409, json.dumps({
+                    "error": "client_request_id already used with different request payload",
+                }).encode(), headers=response_headers)
+            active_id = self._running_job_id(generation_backend)
+            if active_id:
+                return self._send(429, json.dumps({
+                    "error": "已有任务正在运行，请等待完成后再提交",
+                }, ensure_ascii=False).encode(), headers=response_headers)
             job = {"id": uuid.uuid4().hex[:12], "workflow": wf, "prompt": prompt,
                    "negative_prompt": negative_prompt, "prompt_mode": prompt_mode,
                    "width": width, "height": height, "batch": batch, "hd": hd,
@@ -2599,14 +3503,25 @@ class Handler(http.server.BaseHTTPRequestHandler):
                    "style_variant": preset["id"], "mode": mode,
                    "sequence_mode": sequence_mode, "generation_backend": generation_backend,
                    "client_request_id": client_request_id,
+                   "request_session_hash": session_hash,
+                   "effective_request_sha256": request_sha256,
+                   "api_model": api_model if generation_backend == "api" else None,
+                   "api_quality": api_quality if generation_backend == "api" else None,
+                   "api_fit": api_fit if generation_backend == "api" else None,
+                   "seed_supported": generation_backend != "api",
                    "comfy_prompt_id": None, "transfer_index": 0, "transfer_total": 0,
                    "transfer_started": None, "transfer_finished": None,
                    "selection_snapshot": body.get("selection_snapshot") or {}}
-            with _lock_jobs:
-                _jobs[job["id"]] = job
-                save_jobs()
+            if generation_backend in ("cloud", "api"):
+                quota_status = register_billable_job(job, session_id)
+                if self._billable_quota_rejection(quota_status):
+                    return
+            else:
+                with _lock_jobs:
+                    _jobs[job["id"]] = job
+                    save_jobs()
             threading.Thread(target=run_job, args=(job,), daemon=True).start()
-            self._send(200, json.dumps({"job_id": job["id"]}).encode())
+            self._send(200, json.dumps({"job_id": job["id"]}).encode(), headers=response_headers)
 
 def main():
     global TOKEN
@@ -2615,6 +3530,8 @@ def main():
         print(f"[panel] no PANEL_TOKEN set, generated: {TOKEN}", flush=True)
     load_jobs()
     load_favorites()
+    load_upload_capabilities()
+    load_upload_usage()
     for job in list(_jobs.values()):
         if job.get("status") == "recovering" and job.get("rh_task_id"):
             threading.Thread(target=resume_cloud_job, args=(job,), daemon=True).start()

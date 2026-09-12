@@ -1,6 +1,6 @@
 import importlib.util,json,tempfile
 from pathlib import Path
-P=Path(r"D:/LAN-Share/lora/_work/comfy_panel/server.py")
+P = Path(__file__).resolve().parents[1] / 'server.py'
 spec=importlib.util.spec_from_file_location('dual_server_test',P);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 # Exact local API contract: trusted LoRAs become local Anima_JT paths, trigger
 # appears once, negative/seed/batch/HD reach their nodes.
@@ -19,9 +19,9 @@ assert '{{' not in json.dumps(api), 'unresolved template placeholder remains'
 assert api['6']['inputs']['batch_size']==3 and api['9']['inputs']['seed']==123456
 assert api['11']['inputs']['images']==['10',0] and '19' not in api
 assert len(imgs)==3 and all(x['remote'] is False and x['preview_url'].startswith('/api/local-preview/') and x['archive_status']=='pending' for x in imgs)
-# Independent lanes: one running cloud job does not occupy local and vice versa.
-m._jobs={'c':{'id':'c','status':'running','generation_backend':'cloud'},'l':{'id':'l','status':'running','generation_backend':'local'}}
+# Independent lanes: cloud, local and API jobs have separate occupancy.
+m._jobs={'c':{'id':'c','status':'running','generation_backend':'cloud'},'l':{'id':'l','status':'running','generation_backend':'local'},'a':{'id':'a','status':'running','generation_backend':'api'}}
 class H: pass
 h=H();h._running_job_id=lambda backend=None: next((j['id'] for j in m._jobs.values() if j['status']=='running' and (backend is None or j.get('generation_backend','cloud')==backend)),None)
-assert h._running_job_id('cloud')=='c' and h._running_job_id('local')=='l'
-print('DUAL_BACKEND_RUNTIME_OK local_native_batch=3 exact_nodes independent_lanes')
+assert h._running_job_id('cloud')=='c' and h._running_job_id('local')=='l' and h._running_job_id('api')=='a'
+print('THREE_BACKEND_RUNTIME_OK local_native_batch=3 exact_nodes independent_lanes')

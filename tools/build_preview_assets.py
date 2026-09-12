@@ -1,10 +1,16 @@
 """Build optimized workflow/style previews from user-provided source images."""
 from pathlib import Path
 from PIL import Image, ImageOps, ImageChops, ImageStat
-import hashlib, json, math
+import argparse, hashlib, json, math
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = Path(r"C:/Users/JT/Desktop/22")
+parser = argparse.ArgumentParser(description="Build preview assets from reviewed source images")
+parser.add_argument("--source-dir", type=Path, required=True,
+                    help="directory containing the named workflow/style source images")
+parser.add_argument("--retro-source", type=Path, required=True,
+                    help="reviewed retro manga preview PNG")
+args = parser.parse_args()
+SOURCE = args.source_dir.resolve()
 OUT = ROOT / "static" / "previews"
 OUT.mkdir(parents=True, exist_ok=True)
 
@@ -24,7 +30,7 @@ MAPPING = {
     "NFF--20s.png": "style-nff.webp",
 }
 EXTRA_MAPPING = {
-    Path(r"D:/ComfyUI_Mie/ComfyUI/output/style321_panel_preview_w04/PREVIEW_32402_00001_.png"): "style-retro-manga-luxury.webp",
+    args.retro_source.resolve(): "style-retro-manga-luxury.webp",
 }
 
 rows = []
@@ -57,8 +63,6 @@ for src, output_name in sources:
             mse = sum(value * value for value in rms) / len(rms)
             psnr = 99.0 if mse == 0 else 10*math.log10((255**2)/mse)
     rows.append({
-        "source": str(src),
-        "source_sha256": hashlib.sha256(src.read_bytes()).hexdigest(),
         "output": output_name,
         "original_size": original_size,
         "preview_size": image.size,

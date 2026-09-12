@@ -1,5 +1,5 @@
 from pathlib import Path
-ROOT=Path(r"D:/LAN-Share/lora/_work/comfy_panel")
+ROOT = Path(__file__).resolve().parents[1]
 SERVER=(ROOT/'server.py').read_text(encoding='utf-8')
 BUILDER=(ROOT/'build_realism_workbench.py').read_text(encoding='utf-8')
 PAGES=[ROOT/'static'/name for name in ['index.html','promptgen.html','original_sketch.html','original_graphic.html','video.html','realcomic.html','realism.html']]

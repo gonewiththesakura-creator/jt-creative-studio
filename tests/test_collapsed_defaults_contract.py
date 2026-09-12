@@ -1,6 +1,6 @@
 from pathlib import Path
 import sys
-ROOT=Path(r"D:/LAN-Share/lora/_work/comfy_panel")
+ROOT = Path(__file__).resolve().parents[1]
 HTML=(ROOT/"static"/"promptgen.html").read_text(encoding="utf-8")
 checks={
  "does not auto randomize": "randomAll()" not in HTML.split("</script>")[-2].split("document.querySelectorAll('[data-style]')")[-1],

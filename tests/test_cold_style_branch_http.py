@@ -6,7 +6,7 @@ import tempfile
 import threading
 from pathlib import Path
 
-ROOT = Path(r"D:/LAN-Share/lora/_work/comfy_panel")
+ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location("cold_branch_http", ROOT / "server.py")
 server_module = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(server_module)
@@ -22,6 +22,8 @@ server_module.FAVORITES_FILE = root / "favorites.json"
 server_module._jobs = {}
 server_module._favorites = {}
 server_module.run_job = lambda job: None
+SESSION = "cold-branch-session-1234567890"
+COOKIE = "jt_session=" + server_module._encode_session_cookie(SESSION)
 
 httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), server_module.Handler)
 thread = threading.Thread(target=httpd.serve_forever, daemon=True)
@@ -31,7 +33,7 @@ thread.start()
 def post(payload):
     connection = http.client.HTTPConnection("127.0.0.1", httpd.server_port, timeout=10)
     body = json.dumps(payload).encode()
-    connection.request("POST", "/api/generate", body, {"Content-Type": "application/json"})
+    connection.request("POST", "/api/generate", body, {"Content-Type": "application/json", "Cookie": COOKIE})
     response = connection.getresponse()
     data = json.loads(response.read() or b"{}")
     status = response.status

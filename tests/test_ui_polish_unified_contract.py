@@ -1,6 +1,6 @@
 from pathlib import Path
 import sys
-ROOT=Path(r"D:/LAN-Share/lora/_work/comfy_panel")
+ROOT = Path(__file__).resolve().parents[1]
 VIDEO_SOURCE=(ROOT/'sources/video_business.js').read_text(encoding='utf8')
 VIDEO_BUILDER=(ROOT/'build_video_workbench.py').read_text(encoding='utf8')
 DEPLOY=(ROOT/'tools/deploy_realism_release.py').read_text(encoding='utf8')

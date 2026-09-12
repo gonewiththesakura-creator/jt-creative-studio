@@ -1,7 +1,7 @@
 from pathlib import Path
 import sys
 
-ROOT = Path(r"D:/LAN-Share/lora/_work/comfy_panel")
+ROOT = Path(__file__).resolve().parents[1]
 PAGES = {
     name: (ROOT / "static" / name).read_text(encoding="utf8")
     for name in [

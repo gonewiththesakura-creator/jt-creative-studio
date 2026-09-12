@@ -1,6 +1,6 @@
 from pathlib import Path
 import sys
-ROOT=Path(r"D:/LAN-Share/lora/_work/comfy_panel")
+ROOT = Path(__file__).resolve().parents[1]
 HTML=(ROOT/'static/promptgen.html').read_text(encoding='utf8')
 checks={
  'unified styles expose six generation controls':all(x in HTML for x in ['id="genW"','id="genH"','id="genBatch"','id="genHd"','id="seedMode"','id="genSeed"']),

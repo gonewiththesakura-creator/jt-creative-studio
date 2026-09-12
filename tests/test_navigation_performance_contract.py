@@ -1,6 +1,6 @@
 from pathlib import Path
 import sys
-ROOT=Path(r"D:/LAN-Share/lora/_work/comfy_panel")
+ROOT = Path(__file__).resolve().parents[1]
 SERVER=(ROOT/"server.py").read_text(encoding="utf8")
 NAMES=("promptgen.html","video.html","realism.html")
 PAGES=[(ROOT/"static"/name).read_text(encoding="utf8") for name in NAMES]
@@ -16,7 +16,7 @@ checks={
  "no legacy realcomic prefetch":all('/realcomic' not in page.split('CREATOR_ROUTES',1)[-1].split(';',1)[0] for page in PAGES),
  "active job persisted by backend":all(x in PAGES[0] for x in ['sessionStorage','activeJobKey','generation_backend']),
  "resume polls without resubmit":'resumeActiveJobs' in PAGES[0] and "'/api/job/'" in PAGES[0] and 'submitGenerateResilient' in PAGES[0],
- "cloud local resume concurrently":"Promise.all(['cloud','local'].map(resumeActiveJob))" in PAGES[0],
+ "cloud local api resume concurrently":"Promise.all(['cloud','local','api'].map(resumeActiveJob))" in PAGES[0],
  "completed recovery restores result":'resumeActiveJobs' in PAGES[0] and 'addResult(j' in PAGES[0],
  "creator pages show RH coin cost":all(x in PAGES[0] for x in ['RH币：','j.rh_coins']),
  "home history server scoped":"/api/jobs?scope=creator" in PAGES[0],

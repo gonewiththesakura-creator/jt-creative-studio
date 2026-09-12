@@ -1,6 +1,6 @@
 import importlib.util,json
 from pathlib import Path
-ROOT=Path(r"D:/LAN-Share/lora/_work/comfy_panel")
+ROOT = Path(__file__).resolve().parents[1]
 SCRIPT=ROOT/'tools/deploy_realism_release.py';spec=importlib.util.spec_from_file_location('deploy_scail',SCRIPT);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 config=json.loads((ROOT/'config.json').read_text(encoding='utf8'))
 def test_scail_release_targets_are_gated():

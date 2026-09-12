@@ -1,7 +1,7 @@
 import ast
 from pathlib import Path
 
-ROOT = Path(r"D:/LAN-Share/lora/_work/comfy_panel")
+ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "tools" / "verify_private_realism_runninghub.py"
 TEXT = SCRIPT.read_text(encoding="utf-8")
 TREE = ast.parse(TEXT)

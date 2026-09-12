@@ -2,18 +2,20 @@ import importlib.util
 import tempfile
 from pathlib import Path
 
-ROOT=Path(r"D:/LAN-Share/lora/_work/comfy_panel")
+ROOT = Path(__file__).resolve().parents[1]
 spec=importlib.util.spec_from_file_location("progress_server_test",ROOT/"server.py")
 m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 
-# Idempotency: a retry for an accepted request returns the same stored job.
+# Idempotency: bind retries to both caller session and effective payload.
+request_hash=m.effective_request_sha256({"workflow":"anima02","prompt":"portrait"})
+session_hash=m._session_hash("session-a-1234567890")
 m._jobs={
- "accepted":{"id":"accepted","status":"running","generation_backend":"local","client_request_id":"req-123"},
- "other":{"id":"other","status":"done","generation_backend":"cloud","client_request_id":"req-123"},
+ "accepted":{"id":"accepted","status":"running","generation_backend":"local","client_request_id":"req-123","request_session_hash":session_hash,"effective_request_sha256":request_hash},
 }
-assert m.existing_job_for_request("req-123","local")["id"]=="accepted"
-assert m.existing_job_for_request("req-123","cloud")["id"]=="other"
-assert m.existing_job_for_request("","local") is None
+assert m.idempotency_decision("req-123","session-a-1234567890",request_hash)[:2]==("duplicate",m._jobs["accepted"])
+other_hash=m.effective_request_sha256({"workflow":"anima02","prompt":"other"})
+assert m.idempotency_decision("req-123","session-a-1234567890",other_hash)[0]=="conflict"
+assert m.idempotency_decision("req-123","session-b-1234567890",request_hash)[0]=="new"
 
 # Local transfer stage: four results advance from sample completion into a
 # separately observable transfer phase instead of remaining at LOCAL_RUNNING.

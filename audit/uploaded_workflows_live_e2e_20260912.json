@@ -1,0 +1,130 @@
+{
+  "verification": "PASS_WITH_DISCLOSED_VISUAL_WARNINGS",
+  "verified_at": "2026-09-12T18:30:00+08:00",
+  "scope_note": "Provider execution and artifact evidence. Early three runs predate upload-capability hardening; later three verify the opaque upload-capability path. No result URLs, upload tokens, prompts, provider filenames, or local absolute paths are retained.",
+  "workflows": {
+    "qwen_image_edit_zip": {
+      "run_workflow_id": "2097924547454918658",
+      "security_wrapper_scope": "pre_upload_capability_hardening",
+      "submit_attempts": 1,
+      "job_id": "dc292a0496d7",
+      "provider_task_id": "2098482621837561858",
+      "status": "done",
+      "provider_status": "DONE",
+      "rh_coins": "32",
+      "elapsed_seconds": 170.7,
+      "history_occurrences": null,
+      "result_count": 1,
+      "artifacts": [
+        {"container": "ZIP", "bytes": 5142161, "sha256": "527afde489a99ed5f40ce5ea08f21981228bec4e385700c6bbbf2e35cb1f8ce1", "member_count": 1, "zip_test_ok": true}
+      ],
+      "functional": "PASS",
+      "mechanical": "PASS",
+      "strict_visual": "PASS"
+    },
+    "h3_edit_t3": {
+      "run_workflow_id": "2098330116945457154",
+      "security_wrapper_scope": "pre_upload_capability_hardening",
+      "submit_attempts": 1,
+      "job_id": "9afefec7b35c",
+      "provider_task_id": "2098487571991543810",
+      "status": "done",
+      "provider_status": "DONE",
+      "rh_coins": "57",
+      "elapsed_seconds": 287.9,
+      "history_occurrences": null,
+      "result_count": 2,
+      "artifacts": [
+        {"container": "ISO-BMFF", "bytes": 169564, "sha256": "dedd780d9e41a47333f4a162e1813f5522482e525ef13d2e8ba0ef1ccdbdf9a9"},
+        {"container": "ISO-BMFF", "bytes": 380703, "sha256": "26ee89d599eb3a8d609383826e3de681d8922bf6e75e3eb6b373a4c0b9df19fa"}
+      ],
+      "functional": "PASS",
+      "mechanical": "PASS",
+      "strict_visual": "NOT_RATED"
+    },
+    "h3_edit_remove": {
+      "run_workflow_id": "2097937340852727809",
+      "security_wrapper_scope": "pre_upload_capability_hardening",
+      "submit_attempts": 1,
+      "job_id": "53a605803781",
+      "provider_task_id": "2098487578251001857",
+      "status": "done",
+      "provider_status": "DONE",
+      "rh_coins": "55",
+      "elapsed_seconds": 279.9,
+      "history_occurrences": null,
+      "result_count": 2,
+      "artifacts": [
+        {"container": "ISO-BMFF", "bytes": 168777, "sha256": "c9468119e5a1dfce813fd5ec68c5aa87707f19d9c5f9ffdb703f193c6379187a"},
+        {"container": "ISO-BMFF", "bytes": 316225, "sha256": "0e3700208e11fd0b08622901f51e1350fc793f5ecf2b6c2ef008b6f6af5d541d"}
+      ],
+      "functional": "PASS",
+      "mechanical": "PASS",
+      "strict_visual": "WARNING",
+      "visual_warning": "Main result showed hand blur in the controlled review; the UI discloses this workflow-specific quality risk."
+    },
+    "h3_edit_n": {
+      "run_workflow_id": "2098330246185926657",
+      "security_wrapper_scope": "opaque_upload_capability_verified",
+      "submit_attempts": 1,
+      "job_id": "f6429e986717",
+      "provider_task_id": "2098525802599895042",
+      "status": "done",
+      "provider_status": "DONE",
+      "rh_coins": "36",
+      "elapsed_seconds": 183.9,
+      "history_occurrences": 1,
+      "result_count": 1,
+      "upload_token_exposed": false,
+      "artifacts": [
+        {"container": "ISO-BMFF", "bytes": 212602, "sha256": "09ceb6c22a7131946377ec57bfd477520766f9bc09d93063ae5dfafb68d7a58b", "video_codec": "h264", "audio_codec": "aac", "width": 768, "height": 448, "duration_seconds": 5.166667}
+      ],
+      "functional": "PASS",
+      "mechanical": "PASS",
+      "strict_visual": "NOT_RATED"
+    },
+    "wan_action_stabilized": {
+      "run_workflow_id": "2097924526817800193",
+      "security_wrapper_scope": "opaque_upload_capability_verified",
+      "submit_attempts": 1,
+      "job_id": "6079ca16cb0c",
+      "provider_task_id": "2098587433266663425",
+      "status": "done",
+      "provider_status": "DONE",
+      "rh_coins": "51",
+      "elapsed_seconds": 259.0,
+      "history_occurrences": 1,
+      "result_count": 1,
+      "upload_token_exposed": false,
+      "artifacts": [
+        {"container": "ZIP", "bytes": 419330, "sha256": "2dcc1c1031b454624c971e53edc83d771833b214999fc9cd3498472e7f4f74b7", "zip_test_ok": true}
+      ],
+      "functional": "PASS",
+      "mechanical": "PASS",
+      "strict_visual": "PASS",
+      "visual_review": "Dense 24-frame review passed with head, hands, and feet retained."
+    },
+    "scail2_action_replace": {
+      "run_workflow_id": "2097870206308147201",
+      "security_wrapper_scope": "opaque_upload_capability_verified",
+      "submit_attempts": 1,
+      "job_id": "529d7df24fdb",
+      "provider_task_id": "2098585909081964545",
+      "status": "done",
+      "provider_status": "DONE",
+      "rh_coins": "82",
+      "elapsed_seconds": 418.7,
+      "history_occurrences": 1,
+      "result_count": 2,
+      "upload_token_exposed": false,
+      "artifacts": [
+        {"container": "ISO-BMFF", "bytes": 1386837, "sha256": "7f0d8b529004b5d4e0f33dcab7ee82e5e92432efc5be46520aca824631cf836e", "stage_label": "动作迁移主视频", "video_codec": "h264", "width": 512, "height": 896, "duration_seconds": 6.041667},
+        {"container": "ISO-BMFF", "bytes": 1527555, "sha256": "6dff841440376f208d1792cab3b7a1f55f362a526907c6b2d0f0729ae0faa85c", "stage_label": "输入 / 参考 / 结果对比", "video_codec": "h264", "width": 888, "height": 1280, "duration_seconds": 6.041667}
+      ],
+      "functional": "PASS",
+      "mechanical": "PASS",
+      "strict_visual": "WARNING",
+      "visual_warning": "The main result contained one confirmed blended double-face/duplicate-torso frame at 2.640 seconds; the UI discloses this temporal quality risk."
+    }
+  }
+}

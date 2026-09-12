@@ -1,6 +1,6 @@
 from pathlib import Path
 import json,re,sys
-ROOT=Path(r"D:/LAN-Share/lora/_work/comfy_panel")
+ROOT = Path(__file__).resolve().parents[1]
 HOME=(ROOT/'static/promptgen.html').read_text(encoding='utf8')
 SERVER=(ROOT/'server.py').read_text(encoding='utf8')
 match=re.search(r"const STYLE_CONFIGS=(.*?);const DRAWERS=",HOME,re.S)

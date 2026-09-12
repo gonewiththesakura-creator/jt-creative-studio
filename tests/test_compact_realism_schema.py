@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-ROOT=Path(r"D:/LAN-Share/lora/_work/comfy_panel")
+ROOT = Path(__file__).resolve().parents[1]
 CONFIG=json.loads((ROOT/'config.json').read_text(encoding='utf-8'))
 BY_ID={w['id']:w for w in CONFIG['workflows']}
 
@@ -34,6 +34,16 @@ def test_public_schema_hides_node_wiring_and_trusted_overrides():
  public=mod.public_workflow(BY_ID['realism_zi_flowmatch'])
  for mapping in list(public['rh_media'].values())+list(public['rh_params'].values()):
   assert not {'node','field','node_type','trusted_overrides'}.intersection(mapping)
+
+
+def test_public_schema_hides_provider_and_model_implementation_details():
+ import importlib.util
+ spec=importlib.util.spec_from_file_location('compact_server_private',ROOT/'server.py');mod=importlib.util.module_from_spec(spec);spec.loader.exec_module(mod)
+ public=mod.public_workflow(mod.WORKFLOWS['anima02'])
+ assert not {'loras','trigger_default','backend','needs_ollama'}.intersection(public)
+ serialized=json.dumps(public,ensure_ascii=False)
+ assert '.safetensors' not in serialized
+ assert 'LoRA' not in serialized and '触发词' not in serialized
 
 
 

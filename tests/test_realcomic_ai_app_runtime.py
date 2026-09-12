@@ -1,9 +1,9 @@
 import importlib.util,json
 from pathlib import Path
-P=Path(r"D:/LAN-Share/lora/_work/comfy_panel/server.py")
+P = Path(__file__).resolve().parents[1] / 'server.py'
 spec=importlib.util.spec_from_file_location('realcomic_runtime',P);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 w=next(x for x in m.CONFIG['workflows'] if x['id']=='realcomic')
-job={'workflow':'realcomic','media':{'source_image':'api/source.png'},'params':{'requirements':'保留构图并去除文字'}}
+job={'workflow':'realcomic','media':{'source_image':'source.png'},'provider_media':{'source_image':'api/source.png'},'params':{'requirements':'保留构图并去除文字'}}
 node_info=m.rh_build_ai_app_node_info(job,w)
 assert node_info==[
  {'nodeId':'504','fieldName':'image','fieldValue':'api/source.png'},

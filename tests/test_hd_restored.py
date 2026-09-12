@@ -1,6 +1,6 @@
 from pathlib import Path
 import sys
-s=Path(r'D:/LAN-Share/lora/_work/comfy_panel/static/promptgen.html').read_text(encoding='utf8')
+s = (Path(__file__).resolve().parents[1] / 'static' / 'promptgen.html').read_text(encoding='utf8')
 checks={
  'hd selector exists':'id="genHd"' in s,
  'three hd choices':all(x in s for x in ['关闭','ClearReality 2×','UltraSharp 2×']),

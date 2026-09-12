@@ -1,8 +1,8 @@
 {
   "sources": {
-    "cold": "D:\\LAN-Share\\lora\\_work\\comfy_panel\\sources\\cold_promptgen_source.html",
-    "sketch": "C:\\Users\\JT\\AppData\\Local\\hermes\\attachments\\sketch_anime_dual_mode_generator.html",
-    "graphic": "C:\\Users\\JT\\AppData\\Local\\hermes\\attachments\\graphic_anime_style2_dual_mode_generator.html"
+    "cold": "cold_promptgen_source.html",
+    "sketch": "sketch_promptgen_source.html",
+    "graphic": "graphic_promptgen_source.html"
   },
   "source_counts": {
     "cold": {

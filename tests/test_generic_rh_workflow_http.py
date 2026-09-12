@@ -6,7 +6,7 @@ import tempfile
 import threading
 from pathlib import Path
 
-ROOT = Path(r"D:/LAN-Share/lora/_work/comfy_panel")
+ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location("generic_workflow_http", ROOT / "server.py")
 server_module = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(server_module)
@@ -38,8 +38,10 @@ server_module.JOBS_FILE = root / "jobs.json"
 server_module.FAVORITES_DIR = root / "favorites"
 server_module.FAVORITES_DIR.mkdir()
 server_module.FAVORITES_FILE = root / "favorites.json"
+server_module.UPLOAD_CAPABILITIES_FILE = root / "upload_capabilities.json"
 server_module._jobs = {}
 server_module._favorites = {}
+server_module._upload_capabilities = {}
 server_module.run_job = lambda job: None
 
 httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), server_module.Handler)
@@ -47,10 +49,22 @@ thread = threading.Thread(target=httpd.serve_forever, daemon=True)
 thread.start()
 
 
+SESSION_ID = "generic-http-session-1234567890"
+COOKIE = "jt_session=" + server_module._encode_session_cookie(SESSION_ID)
+
+
+def upload_token(workflow, key, provider_name, original_name):
+    media_type = workflow["rh_media"][key]["type"]
+    return server_module.issue_upload_capability(
+        provider_name, workflow["id"], key, media_type, original_name, SESSION_ID)
+
+
 def request(method, path, payload=None):
     connection = http.client.HTTPConnection("127.0.0.1", httpd.server_port, timeout=10)
     body = None if payload is None else json.dumps(payload).encode()
-    headers = {} if body is None else {"Content-Type": "application/json"}
+    headers = {"Cookie": COOKIE}
+    if body is not None:
+        headers["Content-Type"] = "application/json"
     connection.request(method, path, body, headers)
     response = connection.getresponse()
     raw = response.read()
@@ -87,9 +101,10 @@ try:
         assert not {"node", "field", "node_type", "trusted_overrides"}.intersection(mapping)
     assert "rh_workflow_id" not in shown
 
+    fixture_token = upload_token(fixture, "source_image", "api/input.png", "input.png")
     payload = {
         "workflow": "fixture_3in1",
-        "media": {"source_image": "api/input.png", "evil": "drop"},
+        "media": {"source_image": fixture_token, "evil": "drop"},
         "params": {"route_a": False, "result_mode": "two", "steps": "28", "denoise": "0.65", "evil": "drop"},
         "client_request_id": "generic-same",
         "workflowId": "attacker-id",
@@ -112,14 +127,15 @@ try:
     assert status == 200 and first.get("job_id"), (status, first)
     job = server_module._jobs[first["job_id"]]
     assert job["workflow"] == "fixture_3in1"
-    assert job["media"] == {"source_image": "api/input.png"}
+    assert job["media"] == {"source_image": "input.png"}
+    assert job["provider_media"] == {"source_image": "api/input.png"}
     assert job["params"] == {"route_a": False, "result_mode": "two", "steps": 28, "denoise": 0.65}
     assert "workflowId" not in job and "nodeInfoList" not in job
     assert job["selection_snapshot"] == {
         "source_page": "realism",
         "workflow": "fixture_3in1",
         "params": {"route_a": False, "result_mode": "two", "steps": 28, "denoise": 0.65},
-        "media": {"source_image": "api/input.png"},
+        "media": {},
         "media_names": {"source_image": "input.png"},
     }
 
@@ -140,7 +156,9 @@ try:
     assert status == 400 and "unknown workflow" in retired["error"], (status, retired)
 
     real = server_module.WORKFLOWS["realism_zi_flowmatch"]
-    real_media = {key: f"api/{key}.png" for key in real["rh_media"]}
+    real_provider_media = {key: f"api/{key}.png" for key in real["rh_media"]}
+    real_media = {key: upload_token(real, key, value, f"{key}.png")
+                  for key, value in real_provider_media.items()}
     real_params = {key: row["default"] for key, row in real["rh_params"].items()}
     boolean_false = "lora_stack"
     real_params[boolean_false] = False
@@ -153,7 +171,8 @@ try:
     assert status == 200 and real_result.get("job_id"), (status, real_result)
     real_job = server_module._jobs[real_result["job_id"]]
     assert real_job["workflow"] == "realism_zi_flowmatch"
-    assert real_job["media"] == real_media
+    assert real_job["media"] == {key: f"{key}.png" for key in real_media}
+    assert real_job["provider_media"] == real_provider_media
     assert set(real_job["params"]) == set(real["rh_params"])
     assert real_job["params"][boolean_false] is False
     assert "workflowId" not in real_job and "nodeInfoList" not in real_job
