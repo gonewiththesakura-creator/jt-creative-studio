@@ -86,3 +86,8 @@ def test_creator_static_config_does_not_publish_lora_filenames():
     text = path.read_text(encoding="utf8")
     assert ".safetensors" not in text, path
     assert '"lora1"' not in text and '"lora2"' not in text, path
+
+
+def test_creator_has_no_numeric_progress_label_markup_or_css():
+    for page in FILES:
+        assert "liquid-percent" not in page.read_text(encoding="utf8"), page

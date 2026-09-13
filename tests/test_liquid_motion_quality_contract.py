@@ -16,7 +16,7 @@ checks={
  "idle canvas beats legacy primary background":'.primary.generate.liquid-button{background:#fff' in PAGES[0],
  "thin exact meniscus":all('.liquid-meniscus{position:absolute;left:-2%;right:-2%;top:-1px;height:2px' in page for page in PAGES),
  "subtle linear specular":all('linear-gradient(105deg,transparent,rgba(255,255,255,.2),transparent)' in page and 'border-radius:50%' not in page.split('.liquid-specular{',1)[1].split('}',1)[0] for page in PAGES),
- "progress labels stay legible":all('.liquid-percent{min-width:34px' in page and 'font-weight:800' in page for page in PAGES),
+ "progress is visual only":all('liquid-percent' not in page and 'liquid-fill' in page for page in PAGES),
  "quiet solid material":all('background:color-mix(in srgb,var(--liquid-color) 78%,#667085)' in page and '0 8px 22px' not in page for page in PAGES),
  "no liquid glow":all('.liquid-meniscus' in page and 'box-shadow:none' in page.split('.liquid-meniscus{',1)[1].split('}',1)[0] for page in PAGES),
  "reduced motion keeps exact value":all("prefers-reduced-motion:reduce" in page and "LIQUID_REDUCED_MOTION" in page for page in PAGES),

@@ -16,7 +16,7 @@ checks={
  "submission carries idempotency key":all('client_request_id' in page and 'submitGenerateResilient' in page for page in PAGES),
  "server deduplicates accepted submission":all(x in SERVER for x in ['client_request_id','deduplicated','existing_job','same request already accepted']),
  "cloud never fabricates percentage from poll count":'poll_count * 3' not in SERVER and 'RH_STAGE_PROGRESS' in SERVER,
- "progress label exposed":all('liquid-percent' in page for page in PAGES),
+ "numeric progress label hidden":all('liquid-percent' not in page for page in PAGES),
  "server exposes transfer phase":all(x in SERVER for x in ['RESULT_TRANSFERRING','RESULT_DOWNLOADING','transfer_index','transfer_total']),
  "server records local prompt id":'job["prompt_ids"].append(pid)' in SERVER and '"prompt_ids"' in SERVER,
  "local done phase is explicit":'LOCAL_DONE' in SERVER and 'progress_pct"] = 100' in SERVER,
