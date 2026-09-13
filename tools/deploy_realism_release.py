@@ -1269,11 +1269,12 @@ def state(*args):
     r=subprocess.run(['systemctl',*args],text=True,capture_output=True)
     return (r.stdout or r.stderr).strip().splitlines()[0] if (r.stdout or r.stderr).strip() else ''
 print(state('is-active','comfy-panel-watchdog.timer'))
+print(state('is-enabled','comfy-panel-watchdog.timer'))
 print(state('is-active','comfy-panel-watchdog.service'))
 print(state('is-enabled','comfy-panel-watchdog.service'))
 """
     rows = command(client, "python3 -c " + shlex.quote(script)).splitlines()
-    if len(rows) != 3:
+    if len(rows) != 4:
         raise RuntimeError("watchdog isolation state probe failed")
     return tuple(row.strip() for row in rows)
 
@@ -1283,13 +1284,25 @@ def isolate_watchdog(client):
     command(client, "sudo systemctl disable --now comfy-panel-watchdog.timer")
     command(client, "sudo systemctl stop comfy-panel-watchdog.service")
     command(client, "sudo systemctl mask --runtime comfy-panel-watchdog.service")
-    timer_active, service_active, service_enabled = watchdog_isolation_state(client)
-    if (timer_active != "inactive" or service_active != "inactive"
-            or service_enabled not in {"masked", "masked-runtime"}):
+    timer_active, timer_enabled, service_active, service_enabled = watchdog_isolation_state(client)
+    if (timer_active != "inactive"
+            or timer_enabled not in {"disabled", "masked", "masked-runtime"}
+            or service_active != "inactive"
+            or service_enabled not in {"static", "masked", "masked-runtime"}):
         raise RuntimeError(
             "watchdog isolation failed: "
-            f"timer={timer_active} service={service_active} enabled={service_enabled}"
+            f"timer={timer_active}/{timer_enabled} "
+            f"service={service_active}/{service_enabled}"
         )
+
+
+def isolate_watchdog_or_restore(client, original_state):
+    """Restore the original watchdog when isolation fails before panel mutation."""
+    try:
+        isolate_watchdog(client)
+    except Exception:
+        restore_watchdog_state(client, original_state)
+        raise
 
 
 def capture_watchdog_state(client):
@@ -1427,8 +1440,8 @@ def deploy(files, public_base=PUBLIC_BASE):
         release_manifest = backup_release(client, sftp, remote_paths, transaction)
         write_transaction_phase(client, transaction, "prepared")
 
+        isolate_watchdog_or_restore(client, watchdog_state)
         try:
-            isolate_watchdog(client)
             command(client, "sudo systemctl stop comfy-panel", timeout=240)
             write_transaction_phase(client, transaction, "swapping")
             for remote in remote_paths:
@@ -1486,15 +1499,18 @@ def deploy(files, public_base=PUBLIC_BASE):
             print("COMFY_DIAGNOSTIC", json.dumps(health, ensure_ascii=False))
             print("PUBLIC_MARKERS_OK")
         except Exception:
-            isolate_watchdog(client)
             try:
+                isolate_watchdog(client)
                 write_transaction_phase(client, transaction, "rolling-back")
                 rollback_release(client, sftp, remote_paths, transaction, public_base=public_base)
             except Exception:
                 # An uncertain rollback must remain stopped; restoring an active
                 # watchdog could restart a mixed release.
                 rollback_uncertain = True
-                write_transaction_phase(client, transaction, "rollback-failed")
+                try:
+                    write_transaction_phase(client, transaction, "rollback-failed")
+                except Exception:
+                    pass
                 raise
             else:
                 try:

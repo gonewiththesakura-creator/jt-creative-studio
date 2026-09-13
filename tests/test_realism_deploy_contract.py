@@ -536,7 +536,7 @@ def test_rollback_keeps_panel_stopped_when_liveness_check_raises(monkeypatch):
 def test_deploy_stops_and_masks_watchdog_service_and_timer_before_swap():
     source = SCRIPT.read_text(encoding="utf-8")
     deploy_body = source.split("def deploy(", 1)[1].split("def parse_args(", 1)[0]
-    isolation_at = deploy_body.index("isolate_watchdog(client)")
+    isolation_at = deploy_body.index("isolate_watchdog_or_restore(client, watchdog_state)")
     stop_at = deploy_body.index('command(client, "sudo systemctl stop comfy-panel"')
     swap_at = deploy_body.index("for remote in remote_paths:", stop_at)
     assert isolation_at < stop_at < swap_at
@@ -548,7 +548,7 @@ def test_watchdog_isolation_fails_closed_and_verifies_systemd_state(monkeypatch)
     def fake_command(client, text, timeout=240):
         calls.append(text)
         if text.startswith("python3 -c"):
-            return "inactive\ninactive\nmasked-runtime\n"
+            return "inactive\ndisabled\ninactive\nmasked-runtime\n"
         return ""
 
     monkeypatch.setattr(module, "command", fake_command)
@@ -564,9 +564,10 @@ def test_watchdog_isolation_fails_closed_and_verifies_systemd_state(monkeypatch)
 
 def test_watchdog_isolation_rejects_any_non_isolated_state(monkeypatch):
     module = load_module()
-    for replies in (["active", "inactive", "masked"],
-                    ["inactive", "active", "masked"],
-                    ["inactive", "inactive", "disabled"]):
+    for replies in (["active", "disabled", "inactive", "masked"],
+                    ["inactive", "enabled", "inactive", "masked"],
+                    ["inactive", "disabled", "active", "masked"],
+                    ["inactive", "disabled", "inactive", "disabled"]):
         payload = "\n".join(replies) + "\n"
         monkeypatch.setattr(module, "command", lambda client, text, timeout=240:
                             payload if text.startswith("python3 -c") else "")
@@ -594,10 +595,30 @@ def test_watchdog_state_probe_accepts_expected_nonzero_systemctl_status(monkeypa
     module = load_module()
     calls = []
     monkeypatch.setattr(module, "command", lambda client, text, timeout=240:
-                        calls.append(text) or "inactive\ninactive\nmasked\n")
-    assert module.watchdog_isolation_state(object()) == ("inactive", "inactive", "masked")
+                        calls.append(text) or "inactive\ndisabled\ninactive\nmasked\n")
+    assert module.watchdog_isolation_state(object()) == ("inactive", "disabled", "inactive", "masked")
     assert len(calls) == 1
     assert "subprocess.run" in calls[0]
+
+
+def test_watchdog_isolation_accepts_inactive_static_service_with_disabled_timer(monkeypatch):
+    module = load_module()
+    monkeypatch.setattr(module, "command", lambda client, text, timeout=240:
+                        "inactive\ndisabled\ninactive\nstatic\n" if text.startswith("python3 -c") else "")
+    module.isolate_watchdog(object())
+
+
+def test_pre_swap_watchdog_isolation_failure_restores_original_state(monkeypatch):
+    module = load_module()
+    state = {"timer_active": "active"}
+    calls = []
+    monkeypatch.setattr(module, "isolate_watchdog",
+                        lambda client: (_ for _ in ()).throw(RuntimeError("isolation failed")))
+    monkeypatch.setattr(module, "restore_watchdog_state",
+                        lambda client, snapshot: calls.append(snapshot))
+    with pytest.raises(RuntimeError, match="isolation failed"):
+        module.isolate_watchdog_or_restore(object(), state)
+    assert calls == [state]
 
 
 def test_watchdog_snapshot_restores_service_mask_state(monkeypatch):
@@ -625,6 +646,16 @@ def test_deploy_keeps_lock_after_uncertain_rollback():
     deploy_body = source.split("def deploy(", 1)[1].split("def parse_args(", 1)[0]
     assert "rollback_uncertain" in deploy_body
     assert 'if lock_acquired and not rollback_uncertain:' in deploy_body
+
+
+def test_secondary_watchdog_isolation_is_inside_uncertain_rollback_guard():
+    source = SCRIPT.read_text(encoding="utf-8")
+    deploy_body = source.split("def deploy(", 1)[1].split("def parse_args(", 1)[0]
+    handler = deploy_body.split('print("PUBLIC_MARKERS_OK")', 1)[1].split("finally:", 1)[0]
+    guarded = handler.split("else:", 1)[0]
+    assert guarded.index("try:") < guarded.index("isolate_watchdog(client)")
+    assert "rollback_uncertain = True" in guarded
+    assert 'write_transaction_phase(client, transaction, "rollback-failed")' in guarded
 
 
 def test_watchdog_restore_failure_keeps_release_lock_and_marks_rollback_failed():
