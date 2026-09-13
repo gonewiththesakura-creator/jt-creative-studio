@@ -147,21 +147,30 @@
      "field": "值",
      "type": "number",
      "label": "宽",
-     "vtype": "int"
+     "vtype": "int",
+     "min": 256,
+     "max": 2048,
+     "step": 16
     },
     "height": {
      "node": "46",
      "field": "值",
      "type": "number",
      "label": "高",
-     "vtype": "int"
+     "vtype": "int",
+     "min": 256,
+     "max": 2048,
+     "step": 16
     },
     "duration": {
      "node": "45",
      "field": "值",
      "type": "number",
      "label": "时长（秒）",
-     "vtype": "int"
+     "vtype": "int",
+     "min": 4,
+     "max": 15,
+     "step": 1
     }
    },
    "params_defaults": {
@@ -218,21 +227,30 @@
      "field": "value",
      "type": "number",
      "label": "宽",
-     "vtype": "int"
+     "vtype": "int",
+     "min": 256,
+     "max": 1280,
+     "step": 16
     },
     "height": {
      "node": "5",
      "field": "value",
      "type": "number",
      "label": "高",
-     "vtype": "int"
+     "vtype": "int",
+     "min": 256,
+     "max": 1280,
+     "step": 16
     },
     "duration": {
      "node": "32",
      "field": "value",
      "type": "number",
      "label": "时长（秒）",
-     "vtype": "int"
+     "vtype": "int",
+     "min": 1,
+     "max": 15,
+     "step": 1
     }
    },
    "params_defaults": {
@@ -289,14 +307,20 @@
      "field": "value",
      "type": "number",
      "label": "宽",
-     "vtype": "int"
+     "vtype": "int",
+     "min": 256,
+     "max": 1280,
+     "step": 16
     },
     "height": {
      "node": "1049",
      "field": "value",
      "type": "number",
      "label": "高",
-     "vtype": "int"
+     "vtype": "int",
+     "min": 256,
+     "max": 1280,
+     "step": 16
     }
    },
    "params_defaults": {
@@ -333,7 +357,10 @@
      "field": "value",
      "type": "number",
      "label": "最长边长度",
-     "vtype": "int"
+     "vtype": "int",
+     "min": 512,
+     "max": 2048,
+     "step": 8
     }
    },
    "params_defaults": {
@@ -379,14 +406,20 @@
      "field": "value",
      "type": "number",
      "label": "时长（秒）",
-     "vtype": "float"
+     "vtype": "float",
+     "min": 4,
+     "max": 15,
+     "step": 1
     },
     "max_side": {
      "node": "145",
      "field": "value",
      "type": "number",
      "label": "最长边长度",
-     "vtype": "int"
+     "vtype": "int",
+     "min": 512,
+     "max": 2048,
+     "step": 8
     }
    },
    "params_defaults": {
@@ -1017,7 +1050,8 @@
      "label": "输出宽度",
      "default": 720,
      "min": 256,
-     "max": 2048
+     "max": 2048,
+     "step": 16
     },
     "height": {
      "node": "116",
@@ -1026,7 +1060,8 @@
      "label": "输出高度",
      "default": 1280,
      "min": 256,
-     "max": 2048
+     "max": 2048,
+     "step": 16
     },
     "frame_rate": {
      "node": "112",
@@ -1035,7 +1070,8 @@
      "label": "强制帧率（0=沿用源视频）",
      "default": 0,
      "min": 0,
-     "max": 60
+     "max": 60,
+     "step": 1
     },
     "frame_load_cap": {
      "node": "110",
@@ -1044,7 +1080,8 @@
      "label": "读取帧数（0=全部）",
      "default": 0,
      "min": 0,
-     "max": 100000
+     "max": 3600,
+     "step": 1
     },
     "skip_first_frames": {
      "node": "111",
@@ -1053,7 +1090,8 @@
      "label": "跳过开头帧数",
      "default": 0,
      "min": 0,
-     "max": 100000
+     "max": 3600,
+     "step": 1
     },
     "seed": {
      "node": "45",
@@ -1062,7 +1100,8 @@
      "label": "随机种子",
      "default": 328570562043662,
      "min": 0,
-     "max": 1125899906842624
+     "max": 1125899906842624,
+     "step": 1
     },
     "vae_tiling": {
      "node": "43",
@@ -1153,7 +1192,8 @@
      "label": "视频最长边",
      "default": 896,
      "min": 256,
-     "max": 2048
+     "max": 2048,
+     "step": 16
     },
     "frame_rate": {
      "node": "438",
@@ -1162,7 +1202,8 @@
      "label": "强制帧率",
      "default": 30,
      "min": 1,
-     "max": 60
+     "max": 60,
+     "step": 1
     },
     "frame_load_cap": {
      "node": "295",
@@ -1171,7 +1212,8 @@
      "label": "读取帧数（0=全部）",
      "default": 0,
      "min": 0,
-     "max": 100000
+     "max": 3600,
+     "step": 1
     },
     "skip_first_frames": {
      "node": "294",
@@ -1180,7 +1222,8 @@
      "label": "跳过开头帧数",
      "default": 0,
      "min": 0,
-     "max": 100000
+     "max": 3600,
+     "step": 1
     },
     "people": {
      "node": "439",
@@ -1189,7 +1232,8 @@
      "label": "人数",
      "default": 1,
      "min": 1,
-     "max": 3
+     "max": 3,
+     "step": 1
     },
     "seed": {
      "node": "493",
@@ -1198,7 +1242,8 @@
      "label": "随机种子",
      "default": 914837815167441,
      "min": 0,
-     "max": 1125899906842624
+     "max": 1125899906842624,
+     "step": 1
     },
     "mode": {
      "type": "select",
@@ -1323,6 +1368,7 @@
      "required": true,
      "min": 0,
      "max": 1125899906842624,
+     "step": 1,
      "group": "advanced"
     }
    },
@@ -1394,6 +1440,7 @@
      "required": true,
      "min": 0,
      "max": 1125899906842624,
+     "step": 1,
      "group": "advanced"
     }
    },
@@ -1469,6 +1516,7 @@
      "required": true,
      "min": 0,
      "max": 1125899906842624,
+     "step": 1,
      "group": "advanced"
     }
    },
@@ -1592,6 +1640,7 @@
      "required": true,
      "min": 1,
      "max": 5,
+     "step": 1,
      "group": "common"
     },
     "width": {
@@ -1639,6 +1688,7 @@
      "required": true,
      "min": 0,
      "max": 1125899906842624,
+     "step": 1,
      "group": "advanced"
     }
    },
@@ -1738,6 +1788,7 @@
      "required": true,
      "min": 1,
      "max": 15,
+     "step": 1,
      "group": "common"
     },
     "long_edge": {
@@ -1761,6 +1812,7 @@
      "required": true,
      "min": 1,
      "max": 5,
+     "step": 1,
      "group": "advanced"
     },
     "seed": {
@@ -1772,6 +1824,7 @@
      "required": true,
      "min": 0,
      "max": 1125899906842624,
+     "step": 1,
      "group": "advanced"
     }
    },

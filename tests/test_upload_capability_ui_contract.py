@@ -6,13 +6,13 @@ REALISM = (ROOT / "build_realism_workbench.py").read_text(encoding="utf8")
 
 
 def test_video_upload_sends_trusted_scope_and_stores_only_opaque_token():
-    assert "workflow:cur.id,input_key:key,filename:file.name" in VIDEO
-    assert "mediaFiles[key]=r.uploadToken" in VIDEO
+    assert "workflow:workflow.id,input_key:key,filename:file.name" in VIDEO
+    assert "state.tokens[key]=r.uploadToken" in VIDEO
     assert "mediaFiles[key]=r.fileName" not in VIDEO
 
 
 def test_realism_and_ai_app_uploads_send_scope_and_store_only_opaque_token():
-    assert "workflow:current.id,input_key:key,filename:file.name,data" in REALISM
+    assert "workflow:workflow.id,input_key:key,filename:file.name,data" in REALISM
     assert "state.media[key]=result.uploadToken" in REALISM
     assert "state.media[key]=result.fileName" not in REALISM
 

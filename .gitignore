@@ -3,6 +3,8 @@ PANEL_TOKEN.txt
 tools/creds.json
 tools/id_ed25519
 tools/id_ed25519.pub
+.env
+.env.*
 *.pem
 *.key
 

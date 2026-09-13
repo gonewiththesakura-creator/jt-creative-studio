@@ -125,6 +125,21 @@ def test_watchdog_units_are_installed_and_verified():
     assert "enable --now comfy-panel-watchdog.timer" in source
     assert "is-enabled comfy-panel-watchdog.timer" in source
     assert "is-active comfy-panel-watchdog.timer" in source
+    assert "systemctl unmask --runtime comfy-panel-watchdog.service" in source
+    assert "sudo systemctl start comfy-panel-watchdog.service" in source
+    assert "watchdog service execution verification failed" in source
+    assert "verify_installed_watchdog_contract(client)" in source
+    verifier = source.split("def verify_installed_watchdog_contract", 1)[1].split(
+        "def install_watchdog_units", 1
+    )[0]
+    assert "FragmentPath" in verifier and "DropInPaths" in verifier
+    assert "watchdog effective ExecStart mismatch" in verifier
+    assert "watchdog effective timer schedule mismatch" in verifier
+    assert "TimersMonotonic" in verifier and "Persistent" in verifier
+    assert "OnBootUSec=2min" in verifier
+    assert "OnUnitActiveUSec=1min" in verifier
+    assert "OnBootSec=2min" not in verifier
+    assert "OnUnitActiveSec=1min" not in verifier
     assert "capture_watchdog_state" in source
     assert "restore_watchdog_state" in source
     assert "ExecStart=/usr/bin/python3 /usr/local/libexec/comfy-panel-watchdog.py" in service
@@ -140,19 +155,22 @@ def test_watchdog_rollback_restores_exact_unit_contents_and_states(monkeypatch):
     captured = {
         "service_exists": True,
         "service_b64": base64.b64encode(old_service).decode(),
+        "service_mode": 0o640,
         "timer_exists": False,
         "timer_b64": "",
+        "timer_mode": None,
         "service_active": "inactive",
         "service_enabled": "disabled",
         "timer_enabled": "enabled",
         "timer_active": "active",
         "executable_exists": True,
         "executable_b64": base64.b64encode(b"#!/usr/bin/python3\n# old\n").decode(),
+        "executable_mode": 0o755,
     }
     calls = []
     def fake_command(client, text, timeout=240):
         calls.append(text)
-        return json.dumps(captured) if len(calls) == 1 else ""
+        return json.dumps(captured) if "print(json.dumps" in text else ""
     monkeypatch.setattr(module, "command", fake_command)
     state = module.capture_watchdog_state(object())
     module.restore_watchdog_state(object(), state)
@@ -353,7 +371,7 @@ def test_release_reads_back_the_new_creator_style_and_exact_preview_bytes():
     deploy_body = source.split("def deploy(", 1)[1].split("def parse_args", 1)[0]
     for marker in ["retro_manga_luxury", "jt_style321_v1", "style-retro-manga-luxury.webp"]:
         assert marker in deploy_body
-    assert "verify_public_large_responses(public_base)" in deploy_body
+    assert "verify_public_large_responses(" in deploy_body
     helper_body = source.split("def verify_public_large_responses(", 1)[1].split("def wait_for_health", 1)[0]
     assert '"/static/previews/style-retro-manga-luxury.webp"' in helper_body
     assert "timeout=300" in helper_body
@@ -536,7 +554,7 @@ def test_rollback_keeps_panel_stopped_when_liveness_check_raises(monkeypatch):
 def test_deploy_stops_and_masks_watchdog_service_and_timer_before_swap():
     source = SCRIPT.read_text(encoding="utf-8")
     deploy_body = source.split("def deploy(", 1)[1].split("def parse_args(", 1)[0]
-    isolation_at = deploy_body.index("isolate_watchdog_or_restore(client, watchdog_state)")
+    isolation_at = deploy_body.index("isolate_watchdog(client)")
     stop_at = deploy_body.index('command(client, "sudo systemctl stop comfy-panel"')
     swap_at = deploy_body.index("for remote in remote_paths:", stop_at)
     assert isolation_at < stop_at < swap_at
@@ -553,13 +571,29 @@ def test_watchdog_isolation_fails_closed_and_verifies_systemd_state(monkeypatch)
 
     monkeypatch.setattr(module, "command", fake_command)
     module.isolate_watchdog(object())
-    assert calls[:3] == [
-        "sudo systemctl disable --now comfy-panel-watchdog.timer",
-        "sudo systemctl stop comfy-panel-watchdog.service",
-        "sudo systemctl mask --runtime comfy-panel-watchdog.service",
-    ]
+    assert "systemctl disable --runtime --now comfy-panel-watchdog.timer" in calls[0]
+    assert "systemctl disable --now comfy-panel-watchdog.timer" in calls[0]
+    assert "systemctl disable --runtime --now comfy-panel-watchdog.service" in calls[1]
+    assert "systemctl stop comfy-panel-watchdog.service" in calls[1]
+    assert "systemctl mask --runtime comfy-panel-watchdog.service" in calls[2]
+    assert all("LoadState" in command and "not-found" in command for command in calls[:3])
     assert all("|| true" not in command for command in calls[:3])
-    assert len(calls) == 4 and calls[3].startswith("python3 -c")
+    assert len(calls) == 5
+    assert calls[3].startswith("sudo python3 -c")
+    assert calls[4].startswith("python3 -c")
+
+
+def test_watchdog_snapshot_rejects_custom_systemd_link_topology_before_mutation():
+    source = SCRIPT.read_text(encoding="utf-8")
+    capture = source.split("def capture_watchdog_state", 1)[1].split(
+        "def validate_watchdog_state", 1
+    )[0]
+    assert "os.walk(root,followlinks=False)" in capture
+    assert "related_links()" in capture
+    assert "unsupported watchdog FragmentPath/DropInPaths" in capture
+    assert "unsupported watchdog install topology" in capture
+    assert "custom watchdog systemd link topology cannot be restored exactly" in capture
+    assert "custom watchdog service enablement cannot be restored exactly" in capture
 
 
 def test_watchdog_isolation_rejects_any_non_isolated_state(monkeypatch):
@@ -578,15 +612,15 @@ def test_watchdog_isolation_rejects_any_non_isolated_state(monkeypatch):
 def test_watchdog_restore_preserves_runtime_timer_mask(monkeypatch):
     module = load_module()
     state = {
-        "service_exists": False, "service_b64": "",
-        "timer_exists": False, "timer_b64": "",
-        "executable_exists": False, "executable_b64": "",
+        "service_exists": False, "service_b64": "", "service_mode": None,
+        "timer_exists": False, "timer_b64": "", "timer_mode": None,
+        "executable_exists": False, "executable_b64": "", "executable_mode": None,
         "service_active": "inactive", "service_enabled": "disabled",
         "timer_active": "inactive", "timer_enabled": "masked-runtime",
     }
     calls = []
     monkeypatch.setattr(module, "command", lambda client, text, timeout=240:
-                        calls.append(text) or "")
+                        calls.append(text) or (json.dumps(state) if "print(json.dumps" in text else ""))
     module.restore_watchdog_state(object(), state)
     assert any("mask --runtime comfy-panel-watchdog.timer" in text for text in calls)
 
@@ -608,32 +642,29 @@ def test_watchdog_isolation_accepts_inactive_static_service_with_disabled_timer(
     module.isolate_watchdog(object())
 
 
-def test_pre_swap_watchdog_isolation_failure_restores_original_state(monkeypatch):
-    module = load_module()
-    state = {"timer_active": "active"}
-    calls = []
-    monkeypatch.setattr(module, "isolate_watchdog",
-                        lambda client: (_ for _ in ()).throw(RuntimeError("isolation failed")))
-    monkeypatch.setattr(module, "restore_watchdog_state",
-                        lambda client, snapshot: calls.append(snapshot))
-    with pytest.raises(RuntimeError, match="isolation failed"):
-        module.isolate_watchdog_or_restore(object(), state)
-    assert calls == [state]
+def test_pre_swap_watchdog_isolation_is_premarked_and_restored_by_deploy():
+    source = SCRIPT.read_text(encoding="utf-8")
+    deploy = source.split("def deploy(", 1)[1].split("def parse_args(", 1)[0]
+    mark = deploy.index("watchdog_isolated = True")
+    isolate = deploy.index("isolate_watchdog(client)", mark)
+    handler = deploy.index("except BaseException as preparation_error:", isolate)
+    restore = deploy.index("restore_watchdog_state(client, watchdog_state)", handler)
+    assert mark < isolate < handler < restore
 
 
 def test_watchdog_snapshot_restores_service_mask_state(monkeypatch):
     module = load_module()
     import base64
     captured = {
-        "service_exists": True, "service_b64": base64.b64encode(b"service").decode(),
-        "timer_exists": True, "timer_b64": base64.b64encode(b"timer").decode(),
-        "executable_exists": True, "executable_b64": base64.b64encode(b"script").decode(),
+        "service_exists": True, "service_b64": base64.b64encode(b"service").decode(), "service_mode": 0o644,
+        "timer_exists": True, "timer_b64": base64.b64encode(b"timer").decode(), "timer_mode": 0o644,
+        "executable_exists": True, "executable_b64": base64.b64encode(b"script").decode(), "executable_mode": 0o755,
         "service_active": "inactive", "service_enabled": "masked-runtime",
         "timer_active": "inactive", "timer_enabled": "masked",
     }
     calls = []
     monkeypatch.setattr(module, "command", lambda client, text, timeout=240:
-                        calls.append(text) or (json.dumps(captured) if len(calls) == 1 else ""))
+                        calls.append(text) or (json.dumps(captured) if "print(json.dumps" in text else ""))
     state = module.capture_watchdog_state(object())
     module.restore_watchdog_state(object(), state)
     assert state["service_enabled"] == "masked-runtime"
@@ -652,10 +683,9 @@ def test_secondary_watchdog_isolation_is_inside_uncertain_rollback_guard():
     source = SCRIPT.read_text(encoding="utf-8")
     deploy_body = source.split("def deploy(", 1)[1].split("def parse_args(", 1)[0]
     handler = deploy_body.split('print("PUBLIC_MARKERS_OK")', 1)[1].split("finally:", 1)[0]
-    guarded = handler.split("else:", 1)[0]
-    assert guarded.index("try:") < guarded.index("isolate_watchdog(client)")
-    assert "rollback_uncertain = True" in guarded
-    assert 'write_transaction_phase(client, transaction, "rollback-failed")' in guarded
+    assert handler.index("try:") < handler.index("isolate_watchdog(client)")
+    assert "rollback_uncertain = True" in handler
+    assert 'write_transaction_phase(client, transaction, "rollback-failed")' in handler
 
 
 def test_watchdog_restore_failure_keeps_release_lock_and_marks_rollback_failed():
@@ -663,7 +693,7 @@ def test_watchdog_restore_failure_keeps_release_lock_and_marks_rollback_failed()
     deploy_body = source.split("def deploy(", 1)[1].split("def parse_args(", 1)[0]
     restore_tail = deploy_body.split("restore_watchdog_state(client, watchdog_state)", 1)[1]
     failure_block = restore_tail.split("raise\n            raise", 1)[0]
-    assert "except Exception:" in failure_block
+    assert "except BaseException:" in failure_block
     assert "rollback_uncertain = True" in failure_block
     assert 'write_transaction_phase(client, transaction, "rollback-failed")' in failure_block
 

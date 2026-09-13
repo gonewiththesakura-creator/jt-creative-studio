@@ -1,0 +1,74 @@
+{
+  "realismDesktop": {
+    "initial": {
+      "hidden": true,
+      "display": "none",
+      "scrollWidth": 1440,
+      "viewportWidth": 1440
+    },
+    "rendered": {
+      "display": "grid",
+      "galleryBottom": 845,
+      "taskTop": 857,
+      "overlap": 0,
+      "scrollWidth": 1440,
+      "viewportWidth": 1440
+    }
+  },
+  "realismMobile": {
+    "initial": {
+      "hidden": true,
+      "display": "none",
+      "scrollWidth": 390,
+      "viewportWidth": 390
+    },
+    "rendered": {
+      "display": "grid",
+      "galleryBottom": 1505.65625,
+      "taskTop": 1517.65625,
+      "overlap": 0,
+      "scrollWidth": 390,
+      "viewportWidth": 390
+    }
+  },
+  "videoDesktop": {
+    "initial": {
+      "hidden": true,
+      "display": "none",
+      "scrollWidth": 1440,
+      "viewportWidth": 1440
+    },
+    "rendered": {
+      "display": "grid",
+      "galleryBottom": 822,
+      "taskTop": 822,
+      "overlap": 0,
+      "scrollWidth": 1440,
+      "viewportWidth": 1440
+    }
+  },
+  "videoMobile": {
+    "initial": {
+      "hidden": true,
+      "display": "none",
+      "scrollWidth": 390,
+      "viewportWidth": 390
+    },
+    "rendered": {
+      "display": "grid",
+      "galleryBottom": 2380.265625,
+      "taskTop": 2380.265625,
+      "overlap": 0,
+      "scrollWidth": 390,
+      "viewportWidth": 390
+    }
+  },
+  "uploadRace": {
+    "uploads": [
+      "wf-a"
+    ],
+    "onA": "✓ origin.png 已上传",
+    "onB": "",
+    "keyboardOpened": true
+  }
+}

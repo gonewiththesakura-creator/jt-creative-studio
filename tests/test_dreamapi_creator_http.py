@@ -38,6 +38,7 @@ BASE = {
     "api_model": "gpt-image-2.5-flare",
     "api_quality": "high",
     "api_fit": "cover",
+    "api_ratio": "9:16",
     "client_request_id": "api-http-contract-1",
 }
 
@@ -119,12 +120,12 @@ def test_api_creator_rejects_non_single_batch_and_hd():
         assert expected.lower() in data["error"].lower()
 
 
-def test_api_creator_rejects_untrusted_model_quality_fit_and_invalid_size():
+def test_api_creator_rejects_untrusted_model_quality_fit_and_ratio():
     cases = [
         ({"api_model": "gpt-image-private"}, "model"),
         ({"api_model": "gpt-image-2", "api_quality": "max"}, "quality"),
         ({"api_fit": "stretch"}, "fit"),
-        ({"width": 512, "height": 512}, "pixels"),
+        ({"api_ratio": "4:5"}, "ratio"),
     ]
     for index, (change, expected) in enumerate(cases):
         payload = {**BASE, "client_request_id": f"api-bad-option-{index}", **change}
@@ -167,7 +168,9 @@ def test_existing_cloud_and_local_prompt_limits_are_not_changed_by_api_channel()
 
 def test_extreme_numeric_strings_are_rejected_before_integer_conversion():
     huge = "9" * 1000
-    for index, field in enumerate(("width", "height", "batch", "hd")):
+    # API pixel fields are no longer part of the contract; the server ignores
+    # them and derives dimensions exclusively from api_ratio.
+    for index, field in enumerate(("batch", "hd")):
         payload = {**BASE, "client_request_id": f"api-huge-number-{index}", field: huge}
         status, data = post(payload)
         assert status == 400, (field, status, data)

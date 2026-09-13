@@ -33,18 +33,21 @@ def test_creator_api_channel_has_only_trusted_image_options():
         text = path.read_text(encoding="utf8")
         for token in [
             'id="apiModel"', 'id="apiQuality"', 'id="apiFit"',
-            'id="apiWidth"', 'id="apiHeight"',
+            'name="apiRatio"', 'value="1:1"', 'value="2:3"',
+            'value="3:2"', 'value="9:16"', 'value="16:9"',
             'gpt-image-2.5-flare', 'gpt-image-2.5-sunburst', 'gpt-image-2',
             'value="cover"', 'value="contain"', 'API每次生成1张',
             'api_model:apiModel.value', 'api_quality:apiQuality.value',
             'api_fit:apiFit.value', "backend==='api'?1:+genBatch.value",
             "backend==='api'?0:+genHd.value",
-            "backend==='api'?+apiWidth.value:+genW.value",
-            "backend==='api'?+apiHeight.value:+genH.value",
+            "candidate.api_ratio=selectedApiRatio()",
             'API专属生图', '使用当前提示词',
             '上游可能覆盖质量',
         ]:
             assert token in text, (path, token)
+        assert 'id="apiWidth"' not in text
+        assert 'id="apiHeight"' not in text
+        assert 'value="custom"' not in text.split('id="apiDrawer"', 1)[1]
         assert 'apiBaseUrl' not in text
         assert 'DREAMAPI_KEY' not in text
         assert 'gpt-5.6-sol' not in text

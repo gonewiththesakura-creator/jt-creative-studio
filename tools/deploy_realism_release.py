@@ -17,12 +17,15 @@ import datetime
 import gzip
 import hashlib
 import hmac
+import io
 import json
 import pathlib
 import re
 import shlex
+import stat
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.request
 import uuid
@@ -43,9 +46,89 @@ RELEASE_TRANSACTIONS_DIR = REMOTE_ROOT + "/.release-transactions"
 WATCHDOG_SERVICE_UNIT = "/etc/systemd/system/comfy-panel-watchdog.service"
 WATCHDOG_TIMER_UNIT = "/etc/systemd/system/comfy-panel-watchdog.timer"
 WATCHDOG_EXECUTABLE = "/usr/local/libexec/comfy-panel-watchdog.py"
+RELEASE_TOKEN_ENV_DIR = "/etc/comfy-panel"
+RELEASE_TOKEN_ENV_FILE = RELEASE_TOKEN_ENV_DIR + "/release.env"
+RELEASE_DRAIN_DROPIN_DIR = "/etc/systemd/system/comfy-panel.service.d"
+RELEASE_DRAIN_DROPIN_FILE = RELEASE_DRAIN_DROPIN_DIR + "/90-release-token.conf"
+RELEASE_START_DRAIN_DROPIN_FILE = RELEASE_DRAIN_DROPIN_DIR + "/99-release-draining.conf"
+RELEASE_DRAIN_DROPIN_BYTES = (
+    "[Service]\n"
+    f"EnvironmentFile={RELEASE_TOKEN_ENV_FILE}\n"
+).encode("ascii")
+RELEASE_START_DRAIN_DROPIN_BYTES = (
+    "[Service]\n"
+    "Environment=PANEL_RELEASE_DRAIN_ON_START=1\n"
+).encode("ascii")
+BOOTSTRAP_FENCE_NAME = "comfy_panel_release_fence"
+BOOTSTRAP_FENCE_CONFIG = "/etc/systemd/system/comfy-panel-bootstrap-fence.nft"
+BOOTSTRAP_FENCE_UNIT_NAME = "comfy-panel-bootstrap-fence.service"
+BOOTSTRAP_FENCE_UNIT = "/etc/systemd/system/" + BOOTSTRAP_FENCE_UNIT_NAME
+BOOTSTRAP_FENCE_ENABLE_LINK = (
+    "/etc/systemd/system/comfy-panel.service.requires/" + BOOTSTRAP_FENCE_UNIT_NAME
+)
+BOOTSTRAP_FENCE_COMMENT = "comfy-panel bootstrap release admission fence"
+BOOTSTRAP_FENCE_CONFIG_BYTES = (
+    f"table inet {BOOTSTRAP_FENCE_NAME} {{\n"
+    "    chain input {\n"
+    "        type filter hook input priority -300; policy accept;\n"
+    f"        iifname != \"lo\" tcp dport 8189 reject with tcp reset comment \"{BOOTSTRAP_FENCE_COMMENT}\"\n"
+    "    }\n"
+    "}\n"
+).encode("ascii")
+BOOTSTRAP_FENCE_UNIT_BYTES = (
+    "[Unit]\n"
+    "Description=Comfy Panel bootstrap admission fence\n"
+    "DefaultDependencies=no\n"
+    "After=network-pre.target nftables.service firewalld.service ufw.service\n"
+    "Before=comfy-panel.service\n"
+    "\n"
+    "[Service]\n"
+    "Type=oneshot\n"
+    "ExecStart=/bin/sh -ec '"
+    f"/usr/sbin/nft list table inet {BOOTSTRAP_FENCE_NAME} >/dev/null 2>&1 || "
+    f"/usr/sbin/nft -f {BOOTSTRAP_FENCE_CONFIG}'\n"
+    "ExecStop=/bin/sh -ec '"
+    f"/usr/sbin/nft list table inet {BOOTSTRAP_FENCE_NAME} >/dev/null 2>&1 && "
+    f"/usr/sbin/nft delete table inet {BOOTSTRAP_FENCE_NAME} || :'\n"
+    "RemainAfterExit=yes\n"
+    "\n"
+    "[Install]\n"
+    "RequiredBy=comfy-panel.service\n"
+).encode("ascii")
 SSH_HOST_KEY_SHA256 = "SHA256:TBBAqO1joLOjtttAHJaGdmYYolwwvpkDJaFXGqKEgWA"
 PUBLIC_LARGE_VERIFY_TIMEOUT = 15 * 60
+PUBLIC_RESPONSE_MAX_BYTES = 16 * 1024 * 1024
+PUBLIC_GZIP_WIRE_OVERHEAD = 64 * 1024
+IDLE_STABILITY_CHECKS = 3
+IDLE_STABILITY_INTERVAL = 1.0
+MIN_SCRIPT_CONTRACTS = 55
+MIN_PYTEST_FILES = 34
+RELEASE_TEST_INVENTORY_SHA256 = "1dff2257e43eb6e0fd42778ecff1d6f8f1e2d60c4f0d1d228148f4e67011547b"
 KNOWN_BASELINE_SCRIPT_FAILURES = {}
+WATCHDOG_STATE_KEYS = {
+    "service_exists", "service_b64", "service_mode",
+    "timer_exists", "timer_b64", "timer_mode",
+    "executable_exists", "executable_b64", "executable_mode",
+    "service_active", "service_enabled", "timer_enabled", "timer_active",
+}
+WATCHDOG_RESTORABLE_ACTIVITY = {"active", "inactive"}
+WATCHDOG_RESTORABLE_ENABLEMENT = {
+    "enabled", "enabled-runtime", "disabled", "static", "masked", "masked-runtime",
+    "not-found",
+}
+
+
+class WatchdogRestoreUncertain(RuntimeError):
+    """Raised when a pre-swap watchdog mutation cannot be verified as restored."""
+
+
+class ReleaseBusyError(RuntimeError):
+    """Raised when an atomic drain observes active generation work."""
+
+
+class ReleaseDrainContractError(RuntimeError):
+    """Raised when the running service lacks mandatory drain configuration."""
+
 
 TARGET_WORKFLOWS = {
     "realism_krea2": "Krea2_动漫转真人",
@@ -108,12 +191,12 @@ UPLOADED_WORKFLOW_RESULT_LABELS = {
 }
 
 UPLOADED_WORKFLOW_CONTROL_SCHEMA_SHA256 = {
-    "h3_edit_n": "7334c0d1e2d0de0de97e8255ddb6d8419085c92ea16ee67e94d4aaa9137628e3",
-    "h3_edit_t3": "005fd5c8e7cf5638a74cb4d8ed38a78e00438522cbe6a14e25a8a3129a8be8f0",
-    "h3_edit_remove": "32733e5d4fd9d7ec435bb6b393f5729e804988d8cfffade7040853b49ccb932d",
+    "h3_edit_n": "da7daf1163aa42e8da1e10bdf6efff18c18f1161a4b9276ad1a110de74e01657",
+    "h3_edit_t3": "9c121960605a541ed5c722ba2ce1af80716ef3ccdc457f18d7f67a6622080cb5",
+    "h3_edit_remove": "57358745e4100d8516b209ffe950d82ffa27e6282625edd61929e01444d2f0b0",
     "qwen_image_edit_zip": "5adf6399af4a2e6e652600420c69c2914ab8f950802d883b570c77ed3f435151",
-    "wan_action_stabilized": "01b790493b32a6759b2506c6a79e3f7ada0831ea30c1518eb6f17d358951b40d",
-    "scail2_action_replace": "2d8e78b3e7ad8f53085edc62d2e3f2012de31174224bf72fbbcf240112527bbe",
+    "wan_action_stabilized": "dcf2e7ce6cd2e160c4aa12b733a9e24134325ffa12ab6d5c3a1f697e3d0d6fb3",
+    "scail2_action_replace": "73fabac4e15bf7a1ddeaa9ee495d7ddc28369831f2f7741f5525c0901e02468b",
 }
 
 UPLOADED_WORKFLOW_LIVE_SCHEMA = {
@@ -651,18 +734,26 @@ def validate_retro_cloud_e2e_manifest():
     return errors
 
 
-def require_clean_git():
+def require_clean_git(expected_head=None):
     result = subprocess.run(["git", "status", "--porcelain"], cwd=BASE, text=True,
                             capture_output=True, check=True)
     if result.stdout.strip():
         raise RuntimeError("git working tree is not clean; commit the reviewed release first")
+    head_result = subprocess.run(["git", "rev-parse", "HEAD"], cwd=BASE, text=True,
+                                 capture_output=True, check=True)
+    head = head_result.stdout.strip()
+    if not re.fullmatch(r"[0-9a-f]{40}", head):
+        raise RuntimeError("unable to identify the reviewed release HEAD")
+    if expected_head is not None and not hmac.compare_digest(head, str(expected_head)):
+        raise RuntimeError("HEAD changed while release tests were running")
+    return head
 
 
 def classify_release_tests(test_dir=None):
     test_dir = pathlib.Path(test_dir or (BASE / "tests"))
     scripts = []
     pytest_files = []
-    for path in sorted(test_dir.glob("test_*.py")):
+    for path in sorted(test_dir.rglob("test_*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         has_pytest_tests = any(
             (isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test_"))
@@ -673,8 +764,40 @@ def classify_release_tests(test_dir=None):
     return scripts, pytest_files
 
 
+def release_test_inventory_sha256(test_dir, scripts, pytest_files):
+    root = pathlib.Path(test_dir or (BASE / "tests")).resolve()
+    rows = []
+    for lane, paths in (("script", scripts), ("pytest", pytest_files)):
+        for path in paths:
+            try:
+                relative = pathlib.Path(path).resolve().relative_to(root).as_posix()
+            except ValueError as error:
+                raise RuntimeError(f"release test escapes test root: {path}") from error
+            rows.append(f"{lane}:{relative}")
+    return hashlib.sha256(("\n".join(rows) + "\n").encode("utf-8")).hexdigest()
+
+
 def run_release_tests(test_dir=None):
     scripts, pytest_files = classify_release_tests(test_dir)
+    if not scripts and not pytest_files:
+        raise RuntimeError("no release tests discovered; refusing an untested release")
+    if not scripts or not pytest_files:
+        missing = "script contracts" if not scripts else "pytest files"
+        raise RuntimeError(f"release test lane is empty ({missing}); refusing release")
+    if test_dir is None and (len(scripts) < MIN_SCRIPT_CONTRACTS
+                             or len(pytest_files) < MIN_PYTEST_FILES):
+        raise RuntimeError(
+            "release test inventory shrank below the reviewed baseline: "
+            f"scripts={len(scripts)}/{MIN_SCRIPT_CONTRACTS}, "
+            f"pytest={len(pytest_files)}/{MIN_PYTEST_FILES}"
+        )
+    if test_dir is None:
+        inventory_digest = release_test_inventory_sha256(None, scripts, pytest_files)
+        if not hmac.compare_digest(inventory_digest, RELEASE_TEST_INVENTORY_SHA256):
+            raise RuntimeError(
+                "release test inventory differs from the reviewed baseline; "
+                "review the test-set change before updating RELEASE_TEST_INVENTORY_SHA256"
+            )
     failures = []
     for path in scripts:
         result = subprocess.run(
@@ -890,6 +1013,33 @@ def release_files():
     return files
 
 
+def release_payloads_from_head(files, reviewed_head):
+    """Materialize immutable release bytes from the exact tested commit."""
+    if not re.fullmatch(r"[0-9a-f]{40}", str(reviewed_head or "")):
+        raise RuntimeError("invalid reviewed release HEAD")
+    payloads = {}
+    for local in files:
+        try:
+            relative = local.resolve().relative_to(BASE.resolve()).as_posix()
+        except ValueError as error:
+            raise RuntimeError(f"release file escapes repository: {local}") from error
+        result = subprocess.run(
+            ["git", "show", f"{reviewed_head}:{relative}"], cwd=BASE,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        if result.returncode:
+            raise RuntimeError(f"release file is not present in reviewed HEAD: {relative}")
+        data = bytes(result.stdout)
+        lower = data.lower()
+        if any(marker in lower for marker in (
+                b"fixture_3in1", b"fixture-never-sent", b"realism_fixture")):
+            raise RuntimeError(f"test fixture marker in reviewed release file: {relative}")
+        payloads[local] = data
+    if set(payloads) != set(files):
+        raise RuntimeError("reviewed release payload set mismatch")
+    return payloads
+
+
 def command(client, text, timeout=240):
     _, stdout, stderr = client.exec_command(text, timeout=timeout)
     code = stdout.channel.recv_exit_status()
@@ -898,6 +1048,660 @@ def command(client, text, timeout=240):
     if code:
         raise RuntimeError(f"remote command failed ({code}): {err or out}")
     return out
+
+
+def _bootstrap_fence_probe_source():
+    return """import json,os,pathlib,shlex,stat,subprocess
+name=FENCE_NAME;unit_name=UNIT_NAME
+config=pathlib.Path(CONFIG_PATH);unit=pathlib.Path(UNIT_PATH);link=pathlib.Path(LINK_PATH)
+expected_config=CONFIG_BYTES;expected_unit=UNIT_BYTES
+def run(argv): return subprocess.run(argv,text=True,capture_output=True)
+def show(prop):
+    result=run(['systemctl','show','--property',prop,'--value',unit_name])
+    return result.stdout.strip() if result.returncode==0 else ''
+def panel_show(prop):
+    result=run(['systemctl','show','--property',prop,'--value','comfy-panel.service'])
+    return result.stdout.strip() if result.returncode==0 else ''
+def file_exact(path,data,mode):
+    if path.is_symlink() or not path.is_file(): return False
+    info=path.stat()
+    return info.st_uid==0 and info.st_gid==0 and stat.S_IMODE(info.st_mode)==mode and path.read_bytes()==data
+tables_result=run(['/usr/sbin/nft','-j','list','tables'])
+if tables_result.returncode: raise RuntimeError('cannot inspect nft tables')
+tables=json.loads(tables_result.stdout).get('nftables',[])
+table_present=any(row.get('table',{}).get('family')=='inet' and row.get('table',{}).get('name')==name for row in tables if isinstance(row,dict))
+file_present=any(path.exists() or path.is_symlink() for path in (config,unit,link))
+fragment=show('FragmentPath');active=run(['systemctl','is-active',unit_name]).stdout.strip();enabled=run(['systemctl','is-enabled',unit_name]).stdout.strip()
+if not table_present and not file_present and not fragment and active!='active' and enabled!='enabled':
+    print(json.dumps({'state':'absent'},separators=(',',':')));raise SystemExit(0)
+if not file_exact(config,expected_config,0o600) or not file_exact(unit,expected_unit,0o644): raise RuntimeError('bootstrap fence file mismatch')
+if not link.is_symlink() or pathlib.Path(os.path.realpath(link))!=unit: raise RuntimeError('bootstrap fence enable link mismatch')
+if fragment!=str(unit) or shlex.split(show('DropInPaths')): raise RuntimeError('bootstrap fence systemd fragment mismatch')
+if active!='active' or enabled!='enabled': raise RuntimeError('bootstrap fence systemd state mismatch')
+before=set(shlex.split(show('Before')));after=set(shlex.split(show('After')))
+if 'comfy-panel.service' not in before or not {'network-pre.target','nftables.service','firewalld.service','ufw.service'}<=after: raise RuntimeError('bootstrap fence ordering mismatch')
+if unit_name not in set(shlex.split(panel_show('Requires'))): raise RuntimeError('bootstrap fence required dependency mismatch')
+table_result=run(['/usr/sbin/nft','-j','list','table','inet',name])
+if table_result.returncode: raise RuntimeError('bootstrap fence nft table missing')
+rows=json.loads(table_result.stdout).get('nftables',[])
+chains=[row['chain'] for row in rows if isinstance(row,dict) and 'chain' in row]
+rules=[row['rule'] for row in rows if isinstance(row,dict) and 'rule' in row]
+if len(chains)!=1 or len(rules)!=1: raise RuntimeError('bootstrap fence nft object count mismatch')
+chain=chains[0]
+if any(chain.get(key)!=value for key,value in {'family':'inet','table':name,'name':'input','type':'filter','hook':'input','prio':-300,'policy':'accept'}.items()): raise RuntimeError('bootstrap fence nft chain mismatch')
+rule=rules[0]
+expr=rule.get('expr')
+iif={'match':{'op':'!=','left':{'meta':{'key':'iifname'}},'right':'lo'}}
+dport={'match':{'op':'==','left':{'payload':{'protocol':'tcp','field':'dport'}},'right':8189}}
+if rule.get('family')!='inet' or rule.get('table')!=name or rule.get('chain')!='input' or rule.get('comment')!=COMMENT: raise RuntimeError('bootstrap fence nft rule identity mismatch')
+if not isinstance(expr,list) or len(expr)!=3 or expr[0]!=iif or expr[1]!=dport or not isinstance(expr[2],dict) or set(expr[2])!={'reject'}: raise RuntimeError('bootstrap fence nft rule mismatch')
+reject=expr[2]['reject']
+if reject not in ({'type':'tcp reset'},{'type':'tcp-reset'}): raise RuntimeError('bootstrap fence nft reject mismatch')
+print(json.dumps({'state':'active'},separators=(',',':')))
+""".replace("FENCE_NAME", repr(BOOTSTRAP_FENCE_NAME)).replace(
+        "UNIT_NAME", repr(BOOTSTRAP_FENCE_UNIT_NAME)
+    ).replace("CONFIG_PATH", repr(BOOTSTRAP_FENCE_CONFIG)).replace(
+        "UNIT_PATH", repr(BOOTSTRAP_FENCE_UNIT)
+    ).replace("LINK_PATH", repr(BOOTSTRAP_FENCE_ENABLE_LINK)).replace(
+        "CONFIG_BYTES", repr(BOOTSTRAP_FENCE_CONFIG_BYTES)
+    ).replace("UNIT_BYTES", repr(BOOTSTRAP_FENCE_UNIT_BYTES)).replace(
+        "COMMENT", repr(BOOTSTRAP_FENCE_COMMENT)
+    )
+
+
+def probe_bootstrap_fence(client):
+    """Return only exact active/absent states; reject every partial state."""
+    raw = command(
+        client, "sudo python3 -c " + shlex.quote(_bootstrap_fence_probe_source()),
+        timeout=30,
+    )
+    try:
+        result = json.loads(raw)
+    except json.JSONDecodeError as error:
+        raise RuntimeError("bootstrap fence probe returned invalid JSON") from error
+    if not isinstance(result, dict) or set(result) != {"state"}:
+        raise RuntimeError("bootstrap fence probe returned invalid state")
+    state = result["state"]
+    if state not in {"active", "absent"}:
+        raise RuntimeError("bootstrap fence probe returned unknown state")
+    return state
+
+
+def require_bootstrap_fence_capability_absent(client):
+    """Read-only preflight: require nft/systemd support and no owned-name collision."""
+    if probe_bootstrap_fence(client) != "absent":
+        raise RuntimeError("bootstrap admission fence is already active")
+    script = """import os,pathlib,stat,subprocess
+nft=pathlib.Path('/usr/sbin/nft')
+if not nft.exists(): raise RuntimeError('nft is unavailable')
+resolved=nft.resolve(strict=True);info=resolved.stat()
+if not stat.S_ISREG(info.st_mode) or info.st_uid!=0 or not os.access(resolved,os.X_OK): raise RuntimeError('nft executable is unsafe')
+for raw in (CONFIG_PARENT,UNIT_PARENT,LINK_PARENT):
+    path=pathlib.Path(raw)
+    if path.is_symlink(): raise RuntimeError('bootstrap fence parent is a symlink: '+str(path))
+    if not path.exists(): path=path.parent
+    if path.is_symlink() or not path.is_dir(): raise RuntimeError('bootstrap fence parent is missing or unsafe: '+str(path))
+    meta=path.stat()
+    if meta.st_uid!=0 or meta.st_gid!=0 or meta.st_mode&0o022: raise RuntimeError('bootstrap fence parent metadata mismatch: '+str(path))
+result=subprocess.run(['/usr/sbin/nft','--check','-f','-'],input=CONFIG_BYTES,capture_output=True)
+if result.returncode: raise RuntimeError('nft bootstrap fence check failed')
+""".replace("CONFIG_PARENT", repr(str(pathlib.PurePosixPath(BOOTSTRAP_FENCE_CONFIG).parent))).replace(
+        "UNIT_PARENT", repr(str(pathlib.PurePosixPath(BOOTSTRAP_FENCE_UNIT).parent))
+    ).replace("LINK_PARENT", repr(str(pathlib.PurePosixPath(BOOTSTRAP_FENCE_ENABLE_LINK).parent))).replace(
+        "CONFIG_BYTES", repr(BOOTSTRAP_FENCE_CONFIG_BYTES)
+    )
+    command(client, "sudo python3 -c " + shlex.quote(script), timeout=30)
+
+
+def arm_bootstrap_fence(client, attempts=3):
+    """Install the persistent fence; reconcile a lost command response by probing."""
+    script = """import os,pathlib,shlex,stat,subprocess,uuid
+config=pathlib.Path(CONFIG_PATH);unit=pathlib.Path(UNIT_PATH);link=pathlib.Path(LINK_PATH);unit_name=UNIT_NAME
+files=((config,CONFIG_BYTES,0o600),(unit,UNIT_BYTES,0o644))
+def sync_dir(path):
+    d=os.open(str(path),os.O_RDONLY|os.O_DIRECTORY);os.fsync(d);os.close(d)
+def require_safe_dir(path):
+    if path.is_symlink() or not path.is_dir(): raise RuntimeError('bootstrap fence parent is missing or unsafe: '+str(path))
+    info=path.stat()
+    if info.st_uid!=0 or info.st_gid!=0 or info.st_mode&0o022: raise RuntimeError('bootstrap fence parent metadata mismatch: '+str(path))
+for path,data,mode in files:
+    require_safe_dir(path.parent)
+    if path.is_symlink(): raise RuntimeError('bootstrap fence target is a symlink')
+    if path.exists():
+        info=path.stat()
+        if not path.is_file() or info.st_uid!=0 or info.st_gid!=0 or stat.S_IMODE(info.st_mode)!=mode or path.read_bytes()!=data: raise RuntimeError('bootstrap fence target mismatch: '+str(path))
+link_parent=link.parent
+if link_parent.is_symlink(): raise RuntimeError('bootstrap fence link parent is a symlink')
+if not link_parent.exists():
+    require_safe_dir(link_parent.parent)
+    link_parent.mkdir(mode=0o755);os.chown(link_parent,0,0);os.chmod(link_parent,0o755);sync_dir(link_parent.parent)
+require_safe_dir(link_parent)
+if link.exists() or link.is_symlink():
+    info=link.lstat()
+    if not stat.S_ISLNK(info.st_mode) or info.st_uid!=0 or info.st_gid!=0 or pathlib.Path(os.path.realpath(link))!=unit: raise RuntimeError('bootstrap fence enable link mismatch')
+else:
+    tmp=link.with_name(link.name+'.tmp-'+uuid.uuid4().hex)
+    try:
+        os.symlink(str(unit),tmp);os.lchown(tmp,0,0);os.replace(tmp,link);sync_dir(link_parent)
+    finally:
+        if tmp.is_symlink(): tmp.unlink()
+subprocess.run(['systemctl','daemon-reload'],check=True)
+requires=subprocess.run(['systemctl','show','--property','Requires','--value','comfy-panel.service'],text=True,capture_output=True,check=True).stdout.strip()
+if unit_name not in set(shlex.split(requires)): raise RuntimeError('bootstrap fence required dependency was not loaded')
+for path,data,mode in files:
+    if path.exists(): continue
+    tmp=path.with_name(path.name+'.tmp-'+uuid.uuid4().hex)
+    try:
+        f=open(tmp,'wb');f.write(data);f.flush();os.fsync(f.fileno());f.close()
+        os.chown(tmp,0,0);os.chmod(tmp,mode);os.replace(tmp,path)
+        f=open(path,'rb');os.fsync(f.fileno());f.close();sync_dir(path.parent)
+    finally:
+        if tmp.exists() or tmp.is_symlink(): tmp.unlink()
+subprocess.run(['systemctl','daemon-reload'],check=True)
+subprocess.run(['systemctl','start',unit_name],check=True)
+for path in {config.parent,unit.parent,link_parent}: sync_dir(path)
+""".replace("CONFIG_PATH", repr(BOOTSTRAP_FENCE_CONFIG)).replace(
+        "UNIT_PATH", repr(BOOTSTRAP_FENCE_UNIT)
+    ).replace("LINK_PATH", repr(BOOTSTRAP_FENCE_ENABLE_LINK)).replace(
+        "CONFIG_BYTES", repr(BOOTSTRAP_FENCE_CONFIG_BYTES)
+    ).replace(
+        "UNIT_BYTES", repr(BOOTSTRAP_FENCE_UNIT_BYTES)
+    ).replace("UNIT_NAME", repr(BOOTSTRAP_FENCE_UNIT_NAME))
+    last_error = None
+    for _ in range(attempts):
+        try:
+            command(client, "sudo python3 -c " + shlex.quote(script), timeout=60)
+        except Exception as error:
+            last_error = error
+        try:
+            if probe_bootstrap_fence(client) == "active":
+                return
+        except Exception as error:
+            last_error = error
+    raise RuntimeError(f"bootstrap fence could not be armed exactly: {last_error}") from last_error
+
+
+def disarm_bootstrap_fence(client, attempts=3):
+    """Remove only an exact owned fence; reconcile lost responses to exact absence."""
+    script = """import json,os,pathlib,shlex,stat,subprocess
+config=pathlib.Path(CONFIG_PATH);unit=pathlib.Path(UNIT_PATH);link=pathlib.Path(LINK_PATH);unit_name=UNIT_NAME
+def sync_dir(path):
+    d=os.open(str(path),os.O_RDONLY|os.O_DIRECTORY);os.fsync(d);os.close(d)
+def panel_active(): return subprocess.run(['systemctl','is-active','comfy-panel.service'],text=True,capture_output=True).stdout.strip()=='active'
+def exact(path,data,mode):
+    if not path.exists() and not path.is_symlink(): return
+    if path.is_symlink() or not path.is_file(): raise RuntimeError('bootstrap fence cleanup target is unsafe: '+str(path))
+    info=path.stat()
+    if info.st_uid!=0 or info.st_gid!=0 or stat.S_IMODE(info.st_mode)!=mode or path.read_bytes()!=data: raise RuntimeError('bootstrap fence cleanup target mismatch: '+str(path))
+exact(config,CONFIG_BYTES,0o600);exact(unit,UNIT_BYTES,0o644)
+if link.exists() or link.is_symlink():
+    info=link.lstat()
+    if not stat.S_ISLNK(info.st_mode) or info.st_uid!=0 or info.st_gid!=0 or pathlib.Path(os.path.realpath(link))!=unit: raise RuntimeError('bootstrap fence cleanup link mismatch')
+tables=subprocess.run(['/usr/sbin/nft','-j','list','tables'],text=True,capture_output=True,check=True)
+present=any(row.get('table',{}).get('family')=='inet' and row.get('table',{}).get('name')==FENCE_NAME for row in json.loads(tables.stdout).get('nftables',[]) if isinstance(row,dict))
+if present:
+    table=subprocess.run(['/usr/sbin/nft','-j','list','table','inet',FENCE_NAME],text=True,capture_output=True,check=True)
+    rows=json.loads(table.stdout).get('nftables',[])
+    chains=[row['chain'] for row in rows if isinstance(row,dict) and 'chain' in row];rules=[row['rule'] for row in rows if isinstance(row,dict) and 'rule' in row]
+    if len(chains)!=1 or len(rules)!=1: raise RuntimeError('bootstrap fence cleanup nft object count mismatch')
+    chain=chains[0];rule=rules[0];expr=rule.get('expr')
+    expected_chain={'family':'inet','table':FENCE_NAME,'name':'input','type':'filter','hook':'input','prio':-300,'policy':'accept'}
+    iif={'match':{'op':'!=','left':{'meta':{'key':'iifname'}},'right':'lo'}};dport={'match':{'op':'==','left':{'payload':{'protocol':'tcp','field':'dport'}},'right':8189}}
+    if any(chain.get(key)!=value for key,value in expected_chain.items()): raise RuntimeError('bootstrap fence cleanup nft chain mismatch')
+    if rule.get('family')!='inet' or rule.get('table')!=FENCE_NAME or rule.get('chain')!='input' or rule.get('comment')!=COMMENT: raise RuntimeError('bootstrap fence cleanup nft identity mismatch')
+    if not isinstance(expr,list) or len(expr)!=3 or expr[0]!=iif or expr[1]!=dport or not isinstance(expr[2],dict) or set(expr[2])!={'reject'} or expr[2]['reject'] not in ({'type':'tcp reset'},{'type':'tcp-reset'}): raise RuntimeError('bootstrap fence cleanup nft rule mismatch')
+if not panel_active(): raise RuntimeError('panel must be active before reopening bootstrap admission')
+if link.exists() or link.is_symlink(): link.unlink();sync_dir(link.parent)
+subprocess.run(['systemctl','daemon-reload'],check=True)
+requires=subprocess.run(['systemctl','show','--property','Requires','--value','comfy-panel.service'],text=True,capture_output=True,check=True).stdout.strip()
+if unit_name in set(shlex.split(requires)): raise RuntimeError('bootstrap fence dependency remained after unlink')
+if not panel_active(): raise RuntimeError('panel stopped while removing bootstrap fence dependency')
+load=subprocess.run(['systemctl','show','--property','LoadState','--value',unit_name],text=True,capture_output=True).stdout.strip()
+active=subprocess.run(['systemctl','is-active',unit_name],text=True,capture_output=True).stdout.strip()
+if load!='not-found' or active=='active': subprocess.run(['systemctl','stop',unit_name],check=True)
+if not panel_active(): raise RuntimeError('panel stopped while stopping bootstrap fence')
+remaining=subprocess.run(['/usr/sbin/nft','-j','list','tables'],text=True,capture_output=True,check=True)
+still_present=any(row.get('table',{}).get('family')=='inet' and row.get('table',{}).get('name')==FENCE_NAME for row in json.loads(remaining.stdout).get('nftables',[]) if isinstance(row,dict))
+if still_present: subprocess.run(['/usr/sbin/nft','delete','table','inet',FENCE_NAME],check=True)
+for path in (unit,config):
+    if path.exists(): path.unlink()
+for raw in (CONFIG_PARENT,UNIT_PARENT,LINK_PARENT):
+    path=pathlib.Path(raw)
+    if path.exists() and not path.is_symlink(): sync_dir(path)
+subprocess.run(['systemctl','daemon-reload'],check=True)
+if not panel_active(): raise RuntimeError('panel stopped while finalizing bootstrap fence removal')
+""".replace("CONFIG_PATH", repr(BOOTSTRAP_FENCE_CONFIG)).replace(
+        "UNIT_PATH", repr(BOOTSTRAP_FENCE_UNIT)
+    ).replace("LINK_PATH", repr(BOOTSTRAP_FENCE_ENABLE_LINK)).replace(
+        "CONFIG_BYTES", repr(BOOTSTRAP_FENCE_CONFIG_BYTES)
+    ).replace("UNIT_BYTES", repr(BOOTSTRAP_FENCE_UNIT_BYTES)).replace(
+        "FENCE_NAME", repr(BOOTSTRAP_FENCE_NAME)
+    ).replace("COMMENT", repr(BOOTSTRAP_FENCE_COMMENT)
+    ).replace("UNIT_NAME", repr(BOOTSTRAP_FENCE_UNIT_NAME)).replace(
+        "CONFIG_PARENT", repr(str(pathlib.PurePosixPath(BOOTSTRAP_FENCE_CONFIG).parent))
+    ).replace("UNIT_PARENT", repr(str(pathlib.PurePosixPath(BOOTSTRAP_FENCE_UNIT).parent))).replace(
+        "LINK_PARENT", repr(str(pathlib.PurePosixPath(BOOTSTRAP_FENCE_ENABLE_LINK).parent))
+    )
+    last_error = None
+    for _ in range(attempts):
+        try:
+            state = probe_bootstrap_fence(client)
+            if state == "absent":
+                return
+        except Exception as error:
+            last_error = error
+        try:
+            # The cleanup script validates every surviving object before removal,
+            # so it can finish an owned partial state after a lost response.
+            command(client, "sudo python3 -c " + shlex.quote(script), timeout=60)
+        except Exception as error:
+            last_error = error
+        try:
+            if probe_bootstrap_fence(client) == "absent":
+                return
+        except Exception as error:
+            last_error = error
+    raise RuntimeError(f"bootstrap fence could not be removed exactly: {last_error}") from last_error
+
+
+def require_loopback_idle(client, phase, samples=IDLE_STABILITY_CHECKS,
+                          interval=IDLE_STABILITY_INTERVAL):
+    """Verify all admission counters over loopback while the public fence is active."""
+    script = """import json,urllib.request
+with urllib.request.urlopen('http://127.0.0.1:8189/api/health',timeout=15) as response: print(json.dumps(json.load(response),separators=(',',':')))
+"""
+    last = None
+    for sample in range(samples):
+        raw = command(client, "python3 -c " + shlex.quote(script), timeout=30)
+        try:
+            health = json.loads(raw)
+        except json.JSONDecodeError as error:
+            raise RuntimeError(f"{phase}: invalid loopback health JSON") from error
+        busy_fields = ("cloud_busy", "local_busy", "api_busy")
+        if (not isinstance(health, dict) or type(health.get("ok")) is not bool
+                or any(type(health.get(key)) is not bool for key in busy_fields)):
+            raise RuntimeError(f"{phase}: invalid loopback health response")
+        active = [key for key in busy_fields if health[key]]
+        if active:
+            raise ReleaseBusyError(
+                f"{phase}: active generation backend(s): {', '.join(active)}"
+            )
+        last = health
+        if sample + 1 < samples:
+            time.sleep(interval)
+    return last
+
+
+def wait_for_loopback_live(client, timeout=60, allow_legacy=False):
+    """Wait for panel liveness without crossing the bootstrap admission fence."""
+    script = """import json,urllib.error,urllib.request
+try:
+    with urllib.request.urlopen('http://127.0.0.1:8189/api/live',timeout=15) as response: result=json.load(response)
+except urllib.error.HTTPError as error:
+    if not ALLOW_LEGACY or error.code!=404: raise
+    with urllib.request.urlopen('http://127.0.0.1:8189/api/workflows',timeout=15) as response: workflows=json.load(response)
+    if not isinstance(workflows,list): raise RuntimeError('legacy workflow response invalid')
+    result={'ok':True,'service':'comfy-panel-legacy'}
+print(json.dumps(result,separators=(',',':')))
+""".replace("ALLOW_LEGACY", "True" if allow_legacy else "False")
+    deadline = time.monotonic() + timeout
+    last = None
+    while time.monotonic() < deadline:
+        try:
+            result = json.loads(command(
+                client, "python3 -c " + shlex.quote(script), timeout=30,
+            ))
+            if result.get("ok") and result.get("service") in {
+                    "comfy-panel", "comfy-panel-legacy"}:
+                return result
+            last = result
+        except Exception as error:
+            last = {"error": str(error)[:200]}
+        time.sleep(min(2, max(0, deadline - time.monotonic())))
+    raise RuntimeError(f"loopback liveness timeout: {last}")
+
+
+def stop_panel_resilient(client, attempts=3):
+    """Stop the fenced panel and reconcile a lost systemctl response."""
+    last_error = None
+    for _ in range(attempts):
+        try:
+            command(client, "sudo systemctl stop comfy-panel", timeout=240)
+        except Exception as error:
+            last_error = error
+        try:
+            state = command(client, "systemctl is-active comfy-panel || true").strip()
+            if state in {"inactive", "failed"}:
+                return
+            if state not in {"active", "activating", "deactivating", "reloading"}:
+                raise RuntimeError(f"unknown panel service state: {state or 'empty'}")
+        except Exception as error:
+            last_error = error
+    raise RuntimeError(f"panel stop could not be verified: {last_error}") from last_error
+
+
+def set_remote_release_drain(client, enabled, require_start_draining=False):
+    """Toggle admission draining over the authenticated loopback-only endpoint."""
+    script = """import json,pathlib,subprocess,urllib.request
+pid=subprocess.run(['systemctl','show','--property','MainPID','--value','comfy-panel'],text=True,capture_output=True,check=True).stdout.strip()
+if not pid.isdigit() or int(pid)<=0: raise RuntimeError('comfy-panel has no running MainPID')
+entries=pathlib.Path('/proc/'+pid+'/environ').read_bytes().split(b'\\0')
+environment=dict(entry.split(b'=',1) for entry in entries if b'=' in entry)
+token=environment.get(b'PANEL_RELEASE_TOKEN',b'').decode('ascii')
+if not token: raise SystemExit(77)
+if REQUIRE_START and environment.get(b'PANEL_RELEASE_DRAIN_ON_START')!=b'1': raise SystemExit(78)
+payload=json.dumps({'enabled':ENABLED},separators=(',',':')).encode('ascii')
+request=urllib.request.Request('http://127.0.0.1:8189/api/admin/release-drain',data=payload,headers={'Authorization':'Bearer '+token,'Content-Type':'application/json'},method='POST')
+with urllib.request.urlopen(request,timeout=15) as response: result=json.load(response)
+print(json.dumps(result,separators=(',',':')))
+""".replace("REQUIRE_START", "True" if require_start_draining else "False").replace(
+        "ENABLED", "True" if enabled else "False"
+    )
+    try:
+        raw = command(client, "sudo python3 -c " + shlex.quote(script), timeout=30)
+    except RuntimeError as error:
+        message = str(error)
+        if "remote command failed (77):" in message:
+            raise ReleaseDrainContractError(
+                "running panel did not inherit PANEL_RELEASE_TOKEN"
+            ) from error
+        if "remote command failed (78):" in message:
+            raise ReleaseDrainContractError(
+                "restarted panel did not inherit release draining"
+            ) from error
+        raise
+    try:
+        result = json.loads(raw)
+    except json.JSONDecodeError as error:
+        raise RuntimeError("release drain returned invalid JSON") from error
+    required = {"draining", "cloud_busy", "local_busy", "api_busy"}
+    if (not isinstance(result, dict) or not required.issubset(result)
+            or any(type(result.get(key)) is not bool for key in required)
+            or result["draining"] != bool(enabled)):
+        raise RuntimeError("release drain returned an invalid state")
+    return {key: result[key] for key in required}
+
+
+def enable_remote_release_drain(client, undo_if_busy=True,
+                                require_start_draining=False):
+    state = set_remote_release_drain(
+        client, True, require_start_draining=require_start_draining,
+    )
+    active = [key for key in ("cloud_busy", "local_busy", "api_busy") if state[key]]
+    if active:
+        if undo_if_busy:
+            try:
+                set_remote_release_drain(client, False)
+            except BaseException as disable_error:
+                raise ReleaseBusyError(
+                    "release drain found active work and could not be disabled: "
+                    + ", ".join(active)
+                ) from disable_error
+        raise ReleaseBusyError(
+            "release drain found active work: " + ", ".join(active)
+        )
+    return state
+
+
+def wait_for_remote_release_drain(client, timeout=60):
+    """Wait only for the restarted HTTP endpoint, never for active jobs."""
+    deadline = time.monotonic() + timeout
+    last_error = None
+    while time.monotonic() < deadline:
+        try:
+            return enable_remote_release_drain(
+                client, undo_if_busy=False, require_start_draining=True,
+            )
+        except (ReleaseBusyError, ReleaseDrainContractError):
+            raise
+        except Exception as error:
+            last_error = error
+            time.sleep(min(1, max(0, deadline - time.monotonic())))
+    raise RuntimeError(f"release drain endpoint did not become ready: {last_error}") from last_error
+
+
+def require_bootstrap_drain_contract_absent(client):
+    """Reject an inapplicable bootstrap without leaving a retained lock."""
+    script = """import pathlib
+targets=(pathlib.Path(ENV_PATH),pathlib.Path(DROPIN_PATH),pathlib.Path(START_PATH))
+for path in targets:
+    if path.exists() or path.is_symlink(): raise RuntimeError('bootstrap drain contract is already initialized: '+str(path))
+for directory in sorted({path.parent for path in targets},key=str):
+    if directory.exists():
+        if directory.is_symlink() or not directory.is_dir(): raise RuntimeError('invalid release contract directory: '+str(directory))
+        info=directory.stat()
+        if info.st_uid!=0 or info.st_gid!=0 or info.st_mode&0o022: raise RuntimeError('unsafe release contract directory: '+str(directory))
+""".replace("ENV_PATH", repr(RELEASE_TOKEN_ENV_FILE)).replace(
+        "DROPIN_PATH", repr(RELEASE_DRAIN_DROPIN_FILE)
+    ).replace("START_PATH", repr(RELEASE_START_DRAIN_DROPIN_FILE))
+    command(client, "sudo python3 -c " + shlex.quote(script))
+
+
+def snapshot_bootstrap_drain_contract(client, transaction):
+    """Durably record the legacy host state before creating any drop-in."""
+    state_path = transaction["root"] + "/bootstrap-drain-state.json"
+    script = """import json,os,pathlib,stat,uuid
+state_path=pathlib.Path(STATE_PATH)
+targets=(pathlib.Path(ENV_PATH),pathlib.Path(DROPIN_PATH),pathlib.Path(START_PATH))
+if state_path.exists() or state_path.is_symlink(): raise RuntimeError('bootstrap state already exists')
+for path in targets:
+    if path.exists() or path.is_symlink(): raise RuntimeError('bootstrap drain contract is already initialized: '+str(path))
+directories=tuple(sorted({path.parent for path in targets},key=str))
+for directory in directories:
+    if directory.exists():
+        if directory.is_symlink() or not directory.is_dir(): raise RuntimeError('invalid release contract directory: '+str(directory))
+        info=directory.stat()
+        if info.st_uid!=0 or info.st_gid!=0 or info.st_mode&0o022: raise RuntimeError('unsafe release contract directory: '+str(directory))
+state={'files':{str(path):{'exists':False,'data':'','mode':None} for path in targets},'created_directories':[str(directory) for directory in directories if not directory.exists()]}
+tmp=state_path.with_name(state_path.name+'.tmp-'+uuid.uuid4().hex)
+data=json.dumps(state,sort_keys=True,separators=(',',':')).encode('utf-8')
+f=open(tmp,'wb');f.write(data);f.flush();os.fsync(f.fileno());f.close()
+owner=state_path.parent.stat();os.chown(tmp,owner.st_uid,owner.st_gid);os.chmod(tmp,0o600);os.replace(tmp,state_path)
+f=open(state_path,'rb');os.fsync(f.fileno());f.close()
+d=os.open(str(state_path.parent),os.O_RDONLY|os.O_DIRECTORY);os.fsync(d);os.close(d)
+info=state_path.stat()
+if state_path.is_symlink() or not state_path.is_file() or state_path.read_bytes()!=data: raise RuntimeError('bootstrap state readback mismatch')
+if info.st_uid!=owner.st_uid or info.st_gid!=owner.st_gid or stat.S_IMODE(info.st_mode)!=0o600: raise RuntimeError('bootstrap state metadata mismatch')
+""".replace("STATE_PATH", repr(state_path)).replace(
+        "ENV_PATH", repr(RELEASE_TOKEN_ENV_FILE)
+    ).replace("DROPIN_PATH", repr(RELEASE_DRAIN_DROPIN_FILE)).replace(
+        "START_PATH", repr(RELEASE_START_DRAIN_DROPIN_FILE)
+    )
+    command(client, "sudo python3 -c " + shlex.quote(script))
+
+
+def require_persistent_release_drain_contract(client):
+    """Verify restart-time drain/token configuration without returning the token."""
+    script = """import pathlib,shlex,stat,subprocess
+env_path=pathlib.Path(ENV_PATH);dropin_path=pathlib.Path(DROPIN_PATH)
+for directory in (env_path.parent,dropin_path.parent):
+    if directory.is_symlink() or not directory.is_dir(): raise RuntimeError('release contract directory is missing or unsafe: '+str(directory))
+    info=directory.stat()
+    if info.st_uid!=0 or info.st_gid!=0 or info.st_mode&0o022: raise RuntimeError('release contract directory metadata mismatch: '+str(directory))
+for path,mode in ((env_path,0o600),(dropin_path,0o644)):
+    if path.is_symlink() or not path.is_file(): raise RuntimeError('release drain contract file is missing or unsafe: '+str(path))
+    info=path.stat()
+    if info.st_uid!=0 or info.st_gid!=0 or stat.S_IMODE(info.st_mode)!=mode: raise RuntimeError('release drain contract metadata mismatch: '+str(path))
+env_data=env_path.read_bytes()
+if not env_data.startswith(b'PANEL_RELEASE_TOKEN=') or env_data.count(b'\\n')!=1 or not env_data.endswith(b'\\n'): raise RuntimeError('release token file shape mismatch')
+token=env_data[len(b'PANEL_RELEASE_TOKEN='):-1]
+if not token or any(byte<=32 or byte>=127 for byte in token): raise RuntimeError('release token is empty or malformed')
+if dropin_path.read_bytes()!=DROPIN_BYTES: raise RuntimeError('release drain drop-in mismatch')
+subprocess.run(['systemctl','daemon-reload'],check=True)
+def show(name): return subprocess.run(['systemctl','show','--property',name,'--value','comfy-panel'],text=True,capture_output=True,check=True).stdout.strip()
+loaded=shlex.split(show('DropInPaths'))
+if str(dropin_path) not in loaded: raise RuntimeError('release drain drop-in is not loaded by systemd')
+environment_files=shlex.split(show('EnvironmentFiles'))
+if str(env_path) not in environment_files: raise RuntimeError('release token environment file is not effective')
+unset=shlex.split(show('UnsetEnvironment'))
+if any(value=='PANEL_RELEASE_TOKEN' or value.startswith('PANEL_RELEASE_TOKEN=') for value in unset): raise RuntimeError('release token is removed by UnsetEnvironment')
+""".replace("ENV_PATH", repr(RELEASE_TOKEN_ENV_FILE)).replace(
+        "DROPIN_PATH", repr(RELEASE_DRAIN_DROPIN_FILE)
+    ).replace("DROPIN_BYTES", repr(RELEASE_DRAIN_DROPIN_BYTES))
+    command(client, "sudo python3 -c " + shlex.quote(script))
+
+
+def require_release_start_draining_unset(client):
+    """Refuse stale/conflicting restart-time drain configuration."""
+    script = """import pathlib,shlex,subprocess
+name='PANEL_RELEASE_DRAIN_ON_START'
+path=pathlib.Path(START_PATH)
+if path.exists() or path.is_symlink(): raise RuntimeError('release start-drain drop-in already exists')
+subprocess.run(['systemctl','daemon-reload'],check=True)
+def show(prop): return subprocess.run(['systemctl','show','--property',prop,'--value','comfy-panel'],text=True,capture_output=True,check=True).stdout.strip()
+if str(path) in shlex.split(show('DropInPaths')): raise RuntimeError('stale release start-drain drop-in is still loaded')
+environment=shlex.split(show('Environment'))
+if any(value.split('=',1)[0]==name for value in environment): raise RuntimeError('PANEL_RELEASE_DRAIN_ON_START is already set')
+unset=shlex.split(show('UnsetEnvironment'))
+if any(value==name or value.startswith(name+'=') for value in unset): raise RuntimeError('PANEL_RELEASE_DRAIN_ON_START is blocked by UnsetEnvironment')
+""".replace("START_PATH", repr(RELEASE_START_DRAIN_DROPIN_FILE))
+    command(client, "sudo python3 -c " + shlex.quote(script))
+
+
+def set_release_start_draining(client, enabled):
+    """Ensure the next panel process rejects work before opening its socket."""
+    script = """import os,pathlib,shlex,stat,subprocess,uuid
+name='PANEL_RELEASE_DRAIN_ON_START'
+enabled=ENABLED
+path=pathlib.Path(START_PATH);expected=START_BYTES
+parent=path.parent
+if parent.exists():
+    if parent.is_symlink() or not parent.is_dir(): raise RuntimeError('invalid release drop-in directory')
+    info=parent.stat()
+    if info.st_uid!=0 or info.st_gid!=0 or info.st_mode&0o022: raise RuntimeError('unsafe release drop-in directory')
+elif enabled:
+    parent.mkdir(mode=0o755)
+    os.chown(parent,0,0);os.chmod(parent,0o755)
+    d=os.open(str(parent.parent),os.O_RDONLY|os.O_DIRECTORY);os.fsync(d);os.close(d)
+if path.is_symlink(): raise RuntimeError('release start-drain target must not be a symlink')
+if enabled:
+    if path.exists() and (not path.is_file() or path.read_bytes()!=expected): raise RuntimeError('release start-drain target has unexpected content')
+    tmp=path.with_name(path.name+'.tmp-'+uuid.uuid4().hex)
+    f=open(tmp,'wb');f.write(expected);f.flush();os.fsync(f.fileno());f.close()
+    os.chown(tmp,0,0);os.chmod(tmp,0o644);os.replace(tmp,path)
+    f=open(path,'rb');os.fsync(f.fileno());f.close()
+    d=os.open(str(parent),os.O_RDONLY|os.O_DIRECTORY);os.fsync(d);os.close(d)
+else:
+    if path.exists():
+        info=path.stat()
+        if not path.is_file() or info.st_uid!=0 or info.st_gid!=0 or stat.S_IMODE(info.st_mode)!=0o644 or path.read_bytes()!=expected: raise RuntimeError('release start-drain target cannot be safely removed')
+        path.unlink()
+        d=os.open(str(parent),os.O_RDONLY|os.O_DIRECTORY);os.fsync(d);os.close(d)
+subprocess.run(['systemctl','daemon-reload'],check=True)
+def show(prop): return subprocess.run(['systemctl','show','--property',prop,'--value','comfy-panel'],text=True,capture_output=True,check=True).stdout.strip()
+dropins=shlex.split(show('DropInPaths'))
+environment=shlex.split(show('Environment'))
+matches=[value for value in environment if value.split('=',1)[0]==name]
+if enabled:
+    if str(path) not in dropins or matches!=[name+'=1']: raise RuntimeError('systemd release start-drain verification failed')
+    unset=shlex.split(show('UnsetEnvironment'))
+    if any(value==name or value.startswith(name+'=') for value in unset): raise RuntimeError('release start-drain is blocked by UnsetEnvironment')
+    info=path.stat()
+    if info.st_uid!=0 or info.st_gid!=0 or stat.S_IMODE(info.st_mode)!=0o644 or path.read_bytes()!=expected: raise RuntimeError('release start-drain readback mismatch')
+elif str(path) in dropins or matches:
+    raise RuntimeError('systemd release start-drain removal verification failed')
+""".replace("START_PATH", repr(RELEASE_START_DRAIN_DROPIN_FILE)).replace(
+        "START_BYTES", repr(RELEASE_START_DRAIN_DROPIN_BYTES)
+    ).replace("ENABLED", "True" if enabled else "False")
+    command(client, "sudo python3 -c " + shlex.quote(script))
+
+
+def install_bootstrap_drain_contract(client, transaction):
+    """Install a dedicated release token/drop-in without returning the token."""
+    state_path = transaction["root"] + "/bootstrap-drain-state.json"
+    script = """import json,os,pathlib,secrets,stat,uuid
+state_path=pathlib.Path(STATE_PATH)
+targets=[pathlib.Path(ENV_PATH),pathlib.Path(DROPIN_PATH)]
+active_path=pathlib.Path(START_PATH)
+state=json.loads(state_path.read_text(encoding='utf-8'))
+expected={str(pathlib.Path(ENV_PATH)),str(pathlib.Path(DROPIN_PATH)),str(active_path)}
+if not isinstance(state,dict) or set(state)!={'files','created_directories'} or set(state.get('files',{}))!=expected: raise RuntimeError('invalid bootstrap state structure')
+if any(entry!={'exists':False,'data':'','mode':None} for entry in state['files'].values()): raise RuntimeError('bootstrap state is not a legacy absence snapshot')
+for path in targets:
+    if path.is_symlink(): raise RuntimeError('bootstrap target must not be a symlink: '+str(path))
+    if path.exists(): raise RuntimeError('bootstrap drain contract is already initialized: '+str(path))
+directories=(pathlib.Path(ENV_PATH).parent,pathlib.Path(DROPIN_PATH).parent)
+def atomic(path,data,mode):
+    parent_existed=path.parent.exists()
+    path.parent.mkdir(parents=True,exist_ok=True)
+    if not parent_existed:
+        d=os.open(str(path.parent.parent),os.O_RDONLY);os.fsync(d);os.close(d)
+    tmp=path.with_name(path.name+'.bootstrap-'+uuid.uuid4().hex)
+    f=open(tmp,'wb');f.write(data);f.flush();os.fsync(f.fileno());f.close()
+    os.chown(tmp,0,0);os.chmod(tmp,mode);os.replace(tmp,path)
+    f=open(path,'rb');os.fsync(f.fileno());f.close()
+    d=os.open(str(path.parent),os.O_RDONLY);os.fsync(d);os.close(d)
+for directory in directories:
+    if directory.exists():
+        if directory.is_symlink() or not directory.is_dir(): raise RuntimeError('invalid release contract directory: '+str(directory))
+        info=directory.stat()
+        if info.st_uid!=0 or info.st_gid!=0 or info.st_mode&0o022: raise RuntimeError('unsafe release contract directory: '+str(directory))
+    else:
+        directory.mkdir(parents=True,mode=0o755)
+        os.chown(directory,0,0);os.chmod(directory,0o755)
+        d=os.open(str(directory),os.O_RDONLY);os.fsync(d);os.close(d)
+        d=os.open(str(directory.parent),os.O_RDONLY);os.fsync(d);os.close(d)
+if active_path.is_symlink() or not active_path.is_file(): raise RuntimeError('release start-drain drop-in is not armed')
+active_info=active_path.stat()
+if active_info.st_uid!=0 or active_info.st_gid!=0 or stat.S_IMODE(active_info.st_mode)!=0o644 or active_path.read_bytes()!=START_BYTES: raise RuntimeError('release start-drain drop-in mismatch')
+token=secrets.token_urlsafe(48)
+atomic(pathlib.Path(ENV_PATH),('PANEL_RELEASE_TOKEN='+token+'\\n').encode('ascii'),0o600)
+atomic(pathlib.Path(DROPIN_PATH),DROPIN_BYTES,0o644)
+env_path=pathlib.Path(ENV_PATH);dropin_path=pathlib.Path(DROPIN_PATH)
+if stat.S_IMODE(env_path.stat().st_mode)!=0o600 or env_path.stat().st_uid!=0 or env_path.stat().st_gid!=0: raise RuntimeError('bootstrap token metadata mismatch')
+env_data=env_path.read_bytes()
+if not env_data.startswith(b'PANEL_RELEASE_TOKEN=') or env_data.count(b'\\n')!=1 or not env_data.endswith(b'\\n'): raise RuntimeError('bootstrap token readback mismatch')
+if stat.S_IMODE(dropin_path.stat().st_mode)!=0o644 or dropin_path.stat().st_uid!=0 or dropin_path.stat().st_gid!=0: raise RuntimeError('bootstrap drop-in metadata mismatch')
+if dropin_path.read_bytes()!=DROPIN_BYTES: raise RuntimeError('bootstrap drop-in readback mismatch')
+""".replace("STATE_PATH", repr(state_path)).replace(
+        "ENV_PATH", repr(RELEASE_TOKEN_ENV_FILE)
+    ).replace("DROPIN_PATH", repr(RELEASE_DRAIN_DROPIN_FILE)).replace(
+        "START_PATH", repr(RELEASE_START_DRAIN_DROPIN_FILE)
+    ).replace("DROPIN_BYTES", repr(RELEASE_DRAIN_DROPIN_BYTES)).replace(
+        "START_BYTES", repr(RELEASE_START_DRAIN_DROPIN_BYTES)
+    )
+    command(client, "sudo python3 -c " + shlex.quote(script))
+    command(client, "sudo systemctl daemon-reload")
+
+
+def restore_bootstrap_drain_contract(client, transaction):
+    """Restore the exact pre-bootstrap token/drop-in state and verify it."""
+    state_path = transaction["root"] + "/bootstrap-drain-state.json"
+    script = """import json,os,pathlib
+state=json.loads(pathlib.Path(STATE_PATH).read_text(encoding='utf-8'))
+expected={ENV_PATH,DROPIN_PATH,START_PATH}
+allowed_directories={str(pathlib.Path(value).parent) for value in expected}
+if not isinstance(state,dict) or set(state)!={'files','created_directories'}: raise RuntimeError('invalid bootstrap state structure')
+files=state['files'];created_directories=state['created_directories']
+if not isinstance(files,dict) or set(files)!=expected: raise RuntimeError('invalid bootstrap state file set')
+if not isinstance(created_directories,list) or len(created_directories)!=len(set(created_directories)) or not set(created_directories)<=allowed_directories: raise RuntimeError('invalid bootstrap directory state')
+for raw_path,entry in files.items():
+    path=pathlib.Path(raw_path)
+    if path.is_symlink(): raise RuntimeError('bootstrap restore target became a symlink')
+    if entry=={'exists':False,'data':'','mode':None}:
+        if path.exists() and not path.is_file(): raise RuntimeError('bootstrap restore target is not a regular file')
+        path.unlink(missing_ok=True)
+        if path.parent.is_dir():
+            d=os.open(str(path.parent),os.O_RDONLY|os.O_DIRECTORY);os.fsync(d);os.close(d)
+    else: raise RuntimeError('invalid bootstrap state')
+for raw_directory in sorted(created_directories,key=lambda value:len(pathlib.Path(value).parts),reverse=True):
+    directory=pathlib.Path(raw_directory)
+    if directory.is_symlink(): raise RuntimeError('bootstrap restore directory became a symlink')
+    if directory.exists():
+        if not directory.is_dir(): raise RuntimeError('bootstrap restore directory is invalid')
+        directory.rmdir()
+        d=os.open(str(directory.parent),os.O_RDONLY|os.O_DIRECTORY);os.fsync(d);os.close(d)
+for raw_path in files:
+    path=pathlib.Path(raw_path)
+    if path.exists() or path.is_symlink(): raise RuntimeError('bootstrap restore absence mismatch')
+""".replace("STATE_PATH", repr(state_path)).replace(
+        "ENV_PATH", repr(RELEASE_TOKEN_ENV_FILE)
+    ).replace("DROPIN_PATH", repr(RELEASE_DRAIN_DROPIN_FILE)).replace(
+        "START_PATH", repr(RELEASE_START_DRAIN_DROPIN_FILE)
+    )
+    command(client, "sudo python3 -c " + shlex.quote(script))
+    command(client, "sudo systemctl daemon-reload")
+    require_release_start_draining_unset(client)
 
 
 def new_release_transaction():
@@ -918,6 +1722,12 @@ def transaction_file(transaction, remote, area):
 
 def acquire_release_lock(client, transaction):
     owner = str(transaction["id"])
+    durability_script = (
+        "import os;"
+        f"f=open({(RELEASE_LOCK_DIR + '/owner')!r},'rb');os.fsync(f.fileno());f.close();"
+        f"paths={(RELEASE_LOCK_DIR, transaction['stage_root'], transaction['backup_root'], transaction['root'], RELEASE_TRANSACTIONS_DIR, REMOTE_ROOT)!r};"
+        "[(lambda d:(os.fsync(d),os.close(d)))(os.open(path,os.O_RDONLY)) for path in paths]"
+    )
     script = (
         "set -eu; umask 077; "
         f"mkdir -p -- {shlex.quote(RELEASE_TRANSACTIONS_DIR)}; "
@@ -930,7 +1740,8 @@ def acquire_release_lock(client, transaction):
         f"printf '%s\\n' {shlex.quote(owner)} > {shlex.quote(RELEASE_LOCK_DIR + '/owner')}; "
         f"mkdir -p -- {shlex.quote(transaction['stage_root'])} {shlex.quote(transaction['backup_root'])}; "
         f"chmod 0700 -- {shlex.quote(transaction['root'])} {shlex.quote(transaction['stage_root'])} "
-        f"{shlex.quote(transaction['backup_root'])}; trap - EXIT"
+        f"{shlex.quote(transaction['backup_root'])}; "
+        f"python3 -c {shlex.quote(durability_script)}; trap - EXIT"
     )
     command(client, script)
 
@@ -940,7 +1751,10 @@ def release_release_lock(client, transaction):
     script = (
         "set -eu; "
         f"test \"$(cat {shlex.quote(RELEASE_LOCK_DIR + '/owner')})\" = {shlex.quote(owner)}; "
-        f"rm -rf -- {shlex.quote(RELEASE_LOCK_DIR)}"
+        f"rm -rf -- {shlex.quote(RELEASE_LOCK_DIR)}; "
+        "python3 -c " + shlex.quote(
+            f"import os;d=os.open({REMOTE_ROOT!r},os.O_RDONLY);os.fsync(d);os.close(d)"
+        )
     )
     command(client, script)
 
@@ -992,9 +1806,35 @@ def fsync_remote_file(client, path):
     command(client, "python3 -c " + shlex.quote(script))
 
 
-def stage_file_resilient(client, local, remote, transaction):
+def fsync_remote_directory(client, path):
+    """Flush a remote directory after an entry is removed or renamed."""
+    script = (
+        "import os;"
+        f"d=os.open({str(path)!r},os.O_RDONLY);os.fsync(d);os.close(d)"
+    )
+    command(client, "python3 -c " + shlex.quote(script))
+
+
+def fsync_systemd_unit_state(client):
+    """Flush systemd unit directories after enable/disable/mask mutations."""
+    script = """import os,pathlib
+paths=set()
+for raw in ('/etc/systemd/system','/run/systemd/system'):
+    root=pathlib.Path(raw)
+    if root.is_dir():
+        for current,dirs,files in os.walk(root): paths.add(pathlib.Path(current))
+for path in sorted(paths,key=lambda value:len(value.parts),reverse=True):
+        descriptor=os.open(str(path),os.O_RDONLY|os.O_DIRECTORY)
+        os.fsync(descriptor)
+        os.close(descriptor)
+"""
+    command(client, "sudo python3 -c " + shlex.quote(script))
+
+
+def stage_file_resilient(client, local, remote, transaction, data):
     """Upload and byte-verify one file inside this release transaction."""
-    data = local.read_bytes()
+    if not isinstance(data, bytes):
+        raise TypeError(f"release payload must be immutable bytes: {local}")
     staged = transaction_file(transaction, remote, "stage")
     parent = str(pathlib.PurePosixPath(staged).parent)
     command(client, "mkdir -p -- " + shlex.quote(parent) + "; chmod 0700 -- " + shlex.quote(parent))
@@ -1033,10 +1873,12 @@ def backup_release(client, sftp, remote_paths, transaction):
         parent = str(pathlib.PurePosixPath(backup).parent)
         command(client, "mkdir -p -- " + shlex.quote(parent) + "; chmod 0700 -- " + shlex.quote(parent))
         try:
-            remote_stat = sftp.stat(remote)
+            remote_stat = sftp.lstat(remote)
         except FileNotFoundError:
             manifest[remote] = {"exists": False, "sha256": None, "mode": None}
         else:
+            if not stat.S_ISREG(int(remote_stat.st_mode)):
+                raise RuntimeError(f"release target is not a regular file: {remote}")
             command(client, f"cp -- {shlex.quote(remote)} {shlex.quote(backup)}")
             command(client, f"chmod 0600 -- {shlex.quote(backup)}")
             fsync_remote_file(client, backup)
@@ -1073,9 +1915,15 @@ def backup_release(client, sftp, remote_paths, transaction):
     return manifest
 
 
-def rollback_release(client, sftp, remote_paths, transaction, public_base=PUBLIC_BASE):
+def rollback_release(client, sftp, remote_paths, transaction, public_base=PUBLIC_BASE,
+                     restore_bootstrap=False, bootstrap_fence=False):
     """Restore one verified transaction; remain stopped on any uncertainty."""
-    command(client, "sudo systemctl stop comfy-panel", timeout=240)
+    if bootstrap_fence:
+        if probe_bootstrap_fence(client) != "active":
+            raise RuntimeError("bootstrap rollback requires an exact active fence")
+        stop_panel_resilient(client)
+    else:
+        command(client, "sudo systemctl stop comfy-panel", timeout=240)
     try:
         manifest_raw = command(client, "python3 -c " + shlex.quote(
             f"import pathlib;print(pathlib.Path({transaction['manifest']!r}).read_text(encoding='utf-8'),end='')"
@@ -1103,6 +1951,14 @@ def rollback_release(client, sftp, remote_paths, transaction, public_base=PUBLIC
                 if entry.get("sha256") is not None or entry.get("mode") is not None:
                     raise RuntimeError("invalid absent-file digest")
                 command(client, f"rm -f -- {shlex.quote(remote)}")
+                fsync_remote_directory(client, str(pathlib.PurePosixPath(remote).parent))
+                command(
+                    client,
+                    "python3 -c " + shlex.quote(
+                        f"import pathlib; p=pathlib.Path({remote!r}); "
+                        "assert not p.exists() and not p.is_symlink(), 'rollback absence mismatch'"
+                    ),
+                )
                 continue
             expected = str(entry.get("sha256") or "")
             if entry.get("exists") is not True or not re.fullmatch(r"[0-9a-f]{64}", expected):
@@ -1117,8 +1973,12 @@ def rollback_release(client, sftp, remote_paths, transaction, public_base=PUBLIC
             if not hmac.compare_digest(backup_digest, expected):
                 raise RuntimeError(f"backup verification mismatch: {remote}")
             command(client, "mkdir -p -- " + shlex.quote(str(pathlib.PurePosixPath(remote).parent)))
-            command(client, f"cp -- {shlex.quote(backup)} {shlex.quote(remote)}")
-            command(client, f"chmod {mode:04o} -- {shlex.quote(remote)}")
+            rollback_temp = remote + ".rollback-" + uuid.uuid4().hex
+            command(client, f"cp -- {shlex.quote(backup)} {shlex.quote(rollback_temp)}")
+            command(client, f"chmod {mode:04o} -- {shlex.quote(rollback_temp)}")
+            fsync_remote_file(client, rollback_temp)
+            command(client, f"mv -f -- {shlex.quote(rollback_temp)} {shlex.quote(remote)}")
+            fsync_remote_file(client, remote)
             live_digest = command(client, "python3 -c " + shlex.quote(
                 f"import hashlib;print(hashlib.sha256(open({remote!r},'rb').read()).hexdigest())"
             )).strip()
@@ -1129,16 +1989,66 @@ def rollback_release(client, sftp, remote_paths, transaction, public_base=PUBLIC
     if errors:
         raise RuntimeError("rollback failed; panel left stopped: " + "; ".join(errors))
 
+    if restore_bootstrap:
+        restore_bootstrap_drain_contract(client, transaction)
+
     try:
         command(client, "sudo systemctl start comfy-panel", timeout=240)
-        live = wait_for_live(public_base, timeout=60, allow_legacy=True)
+        if bootstrap_fence:
+            # Keep the persistent fence until the caller has also restored the
+            # watchdog. Reopening here would expose legacy state on a later
+            # watchdog-restore failure.
+            live = wait_for_loopback_live(client, timeout=60, allow_legacy=True)
+        else:
+            live = wait_for_live(public_base, timeout=60, allow_legacy=True)
         if not live.get("ok"):
             raise RuntimeError(str(live))
     except Exception as error:
-        command(client, "sudo systemctl stop comfy-panel", timeout=240)
+        if bootstrap_fence:
+            try:
+                arm_bootstrap_fence(client)
+                stop_panel_resilient(client)
+            except BaseException as fence_error:
+                error.add_note(f"bootstrap rollback fence restore failed: {fence_error}")
+        else:
+            command(client, "sudo systemctl stop comfy-panel", timeout=240)
         raise RuntimeError(
             f"rollback health failed; panel left stopped: {error}"
         ) from error
+
+
+def emergency_stop_after_failed_release(client):
+    """Best-effort fail-closed stop used when normal rollback cannot begin."""
+    errors = []
+    for label, text in (
+        ("watchdog timer", "if [ \"$(systemctl show --property LoadState --value comfy-panel-watchdog.timer)\" != not-found ]; then sudo systemctl disable --runtime --now comfy-panel-watchdog.timer; sudo systemctl disable --now comfy-panel-watchdog.timer; fi"),
+        ("watchdog service", "if [ \"$(systemctl show --property LoadState --value comfy-panel-watchdog.service)\" != not-found ]; then sudo systemctl disable --runtime --now comfy-panel-watchdog.service; sudo systemctl disable --now comfy-panel-watchdog.service; sudo systemctl stop comfy-panel-watchdog.service; fi"),
+        ("watchdog mask", "if [ \"$(systemctl show --property LoadState --value comfy-panel-watchdog.service)\" != not-found ]; then sudo systemctl mask --runtime comfy-panel-watchdog.service; fi"),
+        ("panel", "sudo systemctl stop comfy-panel"),
+    ):
+        try:
+            command(client, text, timeout=240)
+        except BaseException as error:
+            errors.append(f"{label}: {error}")
+    try:
+        fsync_systemd_unit_state(client)
+    except BaseException as error:
+        errors.append(f"systemd state durability: {error}")
+    try:
+        panel_state = command(client, "systemctl is-active comfy-panel || true").strip()
+        watchdog_state = watchdog_isolation_state(client)
+        timer_active, timer_enabled, service_active, service_enabled = watchdog_state
+        if panel_state != "inactive":
+            errors.append(f"panel still {panel_state or 'unknown'}")
+        if (timer_active != "inactive"
+                or timer_enabled not in {"disabled", "masked", "masked-runtime", "not-found"}
+                or service_active != "inactive"
+                or service_enabled not in {"static", "masked", "masked-runtime", "not-found"}):
+            errors.append("watchdog is not isolated")
+    except BaseException as error:
+        errors.append(f"stop verification: {error}")
+    if errors:
+        raise RuntimeError("emergency release stop is uncertain: " + "; ".join(errors))
 
 
 def fetch_json(base, path):
@@ -1146,15 +2056,117 @@ def fetch_json(base, path):
         return json.load(response)
 
 
-def fetch_bytes(base, path, timeout=60, accept_gzip=False):
-    headers = {"Accept-Encoding": "gzip"} if accept_gzip else {}
-    request = urllib.request.Request(base.rstrip("/") + path, headers=headers)
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        body = response.read()
-        return gzip.decompress(body) if response.headers.get("Content-Encoding") == "gzip" else body
+def require_public_idle(base, phase, samples=IDLE_STABILITY_CHECKS,
+                        interval=IDLE_STABILITY_INTERVAL):
+    """Fail closed unless every generation backend stays idle across samples."""
+    busy_fields = ("cloud_busy", "local_busy", "api_busy")
+    if not isinstance(samples, int) or isinstance(samples, bool) or samples < 1:
+        raise ValueError("idle samples must be a positive integer")
+    last = None
+    for sample in range(samples):
+        try:
+            health = fetch_json(base, "/api/health")
+        except Exception as error:
+            raise RuntimeError(f"{phase}: health check failed closed: {error}") from error
+        if (not isinstance(health, dict) or type(health.get("ok")) is not bool
+                or any(type(health.get(key)) is not bool for key in busy_fields)):
+            raise RuntimeError(f"{phase}: invalid health response; refusing release")
+        active = [key for key in busy_fields if health[key]]
+        if active:
+            raise RuntimeError(
+                f"{phase}: active generation backend(s): {', '.join(active)}; refusing release"
+            )
+        last = health
+        if sample + 1 < samples:
+            time.sleep(interval)
+    return last
 
 
-def fetch_bytes_resilient(base, path, timeout=300, accept_gzip=False, attempts=3, deadline=None):
+def _last_http_headers(raw):
+    """Return the final HTTP header block emitted by curl."""
+    blocks = re.split(br"\r?\n\r?\n", raw)
+    candidates = [block for block in blocks if block.startswith(b"HTTP/")]
+    if not candidates:
+        raise RuntimeError("public response headers are missing")
+    headers = {}
+    for line in candidates[-1].splitlines()[1:]:
+        if b":" not in line:
+            continue
+        name, value = line.split(b":", 1)
+        headers[name.strip().lower()] = value.strip().lower()
+    return headers
+
+
+def fetch_bytes(base, path, timeout=60, accept_gzip=False,
+                max_bytes=PUBLIC_RESPONSE_MAX_BYTES):
+    """Download one bounded response with a killable wall-clock timeout."""
+    if (not isinstance(max_bytes, int) or isinstance(max_bytes, bool)
+            or max_bytes < 1):
+        raise ValueError("public response byte limit must be a positive integer")
+    if timeout <= 0:
+        raise RuntimeError("public large response verification timeout")
+    url = base.rstrip("/") + path
+    wire_max_bytes = max_bytes + PUBLIC_GZIP_WIRE_OVERHEAD if accept_gzip else max_bytes
+    with tempfile.TemporaryDirectory(prefix="comfy-release-fetch-") as temporary:
+        body_path = pathlib.Path(temporary) / "body"
+        header_path = pathlib.Path(temporary) / "headers"
+        command_line = [
+            "curl", "--fail", "--silent", "--show-error",
+            "--proto", "=http,https", "--max-redirs", "0",
+            "--max-time", f"{timeout:.3f}",
+            "--max-filesize", str(wire_max_bytes),
+            "--dump-header", str(header_path),
+            "--output", str(body_path),
+        ]
+        if accept_gzip:
+            command_line.extend(["--header", "Accept-Encoding: gzip"])
+        command_line.append(url)
+        try:
+            result = subprocess.run(
+                command_line, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                timeout=timeout, check=False,
+            )
+        except subprocess.TimeoutExpired as error:
+            raise RuntimeError("public large response verification timeout") from error
+        if result.returncode == 28:
+            raise RuntimeError("public large response verification timeout")
+        if result.returncode == 63:
+            raise RuntimeError("public response exceeds byte limit")
+        if result.returncode != 0:
+            detail = result.stderr.decode("utf-8", "replace")[:300].strip()
+            raise RuntimeError(f"public response download failed: {detail or result.returncode}")
+        if not body_path.is_file() or not header_path.is_file():
+            raise RuntimeError("public response download is incomplete")
+        if body_path.stat().st_size > wire_max_bytes:
+            raise RuntimeError("public response exceeds byte limit")
+        headers = _last_http_headers(header_path.read_bytes())
+        length = headers.get(b"content-length")
+        if length is not None:
+            try:
+                if int(length) > wire_max_bytes:
+                    raise RuntimeError("public response exceeds byte limit")
+            except ValueError as error:
+                raise RuntimeError("public response Content-Length is invalid") from error
+        body = body_path.read_bytes()
+    encoding = headers.get(b"content-encoding", b"").split(b",", 1)[0].strip()
+    if encoding == b"gzip":
+        try:
+            with gzip.GzipFile(fileobj=io.BytesIO(body)) as archive:
+                decoded = archive.read(max_bytes + 1)
+        except (EOFError, OSError) as error:
+            raise RuntimeError("public gzip response is invalid") from error
+        if len(decoded) > max_bytes:
+            raise RuntimeError("public gzip response exceeds byte limit")
+        return decoded
+    if encoding:
+        raise RuntimeError("public response uses unsupported content encoding")
+    if len(body) > max_bytes:
+        raise RuntimeError("public response exceeds byte limit")
+    return body
+
+
+def fetch_bytes_resilient(base, path, timeout=300, accept_gzip=False, attempts=3,
+                          deadline=None, max_bytes=None):
     last_error = None
     for attempt in range(1, attempts + 1):
         remaining = None if deadline is None else deadline - time.monotonic()
@@ -1162,9 +2174,10 @@ def fetch_bytes_resilient(base, path, timeout=300, accept_gzip=False, attempts=3
             raise RuntimeError("public large response verification timeout") from last_error
         request_timeout = timeout if remaining is None else min(timeout, remaining)
         try:
-            return fetch_bytes(
-                base, path, timeout=request_timeout, accept_gzip=accept_gzip
-            )
+            kwargs = {"timeout": request_timeout, "accept_gzip": accept_gzip}
+            if max_bytes is not None:
+                kwargs["max_bytes"] = max_bytes
+            return fetch_bytes(base, path, **kwargs)
         except Exception as error:
             last_error = error
             if attempt == attempts:
@@ -1179,17 +2192,32 @@ def fetch_bytes_resilient(base, path, timeout=300, accept_gzip=False, attempts=3
     raise last_error
 
 
-def verify_public_large_responses(base):
-    expected_creator = (BASE / "static" / "index.html").read_bytes()
-    expected_preview = (BASE / "static" / "previews" / "style-retro-manga-luxury.webp").read_bytes()
-    deadline = time.monotonic() + PUBLIC_LARGE_VERIFY_TIMEOUT
+def verify_public_large_responses(base, expected_creator, expected_preview,
+                                  deadline=None, expected_realism=None):
+    if (not isinstance(expected_creator, bytes)
+            or not isinstance(expected_preview, bytes)
+            or (expected_realism is not None
+                and not isinstance(expected_realism, bytes))):
+        raise TypeError("public verification requires immutable expected bytes")
+    if deadline is None:
+        deadline = time.monotonic() + PUBLIC_LARGE_VERIFY_TIMEOUT
+    realism = home = None
+    if expected_realism is not None:
+        realism = fetch_bytes_resilient(
+            base, "/realism", timeout=300, attempts=3,
+            deadline=deadline, max_bytes=len(expected_realism),
+        )
+        home = fetch_bytes_resilient(
+            base, "/", timeout=300, attempts=3,
+            deadline=deadline, max_bytes=len(expected_creator),
+        )
     for attempt in range(3):
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise RuntimeError("public large response verification timeout")
         creator = fetch_bytes_resilient(
             base, "/?style=retro_manga_luxury", timeout=300, accept_gzip=True,
-            attempts=3, deadline=deadline,
+            attempts=3, deadline=deadline, max_bytes=len(expected_creator),
         )
         remaining = deadline - time.monotonic()
         if remaining <= 0:
@@ -1197,11 +2225,14 @@ def verify_public_large_responses(base):
         preview = fetch_bytes_resilient(
             base, "/static/previews/style-retro-manga-luxury.webp",
             timeout=300, attempts=3, deadline=deadline,
+            max_bytes=len(expected_preview),
         )
         if creator != expected_creator:
             raise RuntimeError(f"public creator large response mismatch on attempt {attempt + 1}")
         if preview != expected_preview:
             raise RuntimeError(f"public creator preview mismatch on attempt {attempt + 1}")
+    if expected_realism is not None:
+        return realism, home, expected_creator, expected_preview
     return expected_creator, expected_preview
 
 
@@ -1247,20 +2278,67 @@ def wait_for_live(base, timeout=60, allow_legacy=False):
     raise RuntimeError(f"liveness timeout: {last}")
 
 
+def verify_installed_watchdog_contract(client):
+    """Verify systemd loaded exactly the watchdog release, without overrides."""
+    service_src = REMOTE_ROOT + "/deploy/comfy-panel-watchdog.service"
+    timer_src = REMOTE_ROOT + "/deploy/comfy-panel-watchdog.timer"
+    script = """import pathlib,shlex,stat,subprocess
+def show(unit,prop): return subprocess.run(['systemctl','show','--property',prop,'--value',unit],text=True,capture_output=True,check=True).stdout.strip()
+service='comfy-panel-watchdog.service';timer='comfy-panel-watchdog.timer'
+service_path=pathlib.Path(SERVICE_PATH);timer_path=pathlib.Path(TIMER_PATH);executable_path=pathlib.Path(EXECUTABLE_PATH)
+for unit,path in ((service,service_path),(timer,timer_path)):
+    if show(unit,'FragmentPath')!=str(path): raise RuntimeError('watchdog effective FragmentPath mismatch: '+unit)
+    if shlex.split(show(unit,'DropInPaths')): raise RuntimeError('watchdog effective drop-ins are not allowed: '+unit)
+for path,source,mode in ((service_path,pathlib.Path(SERVICE_SOURCE),0o644),(timer_path,pathlib.Path(TIMER_SOURCE),0o644),(executable_path,pathlib.Path(EXECUTABLE_SOURCE),0o755)):
+    if path.is_symlink() or not path.is_file() or path.read_bytes()!=source.read_bytes(): raise RuntimeError('watchdog installed bytes mismatch: '+str(path))
+    info=path.stat()
+    if info.st_uid!=0 or info.st_gid!=0 or stat.S_IMODE(info.st_mode)!=mode: raise RuntimeError('watchdog installed metadata mismatch: '+str(path))
+exec_start=show(service,'ExecStart')
+expected_argv='argv[]=/usr/bin/python3 /usr/local/libexec/comfy-panel-watchdog.py'
+if exec_start.count('path=')!=1 or exec_start.count('argv[]=')!=1 or 'path=/usr/bin/python3' not in exec_start or expected_argv not in exec_start: raise RuntimeError('watchdog effective ExecStart mismatch')
+if show(timer,'Unit')!=service or show(timer,'Persistent')!='yes': raise RuntimeError('watchdog effective timer target/persistence mismatch')
+timers=show(timer,'TimersMonotonic')
+if 'OnBootUSec=2min' not in timers or 'OnUnitActiveUSec=1min' not in timers: raise RuntimeError('watchdog effective timer schedule mismatch')
+""".replace("SERVICE_PATH", repr(WATCHDOG_SERVICE_UNIT)).replace(
+        "TIMER_PATH", repr(WATCHDOG_TIMER_UNIT)
+    ).replace("EXECUTABLE_PATH", repr(WATCHDOG_EXECUTABLE)).replace(
+        "SERVICE_SOURCE", repr(service_src)
+    ).replace("TIMER_SOURCE", repr(timer_src)).replace(
+        "EXECUTABLE_SOURCE", repr(REMOTE_ROOT + "/tools/panel_liveness_watchdog.py")
+    )
+    command(client, "sudo python3 -c " + shlex.quote(script))
+
+
 def install_watchdog_units(client):
     service_src = REMOTE_ROOT + "/deploy/comfy-panel-watchdog.service"
     timer_src = REMOTE_ROOT + "/deploy/comfy-panel-watchdog.timer"
-    command(client, "sudo systemctl unmask comfy-panel-watchdog.service comfy-panel-watchdog.timer || true")
+    command(client, "sudo systemctl unmask --runtime comfy-panel-watchdog.service comfy-panel-watchdog.timer")
+    command(client, "sudo systemctl unmask comfy-panel-watchdog.service comfy-panel-watchdog.timer")
     command(client, "sudo install -d -o root -g root -m 0755 /usr/local/libexec")
     command(client, "sudo install -o root -g root -m 0755 " + shlex.quote(REMOTE_ROOT + "/tools/panel_liveness_watchdog.py") + " " + shlex.quote(WATCHDOG_EXECUTABLE))
     command(client, "sudo install -o root -g root -m 0644 " + shlex.quote(service_src) + " " + shlex.quote(WATCHDOG_SERVICE_UNIT))
     command(client, "sudo install -o root -g root -m 0644 " + shlex.quote(timer_src) + " " + shlex.quote(WATCHDOG_TIMER_UNIT))
+    for path in (WATCHDOG_EXECUTABLE, WATCHDOG_SERVICE_UNIT, WATCHDOG_TIMER_UNIT):
+        fsync_remote_file(client, path)
     command(client, "sudo systemctl daemon-reload")
+    verify_installed_watchdog_contract(client)
     command(client, "sudo systemctl enable --now comfy-panel-watchdog.timer")
+    fsync_systemd_unit_state(client)
     if command(client, "systemctl is-enabled comfy-panel-watchdog.timer").strip() != "enabled":
         raise RuntimeError("watchdog timer is not enabled")
     if command(client, "systemctl is-active comfy-panel-watchdog.timer").strip() != "active":
         raise RuntimeError("watchdog timer is not active")
+    command(client, "sudo systemctl start comfy-panel-watchdog.service", timeout=240)
+    script = """import subprocess
+def show(prop): return subprocess.run(['systemctl','show','--property',prop,'--value','comfy-panel-watchdog.service'],text=True,capture_output=True,check=True).stdout.strip()
+print(show('LoadState'));print(show('UnitFileState'));print(show('ActiveState'));print(show('Result'))
+"""
+    service_state = command(
+        client, "python3 -c " + shlex.quote(script),
+    ).splitlines()
+    if service_state != ["loaded", "static", "inactive", "success"]:
+        raise RuntimeError("watchdog service execution verification failed")
+    verify_installed_watchdog_contract(client)
 
 
 def watchdog_isolation_state(client):
@@ -1281,14 +2359,15 @@ print(state('is-enabled','comfy-panel-watchdog.service'))
 
 def isolate_watchdog(client):
     """Fail closed unless both watchdog units cannot restart the panel."""
-    command(client, "sudo systemctl disable --now comfy-panel-watchdog.timer")
-    command(client, "sudo systemctl stop comfy-panel-watchdog.service")
-    command(client, "sudo systemctl mask --runtime comfy-panel-watchdog.service")
+    command(client, "if [ \"$(systemctl show --property LoadState --value comfy-panel-watchdog.timer)\" != not-found ]; then sudo systemctl disable --runtime --now comfy-panel-watchdog.timer; sudo systemctl disable --now comfy-panel-watchdog.timer; fi")
+    command(client, "if [ \"$(systemctl show --property LoadState --value comfy-panel-watchdog.service)\" != not-found ]; then sudo systemctl disable --runtime --now comfy-panel-watchdog.service; sudo systemctl disable --now comfy-panel-watchdog.service; sudo systemctl stop comfy-panel-watchdog.service; fi")
+    command(client, "if [ \"$(systemctl show --property LoadState --value comfy-panel-watchdog.service)\" != not-found ]; then sudo systemctl mask --runtime comfy-panel-watchdog.service; fi")
+    fsync_systemd_unit_state(client)
     timer_active, timer_enabled, service_active, service_enabled = watchdog_isolation_state(client)
     if (timer_active != "inactive"
-            or timer_enabled not in {"disabled", "masked", "masked-runtime"}
+            or timer_enabled not in {"disabled", "masked", "masked-runtime", "not-found"}
             or service_active != "inactive"
-            or service_enabled not in {"static", "masked", "masked-runtime"}):
+            or service_enabled not in {"static", "masked", "masked-runtime", "not-found"}):
         raise RuntimeError(
             "watchdog isolation failed: "
             f"timer={timer_active}/{timer_enabled} "
@@ -1296,66 +2375,158 @@ def isolate_watchdog(client):
         )
 
 
-def isolate_watchdog_or_restore(client, original_state):
-    """Restore the original watchdog when isolation fails before panel mutation."""
-    try:
-        isolate_watchdog(client)
-    except Exception:
-        restore_watchdog_state(client, original_state)
-        raise
-
-
 def capture_watchdog_state(client):
-    """Snapshot exact unit bytes plus enabled/active state before mutation."""
-    script = """import base64,json,pathlib,subprocess
+    """Snapshot supported unit bytes/modes/state and reject custom link topology."""
+    script = """import base64,json,os,pathlib,shlex,stat,subprocess
 def unit(path):
     p=pathlib.Path(path)
-    return p.is_file(), base64.b64encode(p.read_bytes()).decode() if p.is_file() else ''
+    if p.is_symlink(): return False,'',None
+    if not p.exists(): return False,'',None
+    if not p.is_file(): raise RuntimeError('watchdog target is not a regular file: '+str(p))
+    info=p.stat()
+    if info.st_uid != 0 or info.st_gid != 0: raise RuntimeError('watchdog target must be root-owned: '+str(p))
+    return True,base64.b64encode(p.read_bytes()).decode(),stat.S_IMODE(info.st_mode)
 def systemctl(*args):
     r=subprocess.run(['systemctl',*args],text=True,capture_output=True)
     return (r.stdout or r.stderr).strip().splitlines()[0] if (r.stdout or r.stderr).strip() else ''
-service_exists,service_b64=unit('/etc/systemd/system/comfy-panel-watchdog.service')
-timer_exists,timer_b64=unit('/etc/systemd/system/comfy-panel-watchdog.timer')
-executable_exists,executable_b64=unit('/usr/local/libexec/comfy-panel-watchdog.py')
-print(json.dumps({'service_exists':service_exists,'service_b64':service_b64,
-                  'timer_exists':timer_exists,'timer_b64':timer_b64,
-                  'executable_exists':executable_exists,'executable_b64':executable_b64,
-                  'service_active':systemctl('is-active','comfy-panel-watchdog.service'),
-                  'service_enabled':systemctl('is-enabled','comfy-panel-watchdog.service'),
-                  'timer_enabled':systemctl('is-enabled','comfy-panel-watchdog.timer'),
-                  'timer_active':systemctl('is-active','comfy-panel-watchdog.timer')}))
+def related_links():
+    names={'comfy-panel-watchdog.service','comfy-panel-watchdog.timer'};result={}
+    for raw_root in ('/etc/systemd/system','/run/systemd/system'):
+        root=pathlib.Path(raw_root)
+        if not root.is_dir(): continue
+        for current,dirs,files in os.walk(root,followlinks=False):
+            for name in dirs+files:
+                path=pathlib.Path(current)/name
+                if not path.is_symlink(): continue
+                target=os.readlink(path)
+                if path.name not in names and pathlib.PurePosixPath(target).name not in names: continue
+                if path.lstat().st_uid!=0 or path.lstat().st_gid!=0: raise RuntimeError('watchdog systemd link must be root-owned: '+str(path))
+                resolved=str((path.parent/pathlib.Path(target)).resolve(strict=False)) if not pathlib.Path(target).is_absolute() else str(pathlib.Path(target).resolve(strict=False))
+                result[str(path)]=resolved
+    return result
+service_exists,service_b64,service_mode=unit('/etc/systemd/system/comfy-panel-watchdog.service')
+timer_exists,timer_b64,timer_mode=unit('/etc/systemd/system/comfy-panel-watchdog.timer')
+executable_exists,executable_b64,executable_mode=unit('/usr/local/libexec/comfy-panel-watchdog.py')
+service_active=systemctl('is-active','comfy-panel-watchdog.service');service_enabled=systemctl('is-enabled','comfy-panel-watchdog.service')
+timer_active=systemctl('is-active','comfy-panel-watchdog.timer');timer_enabled=systemctl('is-enabled','comfy-panel-watchdog.timer')
+for unit,path,exists,enabled in (
+    ('comfy-panel-watchdog.service','/etc/systemd/system/comfy-panel-watchdog.service',service_exists,service_enabled),
+    ('comfy-panel-watchdog.timer','/etc/systemd/system/comfy-panel-watchdog.timer',timer_exists,timer_enabled),
+):
+    fragment=systemctl('show','--property','FragmentPath','--value',unit)
+    dropins=shlex.split(systemctl('show','--property','DropInPaths','--value',unit))
+    allowed_fragments={'',path}
+    if enabled=='masked-runtime': allowed_fragments.add('/run/systemd/system/'+unit)
+    if dropins or fragment not in allowed_fragments: raise RuntimeError('unsupported watchdog FragmentPath/DropInPaths: '+unit)
+    if exists and fragment!=path: raise RuntimeError('watchdog effective fragment does not match captured file: '+unit)
+    if fragment and pathlib.Path(fragment).is_symlink() and enabled not in {'masked','masked-runtime'}: raise RuntimeError('unexpected watchdog fragment symlink: '+unit)
+    if fragment and not pathlib.Path(fragment).is_symlink():
+        data=pathlib.Path(fragment).read_bytes().decode('utf-8')
+        for raw in data.splitlines():
+            line=raw.strip()
+            if not line or line.startswith(('#',';')) or '=' not in line: continue
+            key,value=(part.strip() for part in line.split('=',1))
+            if key in {'Alias','Also'} and value: raise RuntimeError('unsupported watchdog install topology: '+unit)
+expected={}
+if timer_enabled=='enabled': expected['/etc/systemd/system/timers.target.wants/comfy-panel-watchdog.timer']='/etc/systemd/system/comfy-panel-watchdog.timer'
+elif timer_enabled=='enabled-runtime': expected['/run/systemd/system/timers.target.wants/comfy-panel-watchdog.timer']='/etc/systemd/system/comfy-panel-watchdog.timer'
+elif timer_enabled=='masked': expected['/etc/systemd/system/comfy-panel-watchdog.timer']='/dev/null'
+elif timer_enabled=='masked-runtime': expected['/run/systemd/system/comfy-panel-watchdog.timer']='/dev/null'
+if service_enabled=='masked': expected['/etc/systemd/system/comfy-panel-watchdog.service']='/dev/null'
+elif service_enabled=='masked-runtime': expected['/run/systemd/system/comfy-panel-watchdog.service']='/dev/null'
+elif service_enabled in {'enabled','enabled-runtime'}: raise RuntimeError('custom watchdog service enablement cannot be restored exactly')
+links=related_links()
+if links!=expected: raise RuntimeError('custom watchdog systemd link topology cannot be restored exactly')
+print(json.dumps({'service_exists':service_exists,'service_b64':service_b64,'service_mode':service_mode,
+                  'timer_exists':timer_exists,'timer_b64':timer_b64,'timer_mode':timer_mode,
+                  'executable_exists':executable_exists,'executable_b64':executable_b64,'executable_mode':executable_mode,
+                  'service_active':service_active,'service_enabled':service_enabled,
+                  'timer_enabled':timer_enabled,'timer_active':timer_active}))
 """
     state = json.loads(command(client, "python3 -c " + shlex.quote(script)))
-    required = {"service_exists", "service_b64", "timer_exists", "timer_b64",
-                "executable_exists", "executable_b64",
-                "service_active", "service_enabled", "timer_enabled", "timer_active"}
-    if not isinstance(state, dict) or not required.issubset(state):
+    return validate_watchdog_state(state)
+
+
+def validate_watchdog_state(state):
+    """Reject snapshots that cannot be restored and verified exactly."""
+    if not isinstance(state, dict) or set(state) != WATCHDOG_STATE_KEYS:
         raise RuntimeError("invalid watchdog state snapshot")
+    for exists_key, data_key, mode_key in (
+        ("service_exists", "service_b64", "service_mode"),
+        ("timer_exists", "timer_b64", "timer_mode"),
+        ("executable_exists", "executable_b64", "executable_mode"),
+    ):
+        exists = state.get(exists_key)
+        data = state.get(data_key)
+        mode = state.get(mode_key)
+        if type(exists) is not bool or not isinstance(data, str):
+            raise RuntimeError("invalid watchdog file snapshot")
+        if exists:
+            if not isinstance(mode, int) or isinstance(mode, bool) or not (0 <= mode <= 0o7777):
+                raise RuntimeError("invalid watchdog file mode")
+            try:
+                base64.b64decode(data.encode("ascii"), validate=True)
+            except Exception as error:
+                raise RuntimeError("invalid watchdog file bytes") from error
+        elif data != "" or mode is not None:
+            raise RuntimeError("invalid absent watchdog file snapshot")
+    for key in ("service_active", "timer_active"):
+        if state.get(key) not in WATCHDOG_RESTORABLE_ACTIVITY:
+            raise RuntimeError(f"watchdog {key} state cannot be restored exactly")
+    for key in ("service_enabled", "timer_enabled"):
+        if state.get(key) not in WATCHDOG_RESTORABLE_ENABLEMENT:
+            raise RuntimeError(f"watchdog {key} state cannot be restored exactly")
     return state
+
+
+def verify_watchdog_state(client, expected):
+    """Read back every captured watchdog property after restoration."""
+    actual = capture_watchdog_state(client)
+    mismatches = [key for key in sorted(WATCHDOG_STATE_KEYS)
+                  if actual.get(key) != expected.get(key)]
+    if mismatches:
+        raise RuntimeError(
+            "watchdog restore verification mismatch: " + ", ".join(mismatches)
+        )
 
 
 def restore_watchdog_state(client, state):
     """Restore the exact previous unit files and their enable/activity state."""
-    command(client, "sudo systemctl disable --now comfy-panel-watchdog.timer || true")
+    validate_watchdog_state(state)
+    command(client, "sudo systemctl disable --runtime --now comfy-panel-watchdog.timer comfy-panel-watchdog.service || true")
+    command(client, "sudo systemctl disable --now comfy-panel-watchdog.timer comfy-panel-watchdog.service || true")
     command(client, "sudo systemctl stop comfy-panel-watchdog.service || true")
+    command(client, "sudo systemctl unmask --runtime comfy-panel-watchdog.service comfy-panel-watchdog.timer || true")
     command(client, "sudo systemctl unmask comfy-panel-watchdog.service comfy-panel-watchdog.timer || true")
-    for exists_key, data_key, remote in (
-        ("service_exists", "service_b64", WATCHDOG_SERVICE_UNIT),
-        ("timer_exists", "timer_b64", WATCHDOG_TIMER_UNIT),
-        ("executable_exists", "executable_b64", WATCHDOG_EXECUTABLE),
+    for exists_key, data_key, mode_key, remote in (
+        ("service_exists", "service_b64", "service_mode", WATCHDOG_SERVICE_UNIT),
+        ("timer_exists", "timer_b64", "timer_mode", WATCHDOG_TIMER_UNIT),
+        ("executable_exists", "executable_b64", "executable_mode", WATCHDOG_EXECUTABLE),
     ):
         if state.get(exists_key):
             encoded = str(state.get(data_key) or "")
+            mode = state.get(mode_key)
+            if not isinstance(mode, int) or isinstance(mode, bool) or not (0 <= mode <= 0o7777):
+                raise RuntimeError(f"invalid watchdog file mode: {remote}")
             script = (
-                "import base64,pathlib;"
-                f"pathlib.Path({remote!r}).write_bytes(base64.b64decode({encoded!r}))"
+                "import base64,os,pathlib,uuid;"
+                f"path=pathlib.Path({remote!r});"
+                "tmp=path.with_name(path.name+'.restore-'+uuid.uuid4().hex);"
+                f"data=base64.b64decode({encoded!r});"
+                "f=open(tmp,'wb');f.write(data);f.flush();os.fsync(f.fileno());f.close();"
+                f"os.chmod(tmp,{mode});os.chown(tmp,0,0);os.replace(tmp,path);"
+                "f=open(path,'rb');os.fsync(f.fileno());f.close();"
+                "d=os.open(str(path.parent),os.O_RDONLY);os.fsync(d);os.close(d)"
             )
             command(client, "sudo python3 -c " + shlex.quote(script))
-            if remote == WATCHDOG_EXECUTABLE:
-                command(client, "sudo chown root:root " + shlex.quote(remote))
-                command(client, "sudo chmod 0755 " + shlex.quote(remote))
         else:
             command(client, "sudo rm -f " + shlex.quote(remote))
+            parent = str(pathlib.PurePosixPath(remote).parent)
+            script = (
+                "import os;"
+                f"d=os.open({parent!r},os.O_RDONLY);os.fsync(d);os.close(d)"
+            )
+            command(client, "sudo python3 -c " + shlex.quote(script))
     command(client, "sudo systemctl daemon-reload")
 
     enabled = str(state.get("timer_enabled") or "")
@@ -1364,8 +2535,9 @@ def restore_watchdog_state(client, state):
         command(client, "sudo systemctl mask comfy-panel-watchdog.timer")
     elif enabled == "masked-runtime":
         command(client, "sudo systemctl mask --runtime comfy-panel-watchdog.timer")
-    elif enabled in {"enabled", "enabled-runtime", "linked", "linked-runtime", "alias"}:
-        command(client, "sudo systemctl enable comfy-panel-watchdog.timer")
+    elif enabled in {"enabled", "enabled-runtime"}:
+        enable_flag = "--runtime " if enabled == "enabled-runtime" else ""
+        command(client, f"sudo systemctl enable {enable_flag}comfy-panel-watchdog.timer")
     if active in {"active", "activating", "reloading"}:
         command(client, "sudo systemctl start comfy-panel-watchdog.timer")
     else:
@@ -1376,23 +2548,32 @@ def restore_watchdog_state(client, state):
         command(client, "sudo systemctl mask comfy-panel-watchdog.service")
     elif service_enabled == "masked-runtime":
         command(client, "sudo systemctl mask --runtime comfy-panel-watchdog.service")
-    elif service_enabled in {"enabled", "enabled-runtime", "linked", "linked-runtime", "alias"}:
-        enable_flag = "--runtime " if service_enabled in {"enabled-runtime", "linked-runtime"} else ""
+    elif service_enabled in {"enabled", "enabled-runtime"}:
+        enable_flag = "--runtime " if service_enabled == "enabled-runtime" else ""
         command(client, f"sudo systemctl enable {enable_flag}comfy-panel-watchdog.service")
     if service_active in {"active", "activating", "reloading"}:
         command(client, "sudo systemctl start comfy-panel-watchdog.service")
     else:
         command(client, "sudo systemctl stop comfy-panel-watchdog.service || true")
+    fsync_systemd_unit_state(client)
+    verify_watchdog_state(client, state)
 
 
 def remove_watchdog_units(client):
-    command(client, "sudo systemctl disable --now comfy-panel-watchdog.timer || true")
+    command(client, "sudo systemctl disable --runtime --now comfy-panel-watchdog.timer comfy-panel-watchdog.service || true")
+    command(client, "sudo systemctl disable --now comfy-panel-watchdog.timer comfy-panel-watchdog.service || true")
+    command(client, "sudo systemctl unmask --runtime comfy-panel-watchdog.timer comfy-panel-watchdog.service || true")
     command(client, "sudo rm -f /etc/systemd/system/comfy-panel-watchdog.service /etc/systemd/system/comfy-panel-watchdog.timer /usr/local/libexec/comfy-panel-watchdog.py")
     command(client, "sudo systemctl daemon-reload")
 
 
-def deploy(files, public_base=PUBLIC_BASE):
+def deploy(files, payloads, public_base=PUBLIC_BASE,
+           bootstrap_drain_contract=False):
     """Stage all files, verify, swap, read back, health-check; rollback on failure."""
+    if set(payloads) != set(files) or any(not isinstance(data, bytes)
+                                          for data in payloads.values()):
+        raise RuntimeError("immutable release payload set is invalid")
+    require_public_idle(public_base, phase="preflight")
     # Imported and credentials read only after fail-closed local preflight.
     import paramiko
 
@@ -1410,25 +2591,44 @@ def deploy(files, public_base=PUBLIC_BASE):
     creds = json.loads(creds_path.read_text(encoding="utf-8"))
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(PinnedSHA256Policy())
-    client.connect(
-        creds["host"], port=int(creds["port"]), username=creds["user"],
-        password=creds["password"], timeout=30,
-        allow_agent=False, look_for_keys=False,
-    )
     sftp = None
     remote_paths = list(files.values())
     transaction = new_release_transaction()
     lock_acquired = False
     rollback_uncertain = False
     watchdog_state = None
+    watchdog_isolated = False
+    drain_enabled = False
+    start_draining_set = False
+    bootstrap_snapshot_ready = False
+    bootstrap_fence_maybe_armed = False
+    release_committed = False
     try:
-        acquire_release_lock(client, transaction)
+        client.connect(
+            creds["host"], port=int(creds["port"]), username=creds["user"],
+            password=creds["password"], timeout=30,
+            allow_agent=False, look_for_keys=False,
+        )
+        # Owner-verified cleanup is safe even when the acquire response is lost.
         lock_acquired = True
+        acquire_release_lock(client, transaction)
+        if bootstrap_drain_contract:
+            require_bootstrap_drain_contract_absent(client)
+            require_bootstrap_fence_capability_absent(client)
+            # Pre-mark the snapshot because a lost SSH response leaves its
+            # completion uncertain. Never unlock that state without verification.
+            rollback_uncertain = True
+            bootstrap_snapshot_ready = True
+            snapshot_bootstrap_drain_contract(client, transaction)
+            rollback_uncertain = False
+        else:
+            require_persistent_release_drain_contract(client)
+        require_release_start_draining_unset(client)
         watchdog_state = capture_watchdog_state(client)
         remote_parent_paths = sorted({str(pathlib.PurePosixPath(remote).parent) for remote in remote_paths})
         command(client, "mkdir -p -- " + " ".join(shlex.quote(path) for path in remote_parent_paths))
         for local, remote in files.items():
-            stage_file_resilient(client, local, remote, transaction)
+            stage_file_resilient(client, local, remote, transaction, payloads[local])
 
         sftp = client.open_sftp()
         staged_server = transaction_file(transaction, REMOTE_ROOT + "/server.py", "stage")
@@ -1440,10 +2640,89 @@ def deploy(files, public_base=PUBLIC_BASE):
         release_manifest = backup_release(client, sftp, remote_paths, transaction)
         write_transaction_phase(client, transaction, "prepared")
 
-        isolate_watchdog_or_restore(client, watchdog_state)
+        require_public_idle(public_base, phase="pre-stop")
+        rollback_uncertain = True
         try:
-            command(client, "sudo systemctl stop comfy-panel", timeout=240)
+            # Arm restart-time draining first so a spontaneous service restart
+            # anywhere in the preparation window cannot reopen admission.
+            start_draining_set = True
+            set_release_start_draining(client, True)
+            if not bootstrap_drain_contract:
+                # A lost response can leave the server draining. Mark the state
+                # uncertain before the POST so failure handling always retries off.
+                drain_enabled = True
+                enable_remote_release_drain(client)
+            watchdog_isolated = True
+            isolate_watchdog(client)
+            if bootstrap_drain_contract:
+                # Pre-mark because a lost enable response can still leave the
+                # persistent systemd/nft fence active.
+                bootstrap_fence_maybe_armed = True
+                arm_bootstrap_fence(client)
+                require_loopback_idle(
+                    client, phase="fenced-pre-stop",
+                    samples=IDLE_STABILITY_CHECKS,
+                    interval=IDLE_STABILITY_INTERVAL,
+                )
+        except BaseException as preparation_error:
+            cleanup_errors = []
+            if isinstance(preparation_error, WatchdogRestoreUncertain):
+                cleanup_errors.append(f"watchdog: {preparation_error}")
+            if watchdog_isolated:
+                try:
+                    restore_watchdog_state(client, watchdog_state)
+                    watchdog_isolated = False
+                except BaseException as error:
+                    cleanup_errors.append(f"watchdog: {error}")
+            if drain_enabled:
+                try:
+                    set_remote_release_drain(client, False)
+                    drain_enabled = False
+                except BaseException as error:
+                    cleanup_errors.append(f"release drain: {error}")
+            if bootstrap_snapshot_ready:
+                try:
+                    restore_bootstrap_drain_contract(client, transaction)
+                    bootstrap_snapshot_ready = False
+                    start_draining_set = False
+                except BaseException as error:
+                    cleanup_errors.append(f"bootstrap drain contract: {error}")
+            elif start_draining_set:
+                try:
+                    set_release_start_draining(client, False)
+                    start_draining_set = False
+                except BaseException as error:
+                    cleanup_errors.append(f"start-draining drop-in: {error}")
+            if bootstrap_fence_maybe_armed and not cleanup_errors:
+                try:
+                    # Restore all legacy state before reopening public admission.
+                    disarm_bootstrap_fence(client)
+                    bootstrap_fence_maybe_armed = False
+                except BaseException as error:
+                    cleanup_errors.append(f"bootstrap admission fence: {error}")
+            if cleanup_errors:
+                try:
+                    emergency_stop_after_failed_release(client)
+                except BaseException as error:
+                    cleanup_errors.append(f"emergency stop: {error}")
+                raise WatchdogRestoreUncertain(
+                    "pre-stop release preparation could not be restored: "
+                    + "; ".join(cleanup_errors)
+                ) from preparation_error
+            rollback_uncertain = False
+            raise
+        try:
+            if bootstrap_drain_contract:
+                if probe_bootstrap_fence(client) != "active":
+                    raise RuntimeError("bootstrap fence was lost before panel stop")
+                stop_panel_resilient(client)
+            else:
+                command(client, "sudo systemctl stop comfy-panel", timeout=240)
+            drain_enabled = False
             write_transaction_phase(client, transaction, "swapping")
+            if bootstrap_drain_contract:
+                install_bootstrap_drain_contract(client, transaction)
+                require_persistent_release_drain_contract(client)
             for remote in remote_paths:
                 staged = transaction_file(transaction, remote, "stage")
                 try:
@@ -1455,9 +2734,10 @@ def deploy(files, public_base=PUBLIC_BASE):
                 if not isinstance(mode, int) or isinstance(mode, bool):
                     raise RuntimeError(f"invalid release mode: {remote}")
                 command(client, f"chmod {mode:04o} -- {shlex.quote(remote)}")
+                fsync_remote_file(client, remote)
 
             for local, remote in files.items():
-                local_data = local.read_bytes()
+                local_data = payloads[local]
                 with sftp.open(remote, "rb") as handle:
                     live_data = handle.read()
                 if live_data != local_data:
@@ -1465,6 +2745,11 @@ def deploy(files, public_base=PUBLIC_BASE):
                 print(local.name, len(local_data), hashlib.sha256(local_data).hexdigest())
 
             command(client, "sudo systemctl start comfy-panel", timeout=240)
+            drain_enabled = True
+            wait_for_remote_release_drain(client)
+            if bootstrap_drain_contract:
+                disarm_bootstrap_fence(client)
+                bootstrap_fence_maybe_armed = False
             live = wait_for_live(public_base, timeout=60)
             try:
                 health = fetch_json(public_base, "/api/health")
@@ -1472,9 +2757,15 @@ def deploy(files, public_base=PUBLIC_BASE):
                 health = {"ok": False, "error": str(error)[:200]}
             if not isinstance(health, dict) or health.get("dreamapi_configured") is not True:
                 raise RuntimeError("public DreamAPI channel is not configured")
-            realism = fetch_bytes(public_base, "/realism")
-            home = fetch_bytes(public_base, "/")
-            creator, creator_preview = verify_public_large_responses(public_base)
+            expected_creator = payloads[BASE / "static" / "index.html"]
+            expected_realism = payloads[BASE / "static" / "realism.html"]
+            expected_preview = payloads[
+                BASE / "static" / "previews" / "style-retro-manga-luxury.webp"
+            ]
+            realism, home, creator, creator_preview = verify_public_large_responses(
+                public_base, expected_creator, expected_preview,
+                expected_realism=expected_realism,
+            )
             workflows = fetch_json(public_base, "/api/workflows")
             names = {str(item.get("name") or "") for item in workflows if isinstance(item, dict)}
             if b"/api/workflow-generate" not in realism or b"/realism" not in home:
@@ -1485,7 +2776,6 @@ def deploy(files, public_base=PUBLIC_BASE):
                 b"style221", b"style222", b"zxqelun", b"zxqavri",
             )):
                 raise RuntimeError("public creator style/API markers missing")
-            expected_preview = (BASE / "static" / "previews" / "style-retro-manga-luxury.webp").read_bytes()
             if creator_preview != expected_preview:
                 raise RuntimeError("public creator preview mismatch")
             if not set(TARGET_WORKFLOW_NAMES).issubset(names):
@@ -1493,41 +2783,121 @@ def deploy(files, public_base=PUBLIC_BASE):
             if not set(UPLOADED_WORKFLOW_NAMES.values()).issubset(names):
                 raise RuntimeError("public workflow list missing uploaded workflows")
             install_watchdog_units(client)
+            # From this point the release is fully verified. Persist commit before
+            # reopening either restart-time or current-process admission.
+            release_committed = True
             write_transaction_phase(client, transaction, "committed")
+            set_release_start_draining(client, False)
+            start_draining_set = False
+            set_remote_release_drain(client, False)
+            drain_enabled = False
             cleanup_release_transaction(client, transaction)
+            rollback_uncertain = False
             print("LIVE", json.dumps(live, ensure_ascii=False))
             print("COMFY_DIAGNOSTIC", json.dumps(health, ensure_ascii=False))
             print("PUBLIC_MARKERS_OK")
-        except Exception:
+        except BaseException:
+            if release_committed:
+                # The deployed bytes passed every check. Preserve the lock when
+                # post-commit maintenance cleanup cannot be verified.
+                rollback_uncertain = True
+                if start_draining_set:
+                    try:
+                        set_release_start_draining(client, False)
+                        start_draining_set = False
+                    except BaseException:
+                        pass
+                if drain_enabled:
+                    try:
+                        set_remote_release_drain(client, False)
+                        drain_enabled = False
+                    except BaseException:
+                        pass
+                raise
             try:
                 isolate_watchdog(client)
+                if bootstrap_drain_contract:
+                    # Reconcile even a partially removed fence before restoring
+                    # legacy bytes; the local flag cannot prove remote state.
+                    bootstrap_fence_maybe_armed = True
+                    arm_bootstrap_fence(client)
                 write_transaction_phase(client, transaction, "rolling-back")
-                rollback_release(client, sftp, remote_paths, transaction, public_base=public_base)
-            except Exception:
+                rollback_release(
+                    client, sftp, remote_paths, transaction,
+                    public_base=public_base,
+                    restore_bootstrap=bootstrap_snapshot_ready,
+                    bootstrap_fence=(
+                        bootstrap_drain_contract and bootstrap_fence_maybe_armed
+                    ),
+                )
+                if bootstrap_snapshot_ready:
+                    bootstrap_snapshot_ready = False
+                    start_draining_set = False
+                restore_watchdog_state(client, watchdog_state)
+                watchdog_isolated = False
+                if start_draining_set:
+                    set_release_start_draining(client, False)
+                    start_draining_set = False
+                if not bootstrap_drain_contract:
+                    set_remote_release_drain(client, False)
+                else:
+                    disarm_bootstrap_fence(client)
+                    bootstrap_fence_maybe_armed = False
+                    legacy_live = wait_for_live(
+                        public_base, timeout=60, allow_legacy=True,
+                    )
+                    if not legacy_live.get("ok"):
+                        raise RuntimeError(str(legacy_live))
+                    drain_enabled = False
+                write_transaction_phase(client, transaction, "rolled-back")
+                cleanup_release_transaction(client, transaction)
+            except BaseException as rollback_error:
                 # An uncertain rollback must remain stopped; restoring an active
-                # watchdog could restart a mixed release.
+                # watchdog or removing the persistent drain could expose a mixed release.
                 rollback_uncertain = True
+                if bootstrap_drain_contract:
+                    try:
+                        bootstrap_fence_maybe_armed = True
+                        arm_bootstrap_fence(client)
+                    except BaseException as fence_error:
+                        rollback_error.add_note(
+                            f"bootstrap rollback fence restore failed: {fence_error}"
+                        )
+                try:
+                    emergency_stop_after_failed_release(client)
+                except BaseException as stop_error:
+                    rollback_error.add_note(str(stop_error))
                 try:
                     write_transaction_phase(client, transaction, "rollback-failed")
-                except Exception:
+                except BaseException:
                     pass
                 raise
             else:
-                try:
-                    restore_watchdog_state(client, watchdog_state)
-                    write_transaction_phase(client, transaction, "rolled-back")
-                    cleanup_release_transaction(client, transaction)
-                except Exception:
-                    rollback_uncertain = True
-                    write_transaction_phase(client, transaction, "rollback-failed")
-                    raise
+                rollback_uncertain = False
             raise
     finally:
+        cleanup_errors = []
         if sftp is not None:
-            sftp.close()
-        if lock_acquired and not rollback_uncertain:
-            release_release_lock(client, transaction)
-        client.close()
+            try:
+                sftp.close()
+            except BaseException as error:
+                cleanup_errors.append(error)
+        try:
+            if lock_acquired and not rollback_uncertain:
+                try:
+                    release_release_lock(client, transaction)
+                except BaseException as error:
+                    cleanup_errors.append(error)
+        finally:
+            try:
+                client.close()
+            except BaseException as error:
+                cleanup_errors.append(error)
+        if cleanup_errors and sys.exc_info()[0] is None:
+            primary = cleanup_errors[0]
+            for secondary in cleanup_errors[1:]:
+                primary.add_note(str(secondary))
+            raise primary
 
 
 def parse_args(argv=None):
@@ -1536,6 +2906,10 @@ def parse_args(argv=None):
     parser.add_argument(
         "--allow-unauthenticated-public", action="store_true",
         help="explicitly accept the current public no-auth risk for this release",
+    )
+    parser.add_argument(
+        "--bootstrap-drain-contract", action="store_true",
+        help="one-time migration for a verified idle legacy server without the drain endpoint",
     )
     parser.add_argument("--public-base", default=PUBLIC_BASE)
     return parser.parse_args(argv)
@@ -1557,10 +2931,15 @@ def main(argv=None):
     if e2e_errors:
         print(json.dumps({"e2e_errors": e2e_errors}, ensure_ascii=False, indent=2))
         return 2
-    require_clean_git()
+    reviewed_head = require_clean_git()
     run_release_tests()
+    require_clean_git(expected_head=reviewed_head)
     files = release_files()
-    deploy(files, public_base=args.public_base)
+    payloads = release_payloads_from_head(files, reviewed_head)
+    deploy(
+        files, payloads, public_base=args.public_base,
+        bootstrap_drain_contract=args.bootstrap_drain_contract,
+    )
     print("REALISM_RELEASE_DEPLOY_OK")
     return 0
 

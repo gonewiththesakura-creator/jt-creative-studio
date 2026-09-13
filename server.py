@@ -11,13 +11,14 @@ Env:
 """
 import json, os, re, sys, time, uuid, threading, urllib.request, urllib.parse, urllib.error, math
 import http.server, http.cookies, socketserver, pathlib, secrets, hashlib, hmac
-import socket, base64, struct, subprocess, io, gzip
+import socket, base64, struct, subprocess, io, gzip, ipaddress
 
 BASE = pathlib.Path(__file__).resolve().parent
 COMFY_URL = os.environ.get("COMFY_URL", "http://127.0.0.1:8188").rstrip("/")
 CONTROL_URL = os.environ.get("CONTROL_URL", "http://127.0.0.1:8198").rstrip("/")
 PORT = int(os.environ.get("PANEL_PORT", "8189"))
 TOKEN = os.environ.get("PANEL_TOKEN", "")
+PANEL_RELEASE_TOKEN = os.environ.get("PANEL_RELEASE_TOKEN", "")
 _SESSION_SECRET_SOURCE = os.environ.get("PANEL_SESSION_SECRET") or TOKEN or secrets.token_urlsafe(32)
 SESSION_SECRET = hashlib.sha256(("jt-session-signing:" + _SESSION_SECRET_SOURCE).encode("utf-8")).digest()
 DATA_DIR = pathlib.Path(os.environ.get("PANEL_DIR", str(BASE / "panel_data")))
@@ -38,6 +39,7 @@ RH_KEY = os.environ.get("RUNNINGHUB_API_KEY", "")
 # quality and fit mode can be selected through the creator endpoint.
 DREAMAPI_KEY = os.environ.get("DREAMAPI_KEY", "")
 DREAMAPI_BASE_URL = os.environ.get("DREAMAPI_BASE_URL", "https://dreamapi.club").rstrip("/")
+DREAMAPI_EGRESS_URL = os.environ.get("DREAMAPI_EGRESS_URL", "").strip()
 DREAMAPI_TEXT_MODEL = "gpt-5.6-sol"
 DREAMAPI_TIMEOUT = 600
 DREAMAPI_MAX_RESPONSE_BYTES = 96 * 1024 * 1024
@@ -47,6 +49,13 @@ DREAMAPI_IMAGE_QUALITIES = {
     "gpt-image-2": {"low", "medium", "high", "auto"},
     "gpt-image-2.5-flare": {"low", "medium", "high", "xhigh", "max", "auto"},
     "gpt-image-2.5-sunburst": {"low", "medium", "high", "xhigh", "max", "auto"},
+}
+DREAMAPI_RATIO_SIZES = {
+    "1:1": (1024, 1024),
+    "2:3": (1024, 1536),
+    "3:2": (1536, 1024),
+    "9:16": (864, 1536),
+    "16:9": (1536, 864),
 }
 RH_TIMEOUT_SUBMIT = 60
 RH_TIMEOUT_QUERY = 30
@@ -75,6 +84,10 @@ LARGE_REQUEST_THRESHOLD = 1024 * 1024
 REALISM_HISTORY_LIMIT = 50
 MAX_FAVORITES = 200
 UPLOAD_CAPABILITY_TTL = 24 * 60 * 60
+SESSION_COOKIE_TTL = 365 * 24 * 60 * 60
+SESSION_COOKIE_REFRESH_AFTER = 30 * 24 * 60 * 60
+LEGACY_SESSION_COOKIE_DEADLINE = int(os.environ.get(
+    "PANEL_LEGACY_SESSION_COOKIE_DEADLINE", "1792022400"))
 MAX_UPLOAD_CAPABILITIES = 2000
 UPLOAD_SESSION_HOURLY_LIMIT = 20
 UPLOAD_GLOBAL_HOURLY_LIMIT = 100
@@ -86,6 +99,14 @@ BILLABLE_SESSION_HOURLY_LIMIT = 4
 # V2 query exposes only real task states, not a stable percentage. Keep these
 # conservative and fixed; never manufacture progress from elapsed/poll count.
 RH_STAGE_PROGRESS = {"QUEUED": 0.02, "RUNNING": 0.10}
+
+
+class ProviderTaskFailed(RuntimeError):
+    """The provider explicitly reported a terminal failure."""
+
+
+class ProviderStateUncertain(RuntimeError):
+    """A provider task exists, but its current state cannot be confirmed."""
 
 TPL_DIR = BASE / "templates"
 CONFIG = json.loads((BASE / "config.json").read_text(encoding="utf-8"))
@@ -236,7 +257,19 @@ _upload_capabilities_lock = threading.Lock()
 _upload_usage = []
 _upload_usage_lock = threading.Lock()
 _billable_quota_lock = threading.Lock()
-_idempotency_lock = threading.Lock()
+_admission_lock = threading.Lock()
+_idempotency_lock = _admission_lock  # compatibility alias for older tests/tools
+_release_draining = os.environ.get("PANEL_RELEASE_DRAIN_ON_START") == "1"
+_comfy_start_lock = threading.Lock()
+_recovery_jobs = set()
+_recovery_jobs_lock = threading.Lock()
+
+
+def _is_loopback_peer(host):
+    try:
+        return ipaddress.ip_address(str(host or "").split("%", 1)[0]).is_loopback
+    except ValueError:
+        return False
 
 # ---------- minimal WebSocket client (stdlib only) for real sampling progress ----------
 def _ws_connect(host, port, path):
@@ -329,11 +362,91 @@ def _ascii_remote_url(url):
     return urllib.parse.urlunsplit((parsed.scheme.lower(), host, path, query, fragment)), display_name
 
 
+def _json_object_from_bytes(raw, label):
+    try:
+        value = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise RuntimeError(f"{label} is not valid UTF-8 JSON") from error
+    if not isinstance(value, dict):
+        raise RuntimeError(f"{label} root must be an object")
+    return value
+
+
+def _atomic_write_bytes(path, raw):
+    path = pathlib.Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        with temporary.open("wb") as output:
+            output.write(raw)
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(temporary, path)
+        try:
+            directory_fd = os.open(str(path.parent), os.O_RDONLY)
+        except OSError:
+            directory_fd = None
+        if directory_fd is not None:
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _atomic_write_json_object(path, value, label):
+    if not isinstance(value, dict):
+        raise TypeError(f"{label} root must be an object")
+    path = pathlib.Path(path)
+    raw = json.dumps(value, ensure_ascii=False, indent=1).encode("utf-8")
+    # Keep the last known-good primary. A corrupt primary must never replace a
+    # valid backup while the service is recovering.
+    if path.exists():
+        previous = path.read_bytes()
+        try:
+            _json_object_from_bytes(previous, label)
+        except RuntimeError:
+            pass
+        else:
+            _atomic_write_bytes(path.with_suffix(path.suffix + ".bak"), previous)
+    _atomic_write_bytes(path, raw)
+    if _json_object_from_bytes(path.read_bytes(), label) != value:
+        raise RuntimeError(f"{label} atomic write verification failed")
+
+
+def _preserve_corrupt_json(path):
+    path = pathlib.Path(path)
+    if not path.exists():
+        return None
+    destination = path.with_name(f"{path.name}.corrupt-{int(time.time())}-{uuid.uuid4().hex[:8]}")
+    _atomic_write_bytes(destination, path.read_bytes())
+    return destination
+
+
+def _load_json_object(path, label):
+    path = pathlib.Path(path)
+    if not path.exists():
+        return {}
+    primary_raw = path.read_bytes()
+    try:
+        return _json_object_from_bytes(primary_raw, label)
+    except RuntimeError as primary_error:
+        _preserve_corrupt_json(path)
+        backup = path.with_suffix(path.suffix + ".bak")
+        if backup.exists():
+            try:
+                return _json_object_from_bytes(backup.read_bytes(), label + " backup")
+            except RuntimeError:
+                pass
+        raise RuntimeError(
+            f"{label} is corrupt and no valid backup is available; original bytes were preserved"
+        ) from primary_error
+
+
 def load_jobs():
     global _jobs
-    if JOBS_FILE.exists():
-        try: _jobs = json.loads(JOBS_FILE.read_text(encoding="utf-8"))
-        except Exception: _jobs = {}
+    _jobs = _load_json_object(JOBS_FILE, "jobs ledger")
     # Normalize legacy provider URLs before the browser or urllib uses them.
     # This migration is local-only and never submits or polls a provider task.
     for j in _jobs.values():
@@ -364,9 +477,7 @@ def load_jobs():
     save_jobs()
 
 def save_jobs():
-    tmp = JOBS_FILE.with_suffix(".tmp")
-    tmp.write_text(json.dumps(_jobs, ensure_ascii=False, indent=1), encoding="utf-8")
-    tmp.replace(JOBS_FILE)
+    _atomic_write_json_object(JOBS_FILE, _jobs, "jobs ledger")
 
 
 def persist_provider_task(job, task_id):
@@ -378,9 +489,7 @@ def persist_provider_task(job, task_id):
 
 def load_favorites():
     global _favorites
-    if FAVORITES_FILE.exists():
-        try: _favorites = json.loads(FAVORITES_FILE.read_text(encoding="utf-8"))
-        except Exception: _favorites = {}
+    _favorites = _load_json_object(FAVORITES_FILE, "favorites ledger")
     changed = False
     for item in _favorites.values():
         if isinstance(item, dict) and "selection_snapshot" in item:
@@ -400,36 +509,60 @@ def public_favorite(item):
     return result
 
 def save_favorites():
-    tmp = FAVORITES_FILE.with_suffix(".tmp")
-    tmp.write_text(json.dumps(_favorites, ensure_ascii=False, indent=1), encoding="utf-8")
-    tmp.replace(FAVORITES_FILE)
+    _atomic_write_json_object(FAVORITES_FILE, _favorites, "favorites ledger")
 
 
 def _upload_token_hash(value):
     return hashlib.sha256(str(value or "").encode("utf-8")).hexdigest()
 
 
-def _encode_session_cookie(session_id):
+def _session_cookie_signature(payload):
+    return base64.urlsafe_b64encode(
+        hmac.new(SESSION_SECRET, payload.encode("ascii"), hashlib.sha256).digest()
+    ).decode("ascii").rstrip("=")
+
+
+def _encode_session_cookie(session_id, issued_at=None):
     session_id = str(session_id or "")
     if not re.fullmatch(r"[A-Za-z0-9_-]{20,100}", session_id):
         raise ValueError("invalid session id")
-    signature = base64.urlsafe_b64encode(
-        hmac.new(SESSION_SECRET, session_id.encode("ascii"), hashlib.sha256).digest()
-    ).decode("ascii").rstrip("=")
-    return session_id + "." + signature
+    issued_at = int(time.time() if issued_at is None else issued_at)
+    payload = f"v1.{session_id}.{issued_at}"
+    return payload + "." + _session_cookie_signature(payload)
+
+
+def _decode_session_cookie_details(value, now=None):
+    value = str(value or "")
+    now = int(time.time() if now is None else now)
+    parts = value.split(".")
+    if len(parts) == 4 and parts[0] == "v1":
+        _, session_id, issued_text, signature = parts
+        if (not re.fullmatch(r"[A-Za-z0-9_-]{20,100}", session_id)
+                or not re.fullmatch(r"\d{1,12}", issued_text)
+                or not re.fullmatch(r"[A-Za-z0-9_-]{43}", signature)):
+            return "", False
+        payload = ".".join(parts[:3])
+        if not hmac.compare_digest(signature, _session_cookie_signature(payload)):
+            return "", False
+        issued_at = int(issued_text)
+        age = now - issued_at
+        if age < -300 or age > SESSION_COOKIE_TTL:
+            return "", False
+        return session_id, age >= SESSION_COOKIE_REFRESH_AFTER
+
+    # One bounded migration window keeps existing users' history available.
+    # A legacy cookie has no timestamp, so it is rejected after the deadline.
+    if len(parts) == 2 and now <= LEGACY_SESSION_COOKIE_DEADLINE:
+        session_id, signature = parts
+        if (re.fullmatch(r"[A-Za-z0-9_-]{20,100}", session_id)
+                and re.fullmatch(r"[A-Za-z0-9_-]{43}", signature)
+                and hmac.compare_digest(signature, _session_cookie_signature(session_id))):
+            return session_id, True
+    return "", False
 
 
 def _decode_session_cookie(value):
-    value = str(value or "")
-    try:
-        session_id, signature = value.rsplit(".", 1)
-    except ValueError:
-        return ""
-    if (not re.fullmatch(r"[A-Za-z0-9_-]{20,100}", session_id)
-            or not re.fullmatch(r"[A-Za-z0-9_-]{43}", signature)):
-        return ""
-    expected = _encode_session_cookie(session_id).rsplit(".", 1)[1]
-    return session_id if hmac.compare_digest(signature, expected) else ""
+    return _decode_session_cookie_details(value)[0]
 
 
 def session_owns_record(session_id, record, owner_key="request_session_hash"):
@@ -596,8 +729,16 @@ def upload_bound_snapshot(workflow, public_media, trusted_params, raw_snapshot, 
     }
 
 
-def prune_favorites():
-    ordered = sorted(_favorites.values(), key=lambda item: item.get("created", 0), reverse=True)
+def prune_favorites(owner_session_hash=None):
+    if owner_session_hash is None:
+        owners = {str(item.get("owner_session_hash") or "") for item in _favorites.values()}
+        for owner in owners:
+            prune_favorites(owner)
+        return
+    ordered = sorted(
+        (item for item in _favorites.values()
+         if str(item.get("owner_session_hash") or "") == str(owner_session_hash)),
+        key=lambda item: item.get("created", 0), reverse=True)
     for old in ordered[MAX_FAVORITES:]:
         _favorites.pop(old.get("id"), None)
         for key in ("image_path",):
@@ -699,6 +840,54 @@ def _urlopen_bounded(url, data, timeout):
     if "err" in box:
         raise box["err"]
     raise TimeoutError(f"urlopen hard timeout after {timeout}s")
+
+
+def _response_bytes_limited(response, max_bytes):
+    chunks, total = [], 0
+    while True:
+        try:
+            chunk = response.read(min(65536, max_bytes + 1 - total))
+        except TypeError:
+            # Lightweight test doubles and a few file-like adapters expose only
+            # read() without a size argument.
+            chunk = response.read()
+            if len(chunk) > max_bytes:
+                raise RuntimeError("provider response is too large")
+            return chunk
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_bytes:
+            raise RuntimeError("provider response is too large")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def _provider_json_request(request, data=None, timeout=30, max_bytes=4 * 1024 * 1024):
+    """Bound connection and response-body reads by one wall-clock deadline."""
+    box = {}
+
+    def worker():
+        try:
+            with _urlopen_bounded(request, data, timeout) as response:
+                raw = _response_bytes_limited(response, max_bytes)
+            value = json.loads(raw.decode("utf-8"))
+            if not isinstance(value, dict):
+                raise RuntimeError("provider JSON root must be an object")
+            box["result"] = value
+        except Exception as error:
+            box["error"] = error
+
+    thread = threading.Thread(target=worker, daemon=True)
+    thread.start()
+    thread.join(timeout + 5)
+    if thread.is_alive():
+        raise TimeoutError(f"provider response hard timeout after {timeout}s")
+    if "error" in box:
+        raise box["error"]
+    if "result" not in box:
+        raise RuntimeError("provider request ended without a response")
+    return box["result"]
 
 def comfy_ok():
     try:
@@ -1049,7 +1238,7 @@ def public_selection_snapshot(snapshot):
         name = re.split(r"[\\/]", str(value or ""))[-1].strip()
         if name and re.fullmatch(r"[^\x00-\x1f\x7f]{1,255}", name):
             clean_names[str(key)[:100]] = name
-    return {
+    result = {
         "source_page": str(raw.get("source_page") or "")[:40],
         "workflow": str(raw.get("workflow") or "")[:100],
         "params": _json_safe_integer_metadata(
@@ -1057,6 +1246,32 @@ def public_selection_snapshot(snapshot):
         "media": {},
         "media_names": clean_names,
     }
+    if raw.get("workflow") == "anima02" or isinstance(raw.get("state"), dict):
+        def safe_value(value, depth=0):
+            if depth > 5:
+                return None
+            if isinstance(value, str):
+                return value[:12000]
+            if value is None or isinstance(value, (bool, int)):
+                return _json_safe_integer_metadata(value)
+            if isinstance(value, float):
+                return value if math.isfinite(value) else None
+            if isinstance(value, list):
+                return [safe_value(item, depth + 1) for item in value[:100]]
+            if isinstance(value, dict):
+                return {str(key)[:100]: safe_value(item, depth + 1)
+                        for key, item in list(value.items())[:100]}
+            return None
+
+        creator_fields = (
+            "style", "style_variant", "mode", "state", "locked", "width", "height",
+            "batch", "hd", "sequence_mode", "prompt_mode", "manual_positive",
+            "manual_negative", "seed", "seed_mode", "generation_backend", "api_ratio",
+        )
+        for key in creator_fields:
+            if key in raw:
+                result[key] = safe_value(raw[key])
+    return result
 
 
 def public_job_selection_snapshot(snapshot):
@@ -1230,9 +1445,7 @@ def rh_submit(workflow_id, node_info_list, instance_type="default", use_personal
                                      method="POST")
         per = min(RH_TIMEOUT_SUBMIT, max(5, deadline - time.time()))
         try:
-            with _urlopen_bounded(req, None, per) as resp:
-                raw = resp.read().decode(errors="replace")
-                r = json.loads(raw)
+            r = _provider_json_request(req, timeout=per)
         except Exception as e:
             # The POST may have reached RunningHub even when its response was
             # lost. Retrying that ambiguous outcome can create a second billed
@@ -1274,8 +1487,7 @@ def rh_submit_ai_app(app_id, node_info_list):
                                  headers={"Content-Type": "application/json",
                                           "Authorization": f"Bearer {RH_KEY}"},
                                  method="POST")
-    with _urlopen_bounded(req, None, RH_TIMEOUT_SUBMIT) as resp:
-        result = json.loads(resp.read().decode(errors="replace"))
+    result = _provider_json_request(req, timeout=RH_TIMEOUT_SUBMIT)
     status = str(result.get("status") or "").upper()
     task_id = result.get("taskId")
     if task_id and status in ("QUEUED", "RUNNING"):
@@ -1289,8 +1501,7 @@ def rh_failed_task_detail(task_id):
         "https://www.runninghub.cn/task/openapi/outputs", data=body,
         headers={"Content-Type": "application/json"}, method="POST")
     try:
-        with _urlopen_bounded(req, None, RH_TIMEOUT_QUERY) as resp:
-            result = json.loads(resp.read().decode(errors="replace"))
+        result = _provider_json_request(req, timeout=RH_TIMEOUT_QUERY)
     except Exception:
         return ""
     failed = ((result.get("data") or {}).get("failedReason") or {})
@@ -1339,8 +1550,7 @@ def rh_output_details(task_id):
         "https://www.runninghub.cn/task/openapi/outputs", data=body,
         headers={"Content-Type": "application/json"}, method="POST")
     try:
-        with _urlopen_bounded(req, None, RH_TIMEOUT_QUERY) as resp:
-            result = json.loads(resp.read().decode(errors="replace"))
+        result = _provider_json_request(req, timeout=RH_TIMEOUT_QUERY)
     except Exception:
         return []
     data = result.get("data") if isinstance(result, dict) else None
@@ -1356,8 +1566,7 @@ def rh_query(task_id, job=None):
                                           "Authorization": f"Bearer {RH_KEY}"},
                                  method="POST")
     try:
-        with _urlopen_bounded(req, None, RH_TIMEOUT_QUERY) as resp:
-            r = json.loads(resp.read().decode())
+        r = _provider_json_request(req, timeout=RH_TIMEOUT_QUERY)
     except Exception as e:
         raise RuntimeError(f"RH query failed: {e}")
     status = r.get("status", "")
@@ -1370,7 +1579,8 @@ def rh_query(task_id, job=None):
     if status == "FAILED":
         detail = rh_failed_task_detail(task_id)
         suffix = f"；{detail}" if detail else ""
-        raise RuntimeError(f"RH task failed: {r.get('errorCode')} {r.get('errorMessage')}{suffix}")
+        raise ProviderTaskFailed(
+            f"RH task failed: {r.get('errorCode')} {r.get('errorMessage')}{suffix}")
     return status, results
 
 
@@ -1463,9 +1673,27 @@ def prepend_trigger_once(prompt, trigger):
     return f"{trigger}, {prompt}" if prompt else trigger
 
 def _rh_wait_task(job, task_id, deadline, progress_base=0, progress_span=100):
+    query_failures = 0
+    last_query_error = None
     while time.time() < deadline:
-        status, results = rh_query(task_id, job=job)
+        try:
+            status, results = rh_query(task_id, job=job)
+            query_failures = 0
+            last_query_error = None
+        except ProviderTaskFailed:
+            raise
+        except Exception as error:
+            query_failures += 1
+            last_query_error = error
+            job["provider_status"] = "QUERY_RETRY"
+            job["status"] = "recovering"
+            if query_failures == 1 or query_failures % 3 == 0:
+                with _lock_jobs:
+                    save_jobs()
+            time.sleep(min(8, 2 ** min(query_failures, 3)))
+            continue
         job["provider_status"] = status or "RUNNING"
+        job["status"] = "running"
         fraction = RH_STAGE_PROGRESS.get(str(status or "RUNNING").upper(), 0.10)
         job["progress_pct"] = round(min(99, progress_base + progress_span * fraction))
         if status == "SUCCESS":
@@ -1475,7 +1703,8 @@ def _rh_wait_task(job, task_id, deadline, progress_base=0, progress_span=100):
             time.sleep(4)
             continue
         time.sleep(8)
-    raise RuntimeError("RH task timeout")
+    detail = f": {last_query_error}" if last_query_error else ""
+    raise ProviderStateUncertain(f"RH task state is still unconfirmed{detail}")
 
 
 def _rh_results_to_images(results, task_id, stage_id=None, stage_label=None, result_labels=None):
@@ -1745,6 +1974,27 @@ def rh_run_generic(job, w):
     job["download_finished"] = time.time()
     return images
 
+def schedule_cloud_recovery(job, delay=30):
+    job_id = str(job.get("id") or "")
+    if not job_id:
+        return
+    with _recovery_jobs_lock:
+        if job_id in _recovery_jobs:
+            return
+        _recovery_jobs.add(job_id)
+
+    def worker():
+        time.sleep(max(0, delay))
+        with _recovery_jobs_lock:
+            _recovery_jobs.discard(job_id)
+        with _lock_jobs:
+            current = _jobs.get(job_id)
+        if current and current.get("status") == "recovering" and current.get("rh_task_id"):
+            resume_cloud_job(current)
+
+    threading.Thread(target=worker, daemon=True).start()
+
+
 def resume_cloud_job(job):
     """Resume polling a persisted RunningHub task; never submit another task."""
     task_id = job.get("rh_task_id")
@@ -1760,6 +2010,11 @@ def resume_cloud_job(job):
         job.update({"images": images, "status": "done", "provider_status": "DONE",
                     "progress_pct": 100, "provider_finished": time.time(),
                     "download_finished": time.time(), "error": None})
+    except ProviderStateUncertain:
+        job["status"] = "recovering"
+        job["provider_status"] = "RECOVERING"
+        job["error"] = None
+        schedule_cloud_recovery(job)
     except Exception as error:
         job["status"] = "error"
         job["error"] = f"恢复云任务失败：{str(error)[:450]}"
@@ -1867,6 +2122,16 @@ def _dreamapi_redact_error(detail):
     detail = re.sub(r"(?i)(bearer\s+)[A-Za-z0-9._~+/=-]{8,}", r"\1[REDACTED]", detail)
     detail = re.sub(r"(?i)((?:api[_ -]?key|token|secret)\s*[:=]?\s*)[A-Za-z0-9._~+/=-]{8,}", r"\1[REDACTED]", detail)
     return re.sub(r"[\x00-\x1f\x7f]+", " ", detail).strip()[:500]
+
+
+def _dreamapi_request_endpoint():
+    if not DREAMAPI_EGRESS_URL:
+        return DREAMAPI_BASE_URL + "/responses"
+    parsed = urllib.parse.urlparse(DREAMAPI_EGRESS_URL)
+    if (parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "::1", "localhost"}
+            or parsed.username or parsed.password or parsed.query or parsed.fragment):
+        raise RuntimeError("DREAMAPI_EGRESS_URL must be a loopback HTTP endpoint")
+    return DREAMAPI_EGRESS_URL
 
 
 def compact_dreamapi_prompts(positive, negative, max_total=1600):
@@ -2008,7 +2273,7 @@ def dreamapi_run_image(job, jobdir):
         }],
     }
     request = urllib.request.Request(
-        DREAMAPI_BASE_URL + "/responses",
+        _dreamapi_request_endpoint(),
         headers={"Authorization": f"Bearer {DREAMAPI_KEY}", "Content-Type": "application/json"},
         method="POST",
     )
@@ -2170,8 +2435,7 @@ def rh_upload_file(data, filename, ctype="application/octet-stream", timeout=120
     }
     req = urllib.request.Request("https://www.runninghub.cn/task/openapi/upload",
                                  data=body, headers=headers)
-    with _urlopen_bounded(req, None, timeout) as r:
-        resp = json.loads(r.read().decode())
+    resp = _provider_json_request(req, timeout=timeout)
     if resp.get("code") != 0:
         raise RuntimeError(f"RH upload failed: {resp.get('code')} {resp.get('msg')}")
     fname = (resp.get("data") or {}).get("fileName")
@@ -2279,6 +2543,11 @@ def run_job(job):
             job["progress_pct"] = 100
         else:
             raise RuntimeError("unknown generation backend")
+    except ProviderStateUncertain:
+        job["status"] = "recovering"
+        job["provider_status"] = "RECOVERING"
+        job["error"] = None
+        schedule_cloud_recovery(job)
     except Exception as e:
         job["status"] = "error"
         job["error"] = str(e)[:500]
@@ -2469,18 +2738,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def _upload_session(self, create=False):
         session_id = ""
+        refresh = False
         try:
             cookie = http.cookies.SimpleCookie(self.headers.get("Cookie", ""))
             encoded = cookie.get("jt_session").value if cookie.get("jt_session") else ""
-            session_id = _decode_session_cookie(encoded)
+            session_id, refresh = _decode_session_cookie_details(encoded)
         except (http.cookies.CookieError, AttributeError):
             session_id = ""
         if not session_id and create:
             session_id = secrets.token_urlsafe(32)
+            refresh = True
+        if session_id and refresh:
             encoded = _encode_session_cookie(session_id)
-            header = (f"jt_session={encoded}; Path=/; Max-Age={UPLOAD_CAPABILITY_TTL}; "
-                      "HttpOnly; SameSite=Strict")
-            return session_id, header
+            return session_id, (f"jt_session={encoded}; Path=/; Max-Age={SESSION_COOKIE_TTL}; "
+                                "HttpOnly; SameSite=Strict")
         return session_id, None
 
     def _require_session(self):
@@ -2712,6 +2983,29 @@ class Handler(http.server.BaseHTTPRequestHandler):
         # 令牌鉴权已取消（用户要求 8189 直接免登录使用）
         return True
 
+    def _management_auth(self):
+        if not PANEL_RELEASE_TOKEN:
+            return False
+        header = str(self.headers.get("Authorization") or "")
+        prefix = "Bearer "
+        if not header.startswith(prefix):
+            return False
+        return secrets.compare_digest(header[len(prefix):], PANEL_RELEASE_TOKEN)
+
+    def _release_in_progress(self):
+        return self._send(503, json.dumps({
+            "error": "release_in_progress",
+            "code": "release_in_progress",
+        }).encode(), headers={"Retry-After": "30"})
+
+    def _release_state(self):
+        return {
+            "draining": bool(_release_draining),
+            "cloud_busy": self._running_job_id("cloud") is not None,
+            "local_busy": self._running_job_id("local") is not None,
+            "api_busy": self._running_job_id("api") is not None,
+        }
+
     def _read_json(self, limit=MAX_JSON_BYTES):
         n = int(self.headers.get("Content-Length", 0))
         if n < 0 or n > limit:
@@ -2740,6 +3034,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             ok, msg = comfy_ok()
             self._send(200, json.dumps({"ok": ok, "comfy": bool(ok), "local_comfy_ok": ok,
                                         "dreamapi_configured": bool(DREAMAPI_KEY),
+                                        "dreamapi_workstation_egress": bool(DREAMAPI_EGRESS_URL),
+                                        "draining": bool(_release_draining),
                                         "cloud_busy": self._running_job_id("cloud") is not None,
                                         "local_busy": self._running_job_id("local") is not None,
                                         "api_busy": self._running_job_id("api") is not None}).encode())
@@ -2755,7 +3051,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             headers = {"Set-Cookie": cookie_header} if cookie_header else None
             self._send(200, json.dumps(lst, ensure_ascii=False).encode(), headers=headers)
         elif path == "/api/loras":
-            if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
+            if not self._management_auth():
+                return self._send(401, b'{"error":"management authorization required"}')
             self._send(200, json.dumps({"loras": get_lora_list()}).encode())
         elif path == "/api/favorites":
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
@@ -2819,7 +3116,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "download_started", "download_finished", "selection_snapshot",
                     "prompt_mode", "seed", "seed_mode", "style_id", "style_variant", "mode",
                     "sequence_mode", "sequence_seed", "stage_status", "generation_backend",
-                    "seed_supported", "api_model", "api_quality", "api_fit",
+                    "seed_supported", "api_model", "api_quality", "api_fit", "api_ratio",
                     "api_prompt_compacted", "api_upstream_prompt_chars",
                     "api_upstream_model", "api_upstream_quality", "api_upstream_size",
                     "media", "params",
@@ -2842,9 +3139,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
                 scope = (query.get("scope") or [None])[0]
                 style = (query.get("style") or [None])[0]
-                sources = scoped_history_jobs(list(_jobs.values()), scope, style)
                 session_id, _ = self._upload_session(create=False)
-                sources = [src for src in sources if session_owns_record(session_id, src)]
+                owned_sources = [src for src in _jobs.values()
+                                 if session_owns_record(session_id, src)]
+                sources = scoped_history_jobs(owned_sources, scope, style)
                 for src in sources:
                     allowed = (
                         "id", "workflow", "status", "provider_status",
@@ -2854,7 +3152,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         "download_started", "download_finished", "selection_snapshot",
                         "style_id", "style_variant", "mode", "seed", "seed_mode", "prompt_mode",
                         "sequence_mode", "sequence_seed", "stage_status", "generation_backend",
-                        "seed_supported", "api_model", "api_quality", "api_fit",
+                        "seed_supported", "api_model", "api_quality", "api_fit", "api_ratio",
                         "api_prompt_compacted", "api_upstream_prompt_chars",
                         "api_upstream_model", "api_upstream_quality", "api_upstream_size",
                         "client_request_id",
@@ -3033,6 +3331,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         return None
 
     def do_POST(self):
+        global _release_draining
         path = urllib.parse.urlparse(self.path).path
         try:
             content_length = int(self.headers.get("Content-Length", 0))
@@ -3041,6 +3340,26 @@ class Handler(http.server.BaseHTTPRequestHandler):
         body_limit = json_body_limit(path)
         if content_length < 0 or content_length > body_limit:
             return self._send(413, b'{"error":"request body too large"}')
+        if path == "/api/admin/release-drain":
+            if not self._management_auth():
+                return self._send(401, b'{"error":"management authorization required"}')
+            if not _is_loopback_peer(self.client_address[0]):
+                return self._send(403, b'{"error":"release drain is loopback only"}')
+            try:
+                body = self._read_json(1024)
+            except Exception:
+                return self._send(400, b'{"error":"bad json"}')
+            enabled = body.get("enabled") if isinstance(body, dict) else None
+            if not isinstance(enabled, bool):
+                return self._send(400, b'{"error":"enabled must be boolean"}')
+            with _admission_lock:
+                _release_draining = enabled
+                state = self._release_state()
+            return self._send(200, json.dumps(state, separators=(",", ":")).encode())
+        if path in ("/api/workflow-upload", "/api/upload"):
+            with _admission_lock:
+                if _release_draining:
+                    return self._release_in_progress()
         if content_length >= LARGE_REQUEST_THRESHOLD:
             if not self.server._large_request_slots.acquire(blocking=False):
                 return self._send(503, b'{"error":"large upload capacity busy"}', headers={"Retry-After": "10"})
@@ -3110,7 +3429,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 "workflow": workflow_id, "generation_backend": "cloud",
                 "provider_media": provider_media, "params": trusted_params,
             })
-            with _idempotency_lock, _submit_locks["cloud"]:
+            with _admission_lock, _submit_locks["cloud"]:
+                if _release_draining:
+                    return self._release_in_progress()
                 decision, existing_job, session_hash = idempotency_decision(
                     client_request_id, session_id, request_sha256)
                 if decision == "duplicate":
@@ -3223,7 +3544,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 "workflow": wf, "generation_backend": "cloud",
                 "provider_media": provider_media, "params": trusted_params,
             })
-            with _idempotency_lock, _submit_locks["cloud"]:
+            with _admission_lock, _submit_locks["cloud"]:
+                if _release_draining:
+                    return self._release_in_progress()
                 decision, existing_job, session_hash = idempotency_decision(
                     client_request_id, session_id, request_sha256)
                 if decision == "duplicate":
@@ -3342,6 +3665,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             # Serialize idempotency admission across all billable routes, then
             # apply the provider's verified two-video concurrency limit.
             with _idempotency_lock, _submit_locks["video"]:
+                if _release_draining:
+                    return self._release_in_progress()
                 decision, existing_job, session_hash = idempotency_decision(
                     client_request_id, session_id, request_sha256)
                 if decision == "duplicate":
@@ -3352,14 +3677,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         "error": "client_request_id already used with different request payload",
                     }).encode())
                 with _lock_jobs:
-                    running_videos = [j for j in _jobs.values()
-                                      if j.get("generation_backend") == "cloud"
-                                      and j.get("workflow") in WORKFLOWS
-                                      and WORKFLOWS[j["workflow"]].get("kind") == "video"
-                                      and j.get("status") in ("running", "recovering")]
-                if len(running_videos) >= VIDEO_MAX_CONCURRENT:
+                    running_cloud = [j for j in _jobs.values()
+                                     if j.get("generation_backend") == "cloud"
+                                     and j.get("status") in ("running", "recovering")]
+                if len(running_cloud) >= VIDEO_MAX_CONCURRENT:
                     return self._send(429, json.dumps({
-                        "error": f"视频任务已达并发上限（{VIDEO_MAX_CONCURRENT}个），请等待其中一个完成",
+                        "error": f"RunningHub任务已达总并发上限（{VIDEO_MAX_CONCURRENT}个），请等待其中一个完成",
                     }, ensure_ascii=False).encode())
                 job = {"id": uuid.uuid4().hex[:12], "workflow": wf, "prompt": prompt,
                    "negative_prompt": negative_prompt, "prompt_mode": "manual",
@@ -3442,14 +3765,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 }
                 with _lock_jobs:
                     _favorites[fid] = fav
-                    prune_favorites()
+                    prune_favorites(fav["owner_session_hash"])
                     save_favorites()
                 return self._send(200, json.dumps(public_favorite(fav), ensure_ascii=False).encode())
         if path == "/api/comfy/start":
-            if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
-            started, msg = start_comfy_remote()
-            self._send(200 if started else 502, json.dumps({"started": started, "detail": msg}).encode())
-            return
+            if not self._management_auth():
+                return self._send(401, b'{"error":"management authorization required"}')
+            if not _comfy_start_lock.acquire(blocking=False):
+                return self._send(409, b'{"error":"ComfyUI start already in progress"}')
+            try:
+                started, msg = start_comfy_remote()
+                self._send(200 if started else 502, json.dumps({
+                    "started": started, "detail": msg,
+                }).encode())
+                return
+            finally:
+                _comfy_start_lock.release()
         if path != "/api/generate":
             return self._send(404, b'{"error":"not found"}')
         if not self._auth():
@@ -3482,18 +3813,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
         except ValueError as error:
             return self._send(400, json.dumps({"error": str(error)}).encode())
         try:
-            numeric_values = {
-                "batch": body.get("batch", 1),
-                "hd": body.get("hd", 0),
-                "width": body.get("width", 0),
-                "height": body.get("height", 0),
-            }
+            numeric_values = {"batch": body.get("batch", 1), "hd": body.get("hd", 0)}
+            if generation_backend != "api":
+                numeric_values.update({
+                    "width": body.get("width", 0), "height": body.get("height", 0),
+                })
             if any(isinstance(value, (bool, dict, list)) for value in numeric_values.values()):
                 raise TypeError("numeric parameter must be scalar")
             batch = max(1, min(_bounded_request_int(numeric_values["batch"], 1), w["batch_max"]))
             hd = _bounded_request_int(numeric_values["hd"], 0)
-            width = _bounded_request_int(numeric_values["width"], 0)
-            height = _bounded_request_int(numeric_values["height"], 0)
+            width = _bounded_request_int(numeric_values.get("width", 0), 0)
+            height = _bounded_request_int(numeric_values.get("height", 0), 0)
         except (TypeError, ValueError, OverflowError):
             return self._send(400, b'{"error":"invalid numeric parameters"}')
         hd_options = w.get("hd") or ["关闭"]
@@ -3502,6 +3832,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         api_model = str(body.get("api_model") or "gpt-image-2.5-flare")
         api_quality = str(body.get("api_quality") or "medium")
         api_fit = str(body.get("api_fit") or "cover")
+        api_ratio = str(body.get("api_ratio") or "9:16")
         if generation_backend == "api":
             if len(prompt) > 12000 or len(negative_prompt) > 12000:
                 return self._send(400, b'{"error":"prompt too long (max 12000 characters)"}')
@@ -3515,11 +3846,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._send(400, b'{"error":"quality is not supported by the DreamAPI image model"}')
             if api_fit not in {"cover", "contain"}:
                 return self._send(400, b'{"error":"unknown DreamAPI fit mode"}')
-            try:
-                _dreamapi_size(width, height)
-            except (TypeError, ValueError, ZeroDivisionError) as error:
-                return self._send(400, json.dumps({"error": str(error)}).encode())
-        with _idempotency_lock, _submit_locks[generation_backend]:
+            if api_ratio not in DREAMAPI_RATIO_SIZES:
+                return self._send(400, b'{"error":"unknown DreamAPI aspect ratio"}')
+            width, height = DREAMAPI_RATIO_SIZES[api_ratio]
+        with _admission_lock, _submit_locks[generation_backend]:
+            if _release_draining:
+                return self._release_in_progress()
             if w["size_mode"] == "native":
                 presets = w["size_presets"]
                 if not (width > 0 and height > 0):
@@ -3532,9 +3864,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if seed_mode not in ("random", "fixed"):
                 return self._send(400, b'{"error":"unknown seed_mode"}')
             seed = body.get("seed")
-            try: seed = int(seed) if seed is not None else 0
-            except Exception: seed = 0
-            if not (1 <= seed <= 9007199254740991):
+            try:
+                seed = _bounded_request_int(seed, 0)
+            except (TypeError, ValueError, OverflowError):
+                if seed_mode == "fixed":
+                    return self._send(400, b'{"error":"invalid fixed seed"}')
+                seed = 0
+            if seed_mode == "fixed" and not (1 <= seed <= 9007199254740991):
+                return self._send(400, b'{"error":"fixed seed out of range"}')
+            if seed_mode == "random":
                 seed = secrets.randbelow(2**53 - 1) + 1
             style_id = str(body.get("style_id") or "cold")
             mode = str(body.get("mode") or "original")
@@ -3567,6 +3905,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 "api_model": api_model if generation_backend == "api" else None,
                 "api_quality": api_quality if generation_backend == "api" else None,
                 "api_fit": api_fit if generation_backend == "api" else None,
+                "api_ratio": api_ratio if generation_backend == "api" else None,
             }
             request_sha256 = effective_request_sha256(request_payload)
             cookie_header = None
@@ -3606,10 +3945,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
                    "api_model": api_model if generation_backend == "api" else None,
                    "api_quality": api_quality if generation_backend == "api" else None,
                    "api_fit": api_fit if generation_backend == "api" else None,
+                   "api_ratio": api_ratio if generation_backend == "api" else None,
                    "seed_supported": generation_backend != "api",
                    "comfy_prompt_id": None, "transfer_index": 0, "transfer_total": 0,
                    "transfer_started": None, "transfer_finished": None,
-                   "selection_snapshot": body.get("selection_snapshot") or {}}
+                   "selection_snapshot": public_selection_snapshot({
+                       **(body.get("selection_snapshot") if isinstance(body.get("selection_snapshot"), dict) else {}),
+                       "source_page": "creator", "workflow": "anima02",
+                       "generation_backend": generation_backend,
+                       **({"api_ratio": api_ratio} if generation_backend == "api" else {}),
+                   })}
             if generation_backend in ("cloud", "api"):
                 quota_status = register_billable_job(job, session_id)
                 if self._billable_quota_rejection(quota_status):
