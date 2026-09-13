@@ -405,10 +405,14 @@ def test_history_scope_filters_before_limit():
         {"id": "video", "workflow": "h3_t2v_i2v", "created": 40},
         {"id": "sketch", "workflow": "anima02", "style_id": "sketch", "created": 30},
         {"id": "graphic", "workflow": "anima02", "style_id": "graphic", "created": 20},
+        {"id": "style221", "workflow": "anima02", "style_id": "style221", "created": 19},
+        {"id": "style222", "workflow": "anima02", "style_id": "style222", "created": 18},
     ]
     assert [x["id"] for x in server.scoped_history_jobs(jobs, "video")] == ["video"]
-    assert [x["id"] for x in server.scoped_history_jobs(jobs, "creator")] == ["sketch", "graphic"]
+    assert [x["id"] for x in server.scoped_history_jobs(jobs, "creator")] == ["sketch", "graphic", "style221", "style222"]
     assert [x["id"] for x in server.scoped_history_jobs(jobs, "creator", "sketch")] == ["sketch"]
+    assert [x["id"] for x in server.scoped_history_jobs(jobs, "creator", "style221")] == ["style221"]
+    assert [x["id"] for x in server.scoped_history_jobs(jobs, "creator", "style222")] == ["style222"]
     assert [x["id"] for x in server.scoped_history_jobs(jobs, "realism")] == ["new-realism"]
 
 

@@ -987,7 +987,7 @@ def scoped_history_jobs(jobs, scope=None, style=None, limit=12):
     elif scope == "creator":
         ordered = [job for job in ordered if job.get("workflow") == "anima02"]
         if style is not None:
-            if style not in {"sketch", "original_sketch", "graphic", "original_graphic", "cold", "hanmanga", "nff", "retro_manga_luxury"}:
+            if style not in STYLE_PRESETS:
                 return []
             ordered = [job for job in ordered if job.get("style_id") == style]
     elif scope:

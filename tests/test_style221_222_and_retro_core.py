@@ -58,3 +58,9 @@ def test_new_style_panel_e2e_evidence_matches_trusted_profiles():
         assert row['submit_attempts']==1 and row['status']=='done' and row['history_occurrences']==1
         assert row['rh_coins']==str(coins) and row['png_signature'] is True
         assert len(row['artifact_sha256'])==64 and len(row['model_sha256'])==64
+
+
+def test_new_styles_disclose_that_no_quality_approved_preview_is_available():
+    html=(ROOT/'static/index.html').read_text(encoding='utf8')
+    assert '暂无通过质量审核的预览' in html
+    assert "if(!thumb){stylePreview.removeAttribute('src')" in html
