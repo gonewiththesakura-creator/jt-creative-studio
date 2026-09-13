@@ -12,6 +12,7 @@ evidence/
 reports/
 *.png
 !audit/dreamapi_creator_live_20260912.png
+!audit/dreamapi_sidebar_long_prompt_20260913.png
 *.jpg
 *.jpeg
 *.webp

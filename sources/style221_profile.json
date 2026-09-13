@@ -1,0 +1,92 @@
+{
+  "id": "style221",
+  "name": "板绘·半写实厚涂",
+  "short": "板绘",
+  "trigger": "zxqelun",
+  "lora1": "11_style221_v1_step400.safetensors",
+  "lora2": "11_style221_v1_step400.safetensors",
+  "strengths": {
+    "LORA1": 0.4,
+    "LORA2": 0.0
+  },
+  "prefix": "masterpiece, best quality",
+  "head": "1woman, adult woman, solo, mature facial proportions",
+  "style": "(semi-realistic anime portrait:1.2), (painterly digital oil painting:1.3), (thick painting:1.2), (visible expressive brush strokes:1.25), dry brush texture, subtle impasto canvas texture, delicate realistic face, soft facial rendering, rough painterly hair and clothing, (lost and found edges:1.2), unfinished painterly rendering, (muted low-saturation colors:1.2), dusty gray blue and muted warm tones, cinematic chiaroscuro, soft directional light, abstract painterly background, paint smears and layered color blocks, dreamy melancholic atmosphere, fine art portrait, editorial fashion illustration",
+  "negative": "worst quality, low quality, lowres, blurry, child, underage, loli, chibi child proportions, flat anime shading, cel shading, simple cartoon, smooth digital rendering, airbrushed skin, plastic skin, wax skin, overly smooth shading, perfect digital gradients, modern anime screenshot, mobile game illustration, VTuber style, cheap CGI, game render, photorealistic photography, bad anatomy, bad hands, extra fingers, missing fingers, fused fingers, extra limbs, distorted face, asymmetrical eyes, cluttered background, text, watermark, logo, signature",
+  "defaultMode": "original",
+  "originalOnly": [],
+  "characterOnly": [
+    "character_inspired"
+  ],
+  "multi": [
+    "special_outfit",
+    "body_modifier",
+    "special_prompt",
+    "seductive_pose",
+    "special_pose"
+  ],
+  "labels": {
+    "special_prompt": "板绘笔触",
+    "background": "厚涂背景",
+    "accent": "低饱和色调"
+  },
+  "additions": {
+    "special_prompt": [
+      [
+        "脸部精细·周围粗笔触",
+        "finely rendered face surrounded by loose rough brushwork"
+      ],
+      [
+        "干刷与刮擦肌理",
+        "visible dry-brush bristles and scraped paint texture"
+      ],
+      [
+        "虚实边缘",
+        "strong lost-and-found edges with broken painterly contours"
+      ],
+      [
+        "画布厚涂",
+        "subtle impasto paint built over textured canvas"
+      ]
+    ],
+    "background": [
+      [
+        "蓝灰抽象色块",
+        "abstract smoky blue-gray background with large muted color blocks"
+      ],
+      [
+        "灰绿色刮擦墙面",
+        "desaturated teal-gray painted wall with scraped vertical strokes"
+      ],
+      [
+        "暖灰油画背景",
+        "warm-gray layered oil-paint background with unfinished edges"
+      ]
+    ],
+    "accent": [
+      [
+        "灰蓝与暖肤色",
+        "desaturated blue-gray and warm skin-tone color harmony"
+      ],
+      [
+        "烟青与尘粉",
+        "smoky teal with restrained dusty-pink accents"
+      ],
+      [
+        "炭黑与暖灰",
+        "charcoal black, warm gray and pale peach highlights"
+      ]
+    ]
+  },
+  "sparseRandomKeys": [
+    "hair",
+    "expression",
+    "outfit",
+    "accessory",
+    "pose",
+    "camera",
+    "background",
+    "accent",
+    "special_prompt"
+  ]
+}

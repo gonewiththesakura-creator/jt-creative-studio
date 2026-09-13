@@ -451,7 +451,13 @@ def test_public_job_and_history_strip_provider_media_tokens_and_snapshot_media()
         "error": "RH task failed at node 123 SecretNode: internal traceback details",
         "selection_snapshot": {
             "source_page": "realism", "workflow": "image_fixture",
-            "params": {}, "media": {"source_image": "api/legacy-private.png"},
+            "params": {
+                "manual_positive": "private-positive-prompt",
+                "manual_negative": "private-negative-prompt",
+                "api_key": "private-api-key",
+                "response_id": "private-response-id",
+                "width": 768,
+            }, "media": {"source_image": "api/legacy-private.png"},
             "media_names": {"source_image": "source.png"},
         },
         "images": [],
@@ -474,6 +480,11 @@ def test_public_job_and_history_strip_provider_media_tokens_and_snapshot_media()
         for key in ("rh_task_id", "rh_task_ids", "comfy_prompt_id", "prompt_ids", "api_response_id"):
             assert key not in target
         assert target["selection_snapshot"]["media"] == {}
+        assert target["selection_snapshot"]["params"] == {"width": 768}
+        assert "private-positive-prompt" not in raw
+        assert "private-negative-prompt" not in raw
+        assert "private-api-key" not in raw
+        assert "private-response-id" not in raw
         assert target.get("media") in ({}, None)
 
 

@@ -77,7 +77,7 @@ checks={
  'verified cloud mapping':E2E.get('verification')=='PASS' and E2E.get('expected_effective_mapping',{}).get('lora')=='09_style321_v1_step200.safetensors',
  'qualified preview':re.fullmatch(r'/static/previews/style-retro-manga-luxury\.webp\?v=[0-9a-f]{12}',style.get('preview','')) is not None and style.get('preview_thumb','').startswith('data:image/webp;base64,'),
  'qualified preview bytes':PREVIEW.is_file() and hashlib.sha256(PREVIEW.read_bytes()).hexdigest()=='2ebb09eea5c1f9944e3a0376991a42b46a5a75bc92d1a83e3033b7522b60bb22',
- 'full core preserved':style.get('style')==core,
+ 'weighted core strengthened':all(x in style.get('style','') for x in ['(traditional hand-drawn illustration:1.3)','(alcohol marker rendering:1.25)','(bold black shadow masses:1.3)','(scanned analog artwork:1.2)']) and all(x in style.get('style','') for x in ['vintage 1980s-1990s','colored pencil','chromatic reflected highlights','luxurious gemstone jewelry']),
  'fixed negative preserved':style.get('negative')==negative,
  'adult base':all(x in style.get('head','') for x in ['1woman','adult woman']),
  'all union categories':bool(style.get('pools')) and all(k in style['pools'] for k in json.loads((ROOT/'sources/pool_union_manifest.json').read_text(encoding='utf8'))['union_counts']),

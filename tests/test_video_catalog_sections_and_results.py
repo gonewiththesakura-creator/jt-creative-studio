@@ -101,6 +101,5 @@ def test_multi_output_workflows_label_primary_and_comparison_results():
 def test_video_ui_prefers_business_result_label_over_provider_filename():
     source = (ROOT / "sources" / "video_business.js").read_text(encoding="utf8")
     generated = (ROOT / "static" / "video.html").read_text(encoding="utf8")
-    marker = "String(im.stage_label||im.file||'结果')"
-    assert marker in source
-    assert marker in generated
+    assert "stage_label||item.im.file||'结果'" in source
+    assert "stage_label||item.im.file||'结果'" in generated

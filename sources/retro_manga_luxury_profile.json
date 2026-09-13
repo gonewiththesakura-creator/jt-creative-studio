@@ -11,12 +11,22 @@
   },
   "prefix": "",
   "head": "1woman, adult woman, solo, mature glamorous fashion model",
-  "style": "retro 1980s-1990s Japanese manga fashion illustration,\nvintage shoujo manga, josei manga aesthetic,\ntraditional hand-drawn illustration,\nblack ink linework,\ncolored pencil rendering,\nalcohol marker coloring,\ngouache-like highlights,\nvisible marker strokes,\nslightly rough expressive linework,\ntextured paper,\nscanned analog artwork,\n\nbold black shadow masses,\ndeep black hair,\nhigh contrast,\nsharp colorful hair highlights,\ncyan, violet, magenta, pink and golden reflected light,\nchromatic highlights,\ncolored reflected shadows,\n\npale luminous skin,\nblue-purple and peach skin shadows,\nlong narrow elegant eyes,\nheavy detailed eyelashes,\ndelicate sharp facial features,\nsmall glossy lips,\nmature glamorous expression,\n\nluxurious fashion illustration,\nornate gemstone jewelry,\ndangling earrings,\nlayered necklaces,\nvintage high-fashion editorial feeling,\n\ndynamic flowing hair,\ndramatic crop,\nfashion portrait composition",
+  "style": "(traditional hand-drawn illustration:1.3),\n(retro Japanese manga fashion illustration:1.25), vintage 1980s-1990s shoujo manga and josei manga aesthetic,\n(alcohol marker rendering:1.25), (colored pencil texture:1.2), expressive black ink linework,\n(visible marker strokes:1.25), rough expressive linework, gouache-like opaque highlights,\n(textured drawing paper:1.15), (scanned analog artwork:1.2), natural drawing imperfections,\n(bold black shadow masses:1.3), deep solid black hair, strong graphic contrast, dramatic black shapes,\nsharp cyan blue violet magenta pink and golden reflected highlights, (chromatic reflected highlights:1.2), colored reflected shadows,\npale luminous skin with blue-purple lavender peach colored shadows, warm peach highlights,\nlong narrow glamorous eyes, heavy detailed eyelashes, delicate sharp mature facial features, small glossy lips,\nluxurious gemstone jewelry, dangling earrings, layered gold necklaces, hand-drawn jewelry details,\nvintage high-fashion editorial illustration, dynamic flowing hair, fashion portrait composition, analog non-digital appearance",
   "negative": "worst quality, low quality, lowres, blurry,\nphotorealistic, realistic photography, 3d render, CGI,\nsmooth digital rendering, airbrushed skin, plastic skin,\nmodern anime screenshot, mobile game illustration, VTuber style,\nchibi, kawaii, baby face, huge round eyes,\nflat cel shading, clean vector lines, perfect uniform lineart,\ncyberpunk, excessive neon glow,\nbad anatomy, bad hands, extra fingers, missing fingers,\ndistorted face, asymmetrical eyes,\ncluttered background,\ntext, watermark, logo, signature",
   "defaultMode": "original",
   "originalOnly": [],
-  "characterOnly": ["character_inspired"],
-  "multi": ["accessory", "fashion_extra", "special_outfit", "body_modifier", "special_prompt", "seductive_pose", "special_pose"],
+  "characterOnly": [
+    "character_inspired"
+  ],
+  "multi": [
+    "accessory",
+    "fashion_extra",
+    "special_outfit",
+    "body_modifier",
+    "special_prompt",
+    "seductive_pose",
+    "special_pose"
+  ],
   "labels": {
     "character": "成年人物 / 身材",
     "hair": "发型 / 发色",
@@ -32,224 +42,829 @@
   },
   "additions": {
     "character": [
-      ["年轻成年女性（21+）", "young adult woman, clearly age 21+"],
-      ["优雅成熟女性", "elegant mature adult woman"],
-      ["冷艳时尚美人", "adult cool beauty with a glamorous fashion presence"],
-      ["华丽杂志模特", "adult glamorous high-fashion editorial model"],
-      ["纤细身形", "adult woman, slim body"],
-      ["丰润曲线", "adult woman, curvy body"],
-      ["高挑身形", "adult woman, tall figure"],
-      ["娇小成年身形", "adult woman, petite figure"],
-      ["优美身体线条", "adult woman, graceful body line"],
-      ["优雅比例", "adult woman, elegant proportions"],
-      ["雕塑感模特身形", "sculptural adult fashion-model silhouette"],
-      ["修长颈肩线", "long elegant neck and refined shoulder line"],
-      ["强势女主角气场", "commanding adult heroine presence"],
-      ["慵懒名媛气质", "languid adult socialite elegance"]
+      [
+        "年轻成年女性（21+）",
+        "young adult woman, clearly age 21+"
+      ],
+      [
+        "优雅成熟女性",
+        "elegant mature adult woman"
+      ],
+      [
+        "冷艳时尚美人",
+        "adult cool beauty with a glamorous fashion presence"
+      ],
+      [
+        "华丽杂志模特",
+        "adult glamorous high-fashion editorial model"
+      ],
+      [
+        "纤细身形",
+        "adult woman, slim body"
+      ],
+      [
+        "丰润曲线",
+        "adult woman, curvy body"
+      ],
+      [
+        "高挑身形",
+        "adult woman, tall figure"
+      ],
+      [
+        "娇小成年身形",
+        "adult woman, petite figure"
+      ],
+      [
+        "优美身体线条",
+        "adult woman, graceful body line"
+      ],
+      [
+        "优雅比例",
+        "adult woman, elegant proportions"
+      ],
+      [
+        "雕塑感模特身形",
+        "sculptural adult fashion-model silhouette"
+      ],
+      [
+        "修长颈肩线",
+        "long elegant neck and refined shoulder line"
+      ],
+      [
+        "强势女主角气场",
+        "commanding adult heroine presence"
+      ],
+      [
+        "慵懒名媛气质",
+        "languid adult socialite elegance"
+      ]
     ],
     "hair": [
-      ["黑色长发", "long black hair"],
-      ["青绿色短波波头", "short teal bob"],
-      ["棕色波浪发", "wavy brown hair"],
-      ["银色长发", "silver long hair"],
-      ["金色编发", "blonde braided hair"],
-      ["红色高马尾", "red ponytail"],
-      ["乌黑及腰长发", "jet-black waist-length hair"],
-      ["蓝黑齐刘海波波头", "glossy blue-black blunt bob with straight bangs"],
-      ["80年代蓬松赤褐卷发", "voluminous auburn 1980s waves"],
-      ["香槟金法式盘发", "champagne-blonde French twist updo"],
-      ["不对称紫罗兰短发", "asymmetrical violet bob haircut"],
-      ["黑色缎带高马尾", "high black ponytail tied with a satin ribbon"],
-      ["复古手推波纹发", "sculpted vintage finger waves"],
-      ["青黑色迎风长发", "long teal-black windswept hair"],
-      ["酒红羽毛层次发", "burgundy feathered layered hair"],
-      ["铂金侧分精灵短发", "platinum side-swept pixie cut"],
-      ["深棕螺旋卷发", "dark brown spiral curls"],
-      ["午夜蓝齐耳短发", "midnight-blue ear-length bob"],
-      ["铜红色长辫", "long copper-red braid"],
-      ["黑发彩色切光", "black hair cut by cyan magenta violet and gold chromatic highlights"]
+      [
+        "黑色长发",
+        "long black hair"
+      ],
+      [
+        "青绿色短波波头",
+        "short teal bob"
+      ],
+      [
+        "棕色波浪发",
+        "wavy brown hair"
+      ],
+      [
+        "银色长发",
+        "silver long hair"
+      ],
+      [
+        "金色编发",
+        "blonde braided hair"
+      ],
+      [
+        "红色高马尾",
+        "red ponytail"
+      ],
+      [
+        "乌黑及腰长发",
+        "jet-black waist-length hair"
+      ],
+      [
+        "蓝黑齐刘海波波头",
+        "glossy blue-black blunt bob with straight bangs"
+      ],
+      [
+        "80年代蓬松赤褐卷发",
+        "voluminous auburn 1980s waves"
+      ],
+      [
+        "香槟金法式盘发",
+        "champagne-blonde French twist updo"
+      ],
+      [
+        "不对称紫罗兰短发",
+        "asymmetrical violet bob haircut"
+      ],
+      [
+        "黑色缎带高马尾",
+        "high black ponytail tied with a satin ribbon"
+      ],
+      [
+        "复古手推波纹发",
+        "sculpted vintage finger waves"
+      ],
+      [
+        "青黑色迎风长发",
+        "long teal-black windswept hair"
+      ],
+      [
+        "酒红羽毛层次发",
+        "burgundy feathered layered hair"
+      ],
+      [
+        "铂金侧分精灵短发",
+        "platinum side-swept pixie cut"
+      ],
+      [
+        "深棕螺旋卷发",
+        "dark brown spiral curls"
+      ],
+      [
+        "午夜蓝齐耳短发",
+        "midnight-blue ear-length bob"
+      ],
+      [
+        "铜红色长辫",
+        "long copper-red braid"
+      ],
+      [
+        "黑发彩色切光",
+        "black hair cut by cyan magenta violet and gold chromatic highlights"
+      ]
     ],
     "expression": [
-      ["平静神情", "calm expression"],
-      ["冷淡神情", "cold expression"],
-      ["妩媚神情", "adult woman, seductive expression"],
-      ["神秘神情", "mysterious expression"],
-      ["自信凝视", "confident gaze"],
-      ["嘴唇微张", "slightly parted lips"],
-      ["成熟疏离感", "mature aloof expression"],
-      ["意味深长的浅笑", "knowing half-smile"],
-      ["时尚大片凝视", "poised editorial stare"],
-      ["若有所失的目光", "wistful glamorous gaze"],
-      ["安静闭唇微笑", "serene closed-mouth smile"],
-      ["挑眉自信", "defiant raised eyebrow"],
-      ["优雅侧目", "elegant sideways glance"],
-      ["细长眼强烈凝视", "intense narrow-eyed gaze"],
-      ["柔和忧郁", "soft melancholic expression"],
-      ["红唇自信微笑", "glamorous red-lip smile"],
-      ["沉思垂眸", "contemplative downward gaze"],
-      ["克制侧脸神情", "composed profile expression"]
+      [
+        "平静神情",
+        "calm expression"
+      ],
+      [
+        "冷淡神情",
+        "cold expression"
+      ],
+      [
+        "妩媚神情",
+        "adult woman, seductive expression"
+      ],
+      [
+        "神秘神情",
+        "mysterious expression"
+      ],
+      [
+        "自信凝视",
+        "confident gaze"
+      ],
+      [
+        "嘴唇微张",
+        "slightly parted lips"
+      ],
+      [
+        "成熟疏离感",
+        "mature aloof expression"
+      ],
+      [
+        "意味深长的浅笑",
+        "knowing half-smile"
+      ],
+      [
+        "时尚大片凝视",
+        "poised editorial stare"
+      ],
+      [
+        "若有所失的目光",
+        "wistful glamorous gaze"
+      ],
+      [
+        "安静闭唇微笑",
+        "serene closed-mouth smile"
+      ],
+      [
+        "挑眉自信",
+        "defiant raised eyebrow"
+      ],
+      [
+        "优雅侧目",
+        "elegant sideways glance"
+      ],
+      [
+        "细长眼强烈凝视",
+        "intense narrow-eyed gaze"
+      ],
+      [
+        "柔和忧郁",
+        "soft melancholic expression"
+      ],
+      [
+        "红唇自信微笑",
+        "glamorous red-lip smile"
+      ],
+      [
+        "沉思垂眸",
+        "contemplative downward gaze"
+      ],
+      [
+        "克制侧脸神情",
+        "composed profile expression"
+      ]
     ],
     "outfit": [
-      ["黑色露肩礼服", "black off-shoulder dress"],
-      ["丝绸晚礼服", "silk evening gown"],
-      ["无袖挂脖上衣", "sleeveless halter top"],
-      ["白色宽松衬衫", "white loose blouse"],
-      ["蕾丝连衣裙", "lace dress"],
-      ["时尚夹克", "fashion jacket"],
-      ["优雅黑裙", "elegant black dress"],
-      ["复古华丽套装", "retro glamorous outfit"],
-      ["黑丝绒长礼服", "black velvet evening gown"],
-      ["祖母绿缎面裙", "emerald satin column dress"],
-      ["宝石蓝垫肩套装", "sapphire-blue power-shoulder suit"],
-      ["酒红亮片鸡尾酒裙", "burgundy sequined cocktail dress"],
-      ["白色燕尾礼服外套", "white tailored tuxedo jacket"],
-      ["紫罗兰丝绸衬衫", "violet silk blouse with dramatic sleeves"],
-      ["高领黑蕾丝礼服", "vintage high-neck black lace gown"],
-      ["金属光泽百褶裙", "metallic pleated fashion dress"],
-      ["红色单肩晚装", "scarlet one-shoulder evening dress"],
-      ["黑金刺绣礼服", "black gown with restrained gold embroidery"],
-      ["青绿皮革时装外套", "teal leather editorial jacket"],
-      ["珍珠白垂坠长裙", "pearl-white draped evening gown"],
-      ["复古豹纹短外套", "refined vintage leopard-print cropped jacket"],
-      ["深紫天鹅绒束腰裙", "deep-purple velvet cinched-waist dress"],
-      ["橙金色丝缎上衣", "orange-gold satin fashion top"],
-      ["黑色珠饰露背礼服", "black beaded open-back evening gown"]
+      [
+        "黑色露肩礼服",
+        "black off-shoulder dress"
+      ],
+      [
+        "丝绸晚礼服",
+        "silk evening gown"
+      ],
+      [
+        "无袖挂脖上衣",
+        "sleeveless halter top"
+      ],
+      [
+        "白色宽松衬衫",
+        "white loose blouse"
+      ],
+      [
+        "蕾丝连衣裙",
+        "lace dress"
+      ],
+      [
+        "时尚夹克",
+        "fashion jacket"
+      ],
+      [
+        "优雅黑裙",
+        "elegant black dress"
+      ],
+      [
+        "复古华丽套装",
+        "retro glamorous outfit"
+      ],
+      [
+        "黑丝绒长礼服",
+        "black velvet evening gown"
+      ],
+      [
+        "祖母绿缎面裙",
+        "emerald satin column dress"
+      ],
+      [
+        "宝石蓝垫肩套装",
+        "sapphire-blue power-shoulder suit"
+      ],
+      [
+        "酒红亮片鸡尾酒裙",
+        "burgundy sequined cocktail dress"
+      ],
+      [
+        "白色燕尾礼服外套",
+        "white tailored tuxedo jacket"
+      ],
+      [
+        "紫罗兰丝绸衬衫",
+        "violet silk blouse with dramatic sleeves"
+      ],
+      [
+        "高领黑蕾丝礼服",
+        "vintage high-neck black lace gown"
+      ],
+      [
+        "金属光泽百褶裙",
+        "metallic pleated fashion dress"
+      ],
+      [
+        "红色单肩晚装",
+        "scarlet one-shoulder evening dress"
+      ],
+      [
+        "黑金刺绣礼服",
+        "black gown with restrained gold embroidery"
+      ],
+      [
+        "青绿皮革时装外套",
+        "teal leather editorial jacket"
+      ],
+      [
+        "珍珠白垂坠长裙",
+        "pearl-white draped evening gown"
+      ],
+      [
+        "复古豹纹短外套",
+        "refined vintage leopard-print cropped jacket"
+      ],
+      [
+        "深紫天鹅绒束腰裙",
+        "deep-purple velvet cinched-waist dress"
+      ],
+      [
+        "橙金色丝缎上衣",
+        "orange-gold satin fashion top"
+      ],
+      [
+        "黑色珠饰露背礼服",
+        "black beaded open-back evening gown"
+      ]
     ],
     "accessory": [
-      ["祖母绿耳环", "emerald earrings"],
-      ["金色圆环耳环", "gold hoop earrings"],
-      ["多层宝石项链", "layered gemstone necklaces"],
-      ["黑色颈圈", "black choker"],
-      ["奢华珠宝", "luxury jewelry"],
-      ["华丽饰品", "ornate accessories"],
-      ["蓝宝石流苏耳坠", "sapphire chandelier earrings"],
-      ["红宝石鸡尾酒戒指", "oversized ruby cocktail ring"],
-      ["多层巴洛克珍珠", "layered baroque pearl necklaces"],
-      ["装饰艺术胸针", "Art Deco gemstone brooch"],
-      ["金色蛇形臂环", "gold serpent arm cuff"],
-      ["钻石流苏耳坠", "diamond tassel earrings"],
-      ["孔雀石吊坠", "malachite pendant necklace"],
-      ["紫水晶耳夹", "amethyst clip-on earrings"],
-      ["雕花金属颈链", "engraved gold collar necklace"],
-      ["彩色珐琅手镯", "stacked colorful enamel bangles"],
-      ["宝石发梳", "jeweled vintage hair comb"],
-      ["珍珠耳钉与长链", "pearl studs with a long gold chain"],
-      ["黑玛瑙耳坠", "black onyx drop earrings"],
-      ["月光石吊坠", "moonstone pendant jewelry"],
-      ["水晶肩链", "crystal shoulder jewelry"],
-      ["复古金表", "vintage gold wristwatch"],
-      ["雕刻银戒叠戴", "stacked engraved silver rings"],
-      ["翡翠与黄金套饰", "jade and gold jewelry set"]
+      [
+        "祖母绿耳环",
+        "emerald earrings"
+      ],
+      [
+        "金色圆环耳环",
+        "gold hoop earrings"
+      ],
+      [
+        "多层宝石项链",
+        "layered gemstone necklaces"
+      ],
+      [
+        "黑色颈圈",
+        "black choker"
+      ],
+      [
+        "奢华珠宝",
+        "luxury jewelry"
+      ],
+      [
+        "华丽饰品",
+        "ornate accessories"
+      ],
+      [
+        "蓝宝石流苏耳坠",
+        "sapphire chandelier earrings"
+      ],
+      [
+        "红宝石鸡尾酒戒指",
+        "oversized ruby cocktail ring"
+      ],
+      [
+        "多层巴洛克珍珠",
+        "layered baroque pearl necklaces"
+      ],
+      [
+        "装饰艺术胸针",
+        "Art Deco gemstone brooch"
+      ],
+      [
+        "金色蛇形臂环",
+        "gold serpent arm cuff"
+      ],
+      [
+        "钻石流苏耳坠",
+        "diamond tassel earrings"
+      ],
+      [
+        "孔雀石吊坠",
+        "malachite pendant necklace"
+      ],
+      [
+        "紫水晶耳夹",
+        "amethyst clip-on earrings"
+      ],
+      [
+        "雕花金属颈链",
+        "engraved gold collar necklace"
+      ],
+      [
+        "彩色珐琅手镯",
+        "stacked colorful enamel bangles"
+      ],
+      [
+        "宝石发梳",
+        "jeweled vintage hair comb"
+      ],
+      [
+        "珍珠耳钉与长链",
+        "pearl studs with a long gold chain"
+      ],
+      [
+        "黑玛瑙耳坠",
+        "black onyx drop earrings"
+      ],
+      [
+        "月光石吊坠",
+        "moonstone pendant jewelry"
+      ],
+      [
+        "水晶肩链",
+        "crystal shoulder jewelry"
+      ],
+      [
+        "复古金表",
+        "vintage gold wristwatch"
+      ],
+      [
+        "雕刻银戒叠戴",
+        "stacked engraved silver rings"
+      ],
+      [
+        "翡翠与黄金套饰",
+        "jade and gold jewelry set"
+      ]
     ],
     "pose": [
-      ["直视观众", "looking at viewer"],
-      ["四分之三侧身", "three-quarter view"],
-      ["侧脸", "side profile"],
-      ["轻轻歪头", "head tilted slightly"],
-      ["手靠近嘴唇", "hand near lips"],
-      ["手抚头发", "hand touching hair"],
-      ["双臂抬起", "arms raised"],
-      ["坐姿", "sitting pose"],
-      ["倚靠姿势", "leaning pose"],
-      ["露出肩线", "shoulder exposed"],
-      ["回眸整理耳坠", "looking back while adjusting a dangling earring"],
-      ["手指轻触项链", "fingertips lightly touching a layered necklace"],
-      ["一手叉腰杂志站姿", "one hand on hip in a confident magazine pose"],
-      ["双手整理盘发", "both hands adjusting an elegant updo"],
-      ["靠在化妆镜边", "leaning beside a vintage dressing mirror"],
-      ["扶着礼服领口", "one hand holding the neckline of an evening gown"],
-      ["坐在高脚凳上", "seated elegantly on a tall studio stool"],
-      ["转身让长发飞扬", "turning as long hair flows dramatically"],
-      ["手持手套垂在身侧", "holding evening gloves loosely at one side"],
-      ["抬手遮住一侧光线", "raising one hand into a shaft of colored light"],
-      ["肩后侧脸回望", "over-the-shoulder glamorous profile"],
-      ["微俯身靠近镜头", "leaning slightly toward the camera"],
-      ["双臂交叠从容站立", "standing poised with arms loosely crossed"],
-      ["手托下巴编辑姿势", "hand beneath chin in an editorial portrait pose"],
-      ["侧坐展示珠宝", "seated sideways to showcase statement jewelry"],
-      ["迈步时回头", "glancing back mid-step with flowing hair"]
+      [
+        "直视观众",
+        "looking at viewer"
+      ],
+      [
+        "四分之三侧身",
+        "three-quarter view"
+      ],
+      [
+        "侧脸",
+        "side profile"
+      ],
+      [
+        "轻轻歪头",
+        "head tilted slightly"
+      ],
+      [
+        "手靠近嘴唇",
+        "hand near lips"
+      ],
+      [
+        "手抚头发",
+        "hand touching hair"
+      ],
+      [
+        "双臂抬起",
+        "arms raised"
+      ],
+      [
+        "坐姿",
+        "sitting pose"
+      ],
+      [
+        "倚靠姿势",
+        "leaning pose"
+      ],
+      [
+        "露出肩线",
+        "shoulder exposed"
+      ],
+      [
+        "回眸整理耳坠",
+        "looking back while adjusting a dangling earring"
+      ],
+      [
+        "手指轻触项链",
+        "fingertips lightly touching a layered necklace"
+      ],
+      [
+        "一手叉腰杂志站姿",
+        "one hand on hip in a confident magazine pose"
+      ],
+      [
+        "双手整理盘发",
+        "both hands adjusting an elegant updo"
+      ],
+      [
+        "靠在化妆镜边",
+        "leaning beside a vintage dressing mirror"
+      ],
+      [
+        "扶着礼服领口",
+        "one hand holding the neckline of an evening gown"
+      ],
+      [
+        "坐在高脚凳上",
+        "seated elegantly on a tall studio stool"
+      ],
+      [
+        "转身让长发飞扬",
+        "turning as long hair flows dramatically"
+      ],
+      [
+        "手持手套垂在身侧",
+        "holding evening gloves loosely at one side"
+      ],
+      [
+        "抬手遮住一侧光线",
+        "raising one hand into a shaft of colored light"
+      ],
+      [
+        "肩后侧脸回望",
+        "over-the-shoulder glamorous profile"
+      ],
+      [
+        "微俯身靠近镜头",
+        "leaning slightly toward the camera"
+      ],
+      [
+        "双臂交叠从容站立",
+        "standing poised with arms loosely crossed"
+      ],
+      [
+        "手托下巴编辑姿势",
+        "hand beneath chin in an editorial portrait pose"
+      ],
+      [
+        "侧坐展示珠宝",
+        "seated sideways to showcase statement jewelry"
+      ],
+      [
+        "迈步时回头",
+        "glancing back mid-step with flowing hair"
+      ]
     ],
     "camera": [
-      ["面部特写", "close-up portrait"],
-      ["胸像", "bust shot"],
-      ["半身", "half body"],
-      ["上半身肖像", "upper body portrait"],
-      ["戏剧化裁切", "dramatic crop"],
-      ["时尚杂志构图", "fashion magazine composition"],
-      ["珠宝广告超近景", "extreme close-up jewelry advertisement composition"],
-      ["斜向封面构图", "diagonal vintage magazine-cover composition"],
-      ["留白封面肖像", "portrait with generous negative space for a cover layout"],
-      ["低机位英雄式半身", "slight low-angle heroic half-body portrait"],
-      ["高机位优雅俯拍", "elegant slight high-angle portrait"],
-      ["镜面反射双重构图", "fashion portrait framed with a subtle mirror reflection"],
-      ["肩部极近裁切", "tight shoulder-and-face editorial crop"],
-      ["侧脸珠宝特写", "profile close-up emphasizing earrings and jawline"],
-      ["中心对称封面构图", "centered symmetrical luxury-cover composition"],
-      ["偏置人物大留白", "off-center figure with bold graphic negative space"],
-      ["倾斜镜头时装抓拍", "subtle Dutch-angle fashion editorial framing"],
-      ["垂直海报构图", "tall vertical fashion-poster composition"]
+      [
+        "面部特写",
+        "close-up portrait"
+      ],
+      [
+        "胸像",
+        "bust shot"
+      ],
+      [
+        "半身",
+        "half body"
+      ],
+      [
+        "上半身肖像",
+        "upper body portrait"
+      ],
+      [
+        "戏剧化裁切",
+        "dramatic crop"
+      ],
+      [
+        "时尚杂志构图",
+        "fashion magazine composition"
+      ],
+      [
+        "珠宝广告超近景",
+        "extreme close-up jewelry advertisement composition"
+      ],
+      [
+        "斜向封面构图",
+        "diagonal vintage magazine-cover composition"
+      ],
+      [
+        "留白封面肖像",
+        "portrait with generous negative space for a cover layout"
+      ],
+      [
+        "低机位英雄式半身",
+        "slight low-angle heroic half-body portrait"
+      ],
+      [
+        "高机位优雅俯拍",
+        "elegant slight high-angle portrait"
+      ],
+      [
+        "镜面反射双重构图",
+        "fashion portrait framed with a subtle mirror reflection"
+      ],
+      [
+        "肩部极近裁切",
+        "tight shoulder-and-face editorial crop"
+      ],
+      [
+        "侧脸珠宝特写",
+        "profile close-up emphasizing earrings and jawline"
+      ],
+      [
+        "中心对称封面构图",
+        "centered symmetrical luxury-cover composition"
+      ],
+      [
+        "偏置人物大留白",
+        "off-center figure with bold graphic negative space"
+      ],
+      [
+        "倾斜镜头时装抓拍",
+        "subtle Dutch-angle fashion editorial framing"
+      ],
+      [
+        "垂直海报构图",
+        "tall vertical fashion-poster composition"
+      ]
     ],
     "background": [
-      ["极简奶油背景", "minimal cream background"],
-      ["暖橙绘画背景", "warm orange painterly background"],
-      ["纯黄背景", "flat yellow background"],
-      ["复古几何图案", "retro geometric pattern"],
-      ["抽象装饰背景", "abstract decorative background"],
-      ["柔和粉彩背景", "soft pastel background"],
-      ["深黑与金色几何背景", "deep black background with restrained gold geometry"],
-      ["青绿色马克笔渐层", "teal alcohol-marker gradient backdrop"],
-      ["洋红紫罗兰色块", "magenta and violet graphic color blocks"],
-      ["旧杂志纸张纹理", "aged fashion-magazine paper texture"],
-      ["奶油色装饰艺术拱门", "cream Art Deco arch motif"],
-      ["宝石蓝丝绒幕布", "sapphire-blue velvet curtain backdrop"],
-      ["暖金工作室光晕", "warm golden studio halo background"],
-      ["手绘棋盘与圆形", "hand-drawn checkerboard and circle motif"],
-      ["珊瑚粉刷痕", "coral-pink marker brush field"],
-      ["青紫双色纸张", "cyan-violet split-tone paper backdrop"],
-      ["黑色放射线图形", "bold black radial graphic design"],
-      ["复古百货橱窗虚景", "abstracted vintage department-store window"],
-      ["珠宝盒暗红背景", "deep jewelry-box red backdrop"],
-      ["象牙白纸面与墨点", "ivory paper field with sparse ink flecks"]
+      [
+        "极简奶油背景",
+        "minimal cream background"
+      ],
+      [
+        "暖橙绘画背景",
+        "warm orange painterly background"
+      ],
+      [
+        "纯黄背景",
+        "flat yellow background"
+      ],
+      [
+        "复古几何图案",
+        "retro geometric pattern"
+      ],
+      [
+        "抽象装饰背景",
+        "abstract decorative background"
+      ],
+      [
+        "柔和粉彩背景",
+        "soft pastel background"
+      ],
+      [
+        "深黑与金色几何背景",
+        "deep black background with restrained gold geometry"
+      ],
+      [
+        "青绿色马克笔渐层",
+        "teal alcohol-marker gradient backdrop"
+      ],
+      [
+        "洋红紫罗兰色块",
+        "magenta and violet graphic color blocks"
+      ],
+      [
+        "旧杂志纸张纹理",
+        "aged fashion-magazine paper texture"
+      ],
+      [
+        "奶油色装饰艺术拱门",
+        "cream Art Deco arch motif"
+      ],
+      [
+        "宝石蓝丝绒幕布",
+        "sapphire-blue velvet curtain backdrop"
+      ],
+      [
+        "暖金工作室光晕",
+        "warm golden studio halo background"
+      ],
+      [
+        "手绘棋盘与圆形",
+        "hand-drawn checkerboard and circle motif"
+      ],
+      [
+        "珊瑚粉刷痕",
+        "coral-pink marker brush field"
+      ],
+      [
+        "青紫双色纸张",
+        "cyan-violet split-tone paper backdrop"
+      ],
+      [
+        "黑色放射线图形",
+        "bold black radial graphic design"
+      ],
+      [
+        "复古百货橱窗虚景",
+        "abstracted vintage department-store window"
+      ],
+      [
+        "珠宝盒暗红背景",
+        "deep jewelry-box red backdrop"
+      ],
+      [
+        "象牙白纸面与墨点",
+        "ivory paper field with sparse ink flecks"
+      ]
     ],
     "accent": [
-      ["青紫洋红金反光", "cyan violet magenta and gold reflected-light palette"],
-      ["祖母绿与玫红切光", "emerald and hot-pink chromatic highlights"],
-      ["蓝宝石与金色反光", "sapphire-blue and golden reflected shadows"],
-      ["紫罗兰与蜜桃肤色阴影", "violet and peach colored skin shadows"],
-      ["青色与红色边缘光", "cyan and red graphic rim highlights"],
-      ["黑金高反差", "black-and-gold high-contrast palette"],
-      ["酒红与孔雀蓝", "burgundy and peacock-blue reflected light"],
-      ["粉紫与琥珀色切光", "pink-violet and amber chromatic highlights"],
-      ["青绿与橙金对比", "teal and orange-gold color contrast"],
-      ["午夜蓝与玫瑰金", "midnight blue and rose-gold accents"],
-      ["翡翠绿与紫水晶", "jade-green and amethyst reflected shadows"],
-      ["红黑白杂志配色", "red black and ivory editorial palette"]
+      [
+        "青紫洋红金反光",
+        "cyan violet magenta and gold reflected-light palette"
+      ],
+      [
+        "祖母绿与玫红切光",
+        "emerald and hot-pink chromatic highlights"
+      ],
+      [
+        "蓝宝石与金色反光",
+        "sapphire-blue and golden reflected shadows"
+      ],
+      [
+        "紫罗兰与蜜桃肤色阴影",
+        "violet and peach colored skin shadows"
+      ],
+      [
+        "青色与红色边缘光",
+        "cyan and red graphic rim highlights"
+      ],
+      [
+        "黑金高反差",
+        "black-and-gold high-contrast palette"
+      ],
+      [
+        "酒红与孔雀蓝",
+        "burgundy and peacock-blue reflected light"
+      ],
+      [
+        "粉紫与琥珀色切光",
+        "pink-violet and amber chromatic highlights"
+      ],
+      [
+        "青绿与橙金对比",
+        "teal and orange-gold color contrast"
+      ],
+      [
+        "午夜蓝与玫瑰金",
+        "midnight blue and rose-gold accents"
+      ],
+      [
+        "翡翠绿与紫水晶",
+        "jade-green and amethyst reflected shadows"
+      ],
+      [
+        "红黑白杂志配色",
+        "red black and ivory editorial palette"
+      ]
     ],
     "theme": [
-      ["80年代珠宝杂志封面", "1980s luxury jewelry magazine cover concept"],
-      ["90年代时装目录", "1990s Japanese high-fashion catalog concept"],
-      ["复古香水广告", "vintage perfume advertisement illustration"],
-      ["夜间礼服特辑", "after-dark eveningwear editorial"],
-      ["宝石色彩专题", "gemstone color-story fashion feature"],
-      ["装饰艺术名媛肖像", "Art Deco socialite portrait feature"],
-      ["都市女性风格档案", "retro metropolitan woman style dossier"],
-      ["高级珠宝新品页", "haute joaillerie launch-page illustration"],
-      ["丝绒与金属专题", "velvet and metallic couture editorial"],
-      ["复古漫画扉页", "luxurious vintage manga chapter-frontispiece"]
+      [
+        "80年代珠宝杂志封面",
+        "1980s luxury jewelry magazine cover concept"
+      ],
+      [
+        "90年代时装目录",
+        "1990s Japanese high-fashion catalog concept"
+      ],
+      [
+        "复古香水广告",
+        "vintage perfume advertisement illustration"
+      ],
+      [
+        "夜间礼服特辑",
+        "after-dark eveningwear editorial"
+      ],
+      [
+        "宝石色彩专题",
+        "gemstone color-story fashion feature"
+      ],
+      [
+        "装饰艺术名媛肖像",
+        "Art Deco socialite portrait feature"
+      ],
+      [
+        "都市女性风格档案",
+        "retro metropolitan woman style dossier"
+      ],
+      [
+        "高级珠宝新品页",
+        "haute joaillerie launch-page illustration"
+      ],
+      [
+        "丝绒与金属专题",
+        "velvet and metallic couture editorial"
+      ],
+      [
+        "复古漫画扉页",
+        "luxurious vintage manga chapter-frontispiece"
+      ]
     ],
     "special_prompt": [
-      ["可见马克笔叠色", "clearly visible overlapping alcohol-marker strokes"],
-      ["彩铅颗粒与纸纹", "colored-pencil grain catching on textured paper"],
-      ["墨线轻微粗细变化", "black ink lines with organic pressure variation"],
-      ["扫描边缘轻微不齐", "subtle imperfect edges of scanned analog artwork"],
-      ["白色水粉高光", "small opaque white gouache highlights"],
-      ["大面积纯黑图形阴影", "large bold pure-black shadow shapes used as graphic design"],
-      ["彩色反光切入黑发", "chromatic reflected light cutting through deep black hair"],
-      ["肤色蓝紫与蜜桃叠影", "layered blue-violet and peach shadows across pale skin"],
-      ["手绘珠宝高光点", "hand-painted pinpoint highlights on gemstones"],
-      ["轻微套色偏移", "subtle vintage print color misregistration"],
-      ["纸面墨水渗透感", "slight ink absorption into textured paper fibers"],
-      ["保留少量铅笔底稿", "faint colored-pencil construction traces beneath ink"]
+      [
+        "可见马克笔叠色",
+        "clearly visible overlapping alcohol-marker strokes"
+      ],
+      [
+        "彩铅颗粒与纸纹",
+        "colored-pencil grain catching on textured paper"
+      ],
+      [
+        "墨线轻微粗细变化",
+        "black ink lines with organic pressure variation"
+      ],
+      [
+        "扫描边缘轻微不齐",
+        "subtle imperfect edges of scanned analog artwork"
+      ],
+      [
+        "白色水粉高光",
+        "small opaque white gouache highlights"
+      ],
+      [
+        "大面积纯黑图形阴影",
+        "large bold pure-black shadow shapes used as graphic design"
+      ],
+      [
+        "彩色反光切入黑发",
+        "chromatic reflected light cutting through deep black hair"
+      ],
+      [
+        "肤色蓝紫与蜜桃叠影",
+        "layered blue-violet and peach shadows across pale skin"
+      ],
+      [
+        "手绘珠宝高光点",
+        "hand-painted pinpoint highlights on gemstones"
+      ],
+      [
+        "轻微套色偏移",
+        "subtle vintage print color misregistration"
+      ],
+      [
+        "纸面墨水渗透感",
+        "slight ink absorption into textured paper fibers"
+      ],
+      [
+        "保留少量铅笔底稿",
+        "faint colored-pencil construction traces beneath ink"
+      ]
     ]
-  }
+  },
+  "sparseRandomKeys": [
+    "hair",
+    "expression",
+    "outfit",
+    "accessory",
+    "pose",
+    "camera",
+    "background",
+    "accent",
+    "special_prompt"
+  ]
 }

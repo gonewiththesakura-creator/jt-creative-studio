@@ -14,6 +14,9 @@ def test_creator_exposes_three_generation_channels_and_three_result_panes():
         assert 'id="genCloudBtn"' in text
         assert 'id="genLocalBtn"' in text
         assert 'id="genApiBtn"' in text
+        assert 'id="apiDrawerOpen"' in text
+        assert 'id="apiDrawer"' in text
+        assert 'id="apiDrawerClose"' in text
         assert "generate('cloud')" in text
         assert "generate('local')" in text
         assert "generate('api')" in text
@@ -30,11 +33,16 @@ def test_creator_api_channel_has_only_trusted_image_options():
         text = path.read_text(encoding="utf8")
         for token in [
             'id="apiModel"', 'id="apiQuality"', 'id="apiFit"',
+            'id="apiWidth"', 'id="apiHeight"',
             'gpt-image-2.5-flare', 'gpt-image-2.5-sunburst', 'gpt-image-2',
             'value="cover"', 'value="contain"', 'API每次生成1张',
             'api_model:apiModel.value', 'api_quality:apiQuality.value',
             'api_fit:apiFit.value', "backend==='api'?1:+genBatch.value",
             "backend==='api'?0:+genHd.value",
+            "backend==='api'?+apiWidth.value:+genW.value",
+            "backend==='api'?+apiHeight.value:+genH.value",
+            'API专属生图', '使用当前提示词',
+            '上游可能覆盖质量',
         ]:
             assert token in text, (path, token)
         assert 'apiBaseUrl' not in text
@@ -51,12 +59,26 @@ def test_api_model_quality_options_are_linked_and_seed_is_not_misrepresented():
         assert "backendUi(j.generation_backend).label" in text
 
 
-def test_mobile_creator_keeps_all_three_provider_actions_on_one_row():
+def test_api_gallery_displays_requested_and_actual_upstream_settings():
+    for path in FILES:
+        text = path.read_text(encoding="utf8")
+        for token in (
+            "j.api_upstream_model",
+            "j.api_upstream_quality",
+            "j.api_upstream_size",
+            "请求质量",
+            "上游实际",
+        ):
+            assert token in text, (path, token)
+
+
+def test_main_creator_keeps_cloud_local_on_one_row_and_api_separate():
     for path in FILES:
         text = path.read_text(encoding="utf8")
         mobile = text.split("@media(max-width:480px)", 1)[1].split("@media(prefers-reduced-motion", 1)[0]
-        assert ".generation-actions{grid-template-columns:repeat(3,minmax(0,1fr));" in mobile, path
+        assert ".generation-actions{grid-template-columns:repeat(2,minmax(0,1fr));" in mobile, path
         assert ".generation-actions{grid-template-columns:1fr 1fr" not in mobile, path
+        assert 'id="apiDrawerOpen"' in text
 
 
 def test_creator_static_config_does_not_publish_lora_filenames():

@@ -24,7 +24,7 @@ checks={
  "server materializes missing seed": 'secrets.randbelow(2**53 - 1) + 1' in SERVER,
  "server avoids duplicate trigger": 'prepend_trigger_once' in SERVER,
  "job stores prompt mode negative seed mode": all(x in SERVER for x in ['"negative_prompt": negative_prompt','"prompt_mode": prompt_mode','"seed_mode": seed_mode']),
- "job endpoint exposes fields": all(x in SERVER for x in ['"negative_prompt", "prompt_mode", "seed", "seed_mode"']),
+ "job endpoint minimizes prompt fields": '"prompt_mode", "seed", "seed_mode", "style_id"' in SERVER and '"prompt", "negative_prompt", "prompt_mode"' not in SERVER,
  "favorite stores seed directly": all(x in SERVER for x in ['"seed": job.get("seed")','"seed_mode": job.get("seed_mode")','"negative_prompt": job.get("negative_prompt", "")','"prompt_mode": job.get("prompt_mode", "options")']),
  "native batch node map": '"batch_size"' in CONFIG,
  "staged mode retired": 'stage_job["batch"] = 1' not in SERVER and 'sequence_mode = "off"' in SERVER,

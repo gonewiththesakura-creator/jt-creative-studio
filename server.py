@@ -166,6 +166,18 @@ STYLE_PRESETS = {
         "LORA2": "09_style321_v1_step200.safetensors",
         "strengths": {"LORA1": 0.4, "LORA2": 0.0},
     },
+    "style221": {
+        "trigger": "zxqelun",
+        "LORA1": "11_style221_v1_step400.safetensors",
+        "LORA2": "11_style221_v1_step400.safetensors",
+        "strengths": {"LORA1": 0.4, "LORA2": 0.0},
+    },
+    "style222": {
+        "trigger": "zxqavri",
+        "LORA1": "10_style222_v1_step400.safetensors",
+        "LORA2": "10_style222_v1_step400.safetensors",
+        "strengths": {"LORA1": 0.4, "LORA2": 0.0},
+    },
 }
 
 def local_lora_name(name):
@@ -1047,6 +1059,21 @@ def public_selection_snapshot(snapshot):
     }
 
 
+def public_job_selection_snapshot(snapshot):
+    """Minimize task/history snapshots while favorites retain owner-only replay data."""
+    result = public_selection_snapshot(snapshot)
+    raw_params = dict(result.get("params") or {})
+    common = {
+        "width", "height", "batch", "hd", "seed", "seed_mode", "mode",
+        "style", "style_id", "style_variant", "sequence_mode", "prompt_mode",
+    }
+    workflow = WORKFLOWS.get(str(result.get("workflow") or ""), {})
+    trusted_workflow_params = set((workflow.get("rh_params") or {}).keys())
+    allowed = common | trusted_workflow_params
+    result["params"] = {key: value for key, value in raw_params.items() if key in allowed}
+    return result
+
+
 def substitute(template_text, mapping):
     return re.sub(r"\{\{[A-Z0-9_]+\}\}", lambda m: str(mapping.get(m.group(0), m.group(0))), template_text)
 
@@ -1832,6 +1859,66 @@ def _dreamapi_redact_error(detail):
     return re.sub(r"[\x00-\x1f\x7f]+", " ", detail).strip()[:500]
 
 
+def compact_dreamapi_prompts(positive, negative, max_total=1600):
+    """Deterministically bound Sub2API input while preserving priority order."""
+    positive = str(positive or "").strip()
+    negative = str(negative or "").strip()
+    if len(positive) + len(negative) <= max_total:
+        return positive, negative, False
+
+    def phrases(text):
+        seen = set()
+        rows = []
+        for part in re.split(r"[,\n]+", text):
+            item = re.sub(r"\s+", " ", part).strip(" ,")
+            key = item.casefold()
+            if item and key not in seen:
+                rows.append(item)
+                seen.add(key)
+        return rows
+
+    def fit(rows, budget):
+        kept = []
+        used = 0
+        for item in rows:
+            extra = len(item) + (2 if kept else 0)
+            if used + extra > budget:
+                if not kept and budget > 0:
+                    kept.append(item[:budget].rstrip())
+                break
+            kept.append(item)
+            used += extra
+        return ", ".join(kept)
+
+    negative_budget = min(max_total // 4, max(200, len(negative)))
+    positive_budget = max_total - negative_budget
+    compact_positive = fit(phrases(positive), positive_budget)
+    compact_negative = fit(phrases(negative), max_total - len(compact_positive))
+    return compact_positive, compact_negative, True
+
+
+def build_dreamapi_input(positive, negative, size, orientation, max_total=1600):
+    """Build the complete bounded upstream input, including bridge instructions."""
+    prefix = [
+        f"Required canvas: exactly {size}, {orientation} composition.",
+        "Keep the important subject inside the center safe area so a final crop will not cut it off.",
+    ]
+    bridge_overhead = len("\n".join(prefix)) + 1
+    negative_overhead = len("\nAvoid: ") if str(negative or "").strip() else 0
+    prompt_budget = max(1, max_total - bridge_overhead - negative_overhead)
+    positive_out, negative_out, compacted = compact_dreamapi_prompts(
+        positive, negative, max_total=prompt_budget)
+    if not any(char.isalnum() for char in positive_out):
+        raise ValueError("DreamAPI subject prompt is empty after normalization")
+    rows = [*prefix, positive_out]
+    if negative_out:
+        rows.append("Avoid: " + negative_out)
+    text = "\n".join(rows)
+    if len(text) > max_total:
+        raise RuntimeError("DreamAPI prompt compaction exceeded its input budget")
+    return text, compacted, len(positive_out)
+
+
 def _dreamapi_read_json(response):
     chunks, total = [], 0
     while True:
@@ -1895,20 +1982,15 @@ def dreamapi_run_image(job, jobdir):
     if fit not in {"cover", "contain"}:
         raise ValueError("unknown DreamAPI fit mode")
     size = _dreamapi_size(job["width"], job["height"])
-    prompt = str(job.get("prompt") or "").strip()
-    negative = str(job.get("negative_prompt") or "").strip()
     orientation = "square" if job["width"] == job["height"] else (
         "landscape" if job["width"] > job["height"] else "portrait")
-    bridged = [
-        f"Required canvas: exactly {size}, {orientation} composition.",
-        "Keep the important subject inside the center safe area so a final crop will not cut it off.",
-        prompt,
-    ]
-    if negative:
-        bridged.append("Avoid: " + negative)
+    upstream_input, compacted, positive_chars = build_dreamapi_input(
+        job.get("prompt"), job.get("negative_prompt"), size, orientation)
+    job["api_prompt_compacted"] = compacted
+    job["api_upstream_prompt_chars"] = positive_chars
     payload = {
         "model": DREAMAPI_TEXT_MODEL,
-        "input": "\n".join(bridged),
+        "input": upstream_input,
         "stream": False,
         "tools": [{
             "type": "image_generation", "action": "generate", "model": model,
@@ -2190,6 +2272,8 @@ def run_job(job):
     except Exception as e:
         job["status"] = "error"
         job["error"] = str(e)[:500]
+        if job.get("generation_backend") == "api":
+            job["provider_status"] = "API_ERROR"
     job["elapsed"] = round(time.time() - t0, 1)
     with _lock_jobs:
         save_jobs()
@@ -2723,9 +2807,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "width", "height", "batch", "hd", "images",
                     "submit_started", "provider_started", "provider_finished",
                     "download_started", "download_finished", "selection_snapshot",
-                    "prompt", "negative_prompt", "prompt_mode", "seed", "seed_mode", "style_id", "style_variant", "mode",
+                    "prompt_mode", "seed", "seed_mode", "style_id", "style_variant", "mode",
                     "sequence_mode", "sequence_seed", "stage_status", "generation_backend",
                     "seed_supported", "api_model", "api_quality", "api_fit",
+                    "api_prompt_compacted", "api_upstream_prompt_chars",
                     "api_upstream_model", "api_upstream_quality", "api_upstream_size",
                     "media", "params",
                     "client_request_id",
@@ -2734,7 +2819,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 j = {k: src.get(k) for k in allowed}
                 j["error"] = public_job_error(src)
                 j["media"] = public_job_media(src.get("media"))
-                j["selection_snapshot"] = public_selection_snapshot(src.get("selection_snapshot"))
+                j["selection_snapshot"] = public_job_selection_snapshot(src.get("selection_snapshot"))
             self._send(200, json.dumps(j, ensure_ascii=False).encode())
         elif path == "/api/jobs":
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
@@ -2759,13 +2844,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         "style_id", "style_variant", "mode", "seed", "seed_mode", "prompt_mode",
                         "sequence_mode", "sequence_seed", "stage_status", "generation_backend",
                         "seed_supported", "api_model", "api_quality", "api_fit",
+                        "api_prompt_compacted", "api_upstream_prompt_chars",
+                        "api_upstream_model", "api_upstream_quality", "api_upstream_size",
                         "client_request_id",
                         "transfer_index", "transfer_total", "transfer_started", "transfer_finished",
                     )
                     j = {k: src.get(k) for k in allowed}
                     j["error"] = public_job_error(src)
                     j["media"] = public_job_media(src.get("media"))
-                    j["selection_snapshot"] = public_selection_snapshot(src.get("selection_snapshot"))
+                    j["selection_snapshot"] = public_job_selection_snapshot(src.get("selection_snapshot"))
                     items.append(j)
             self._send(200, json.dumps(items, ensure_ascii=False).encode())
         elif path.startswith("/api/local-preview/"):
@@ -3405,8 +3492,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         api_quality = str(body.get("api_quality") or "medium")
         api_fit = str(body.get("api_fit") or "cover")
         if generation_backend == "api":
-            if len(prompt) > 2000 or len(negative_prompt) > 2000:
-                return self._send(400, b'{"error":"prompt too long (max 2000 characters)"}')
+            if len(prompt) > 12000 or len(negative_prompt) > 12000:
+                return self._send(400, b'{"error":"prompt too long (max 12000 characters)"}')
             if batch != 1:
                 return self._send(400, b'{"error":"API generation supports one image per task"}')
             if hd != 0:

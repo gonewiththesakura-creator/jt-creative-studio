@@ -32,6 +32,8 @@ E2E_MANIFEST = BASE / "audit" / "private_realism_workflows" / "e2e_manifest.json
 SCAIL_E2E_MANIFEST = BASE / "audit" / "scail2_video_e2e.json"
 RETRO_CLOUD_E2E_MANIFEST = BASE / "audit" / "retro_manga_panel_e2e_cloud_w04.json"
 DREAMAPI_E2E_MANIFEST = BASE / "audit" / "dreamapi_creator_live_e2e.json"
+DREAMAPI_SIDEBAR_E2E_MANIFEST = BASE / "audit" / "dreamapi_sidebar_long_prompt_e2e.json"
+NEW_STYLE_E2E_MANIFEST = BASE / "audit" / "style221_222_panel_e2e_20260913.json"
 UPLOADED_WORKFLOW_LIVE_SCHEMA_MANIFEST = BASE / "audit" / "uploaded_workflows_live_schema_20260912.json"
 UPLOADED_WORKFLOW_E2E_MANIFEST = BASE / "audit" / "uploaded_workflows_live_e2e_20260912.json"
 REMOTE_ROOT = "/home/admin/comfy-panel"
@@ -533,6 +535,74 @@ def validate_dreamapi_e2e_manifest():
     return errors
 
 
+def validate_dreamapi_sidebar_e2e_manifest():
+    try:
+        record = json.loads(DREAMAPI_SIDEBAR_E2E_MANIFEST.read_text(encoding="utf-8"))
+    except Exception as error:
+        return [f"DreamAPI sidebar E2E manifest unreadable: {error}"]
+    artifact = record.get("artifact") or {}
+    visual = record.get("visual_review") or {}
+    rejected = record.get("preflight_rejection") or {}
+    errors = []
+    if (record.get("verification") != "PASS" or record.get("submit_attempts") != 1
+            or record.get("status") != "done" or record.get("provider_status") != "API_DONE"
+            or record.get("api_model") != "gpt-image-2.5-flare"
+            or record.get("requested_quality") != "low" or record.get("upstream_quality") != "medium"
+            or record.get("quality_override_disclosed") is not True
+            or record.get("panel_prompt_chars") != 3690 or record.get("prompt_compacted") is not True
+            or record.get("upstream_positive_chars") != 378 or record.get("result_count") != 1):
+        errors.append("DreamAPI sidebar E2E job contract invalid")
+    if (rejected.get("http_status") != 400 or rejected.get("job_created") is not False
+            or rejected.get("upstream_called") is not False):
+        errors.append("DreamAPI sidebar preflight rejection evidence invalid")
+    expected_hash = "3596874eed855b3187de9a9519c4713f993c388c2cc9b1afeea6fd772afcb271"
+    path = DREAMAPI_SIDEBAR_E2E_MANIFEST.parent / str(artifact.get("file") or "")
+    try:
+        raw = path.read_bytes()
+    except Exception:
+        errors.append("DreamAPI sidebar E2E artifact missing")
+    else:
+        if (artifact.get("format") != "PNG" or artifact.get("width") != 768
+                or artifact.get("height") != 1024 or artifact.get("bytes") != len(raw)
+                or artifact.get("sha256") != expected_hash
+                or hashlib.sha256(raw).hexdigest() != expected_hash
+                or not raw.startswith(b"\x89PNG\r\n\x1a\n")):
+            errors.append("DreamAPI sidebar E2E artifact invalid")
+    if (visual.get("status") != "PASS" or visual.get("complete_subject") is not True
+            or visual.get("visible_text_logo_watermark") is not False
+            or visual.get("traditional_media_style_visible") is not True):
+        errors.append("DreamAPI sidebar E2E visual review invalid")
+    return errors
+
+
+def validate_new_style_e2e_manifest():
+    try:
+        record = json.loads(NEW_STYLE_E2E_MANIFEST.read_text(encoding="utf-8"))
+    except Exception as error:
+        return [f"new style E2E manifest unreadable: {error}"]
+    expected = {
+        "style221": ("zxqelun", "c484a46f6127eab36d2fafb29dace2c13e3bd0a0f3fa9b64db3dd7090be57e3f", "5", "6b61ec6c4c8a", "5cf555e0888c1ffcbe0b9ec560f2fe46ac42b6fc8a6c435ea8652bd0eaa1fd1a"),
+        "style222": ("zxqavri", "7f5532a086450fa4f1fd8127e34f6dbfefacdb5b718bdf8209cf17d0e411e7e2", "3", "1d034dbcfdf2", "923542efa1963ba5dda30632e294dcf487f97a272b10d994f8e8ae04d4ebb0cf"),
+    }
+    rows = record.get("workflows") or {}
+    errors = []
+    if record.get("verification") != "PASS" or set(rows) != set(expected):
+        return ["new style E2E identity invalid"]
+    for style_id, (trigger, model_hash, coins, job_id, artifact_hash) in expected.items():
+        row = rows.get(style_id) or {}
+        if (row.get("trigger") != trigger or row.get("model_sha256") != model_hash
+                or row.get("weight") != 0.4 or row.get("submit_attempts") != 1
+                or row.get("job_id") != job_id or row.get("status") != "done"
+                or row.get("provider_status") != "DONE" or row.get("rh_coins") != coins
+                or row.get("result_count") != 1 or row.get("history_occurrences") != 1
+                or row.get("artifact_sha256") != artifact_hash or row.get("png_signature") is not True):
+            errors.append(f"new style E2E invalid: {style_id}")
+    matrix = record.get("visual_matrix") or {}
+    if matrix.get("local_three_seed_count") != 12 or "No new formal preview" not in str(matrix.get("preview_decision")):
+        errors.append("new style visual matrix evidence invalid")
+    return errors
+
+
 def validate_retro_cloud_e2e_manifest():
     try:
         record = json.loads(RETRO_CLOUD_E2E_MANIFEST.read_text(encoding="utf-8"))
@@ -751,6 +821,8 @@ def preflight_decision(config, server_source, execute=False, allow_unauthenticat
     uploaded_live_schema_errors = validate_uploaded_workflow_live_schema_manifest(config)
     uploaded_e2e_errors = validate_uploaded_workflow_e2e_manifest(config)
     dreamapi_e2e_errors = validate_dreamapi_e2e_manifest()
+    dreamapi_sidebar_e2e_errors = validate_dreamapi_sidebar_e2e_manifest()
+    new_style_e2e_errors = validate_new_style_e2e_manifest()
     retro_cloud_errors = validate_retro_cloud_e2e_manifest()
     unauthenticated = auth_is_disabled(server_source)
     public_quota_errors = validate_public_billable_quota(server_source) if unauthenticated else []
@@ -770,6 +842,10 @@ def preflight_decision(config, server_source, execute=False, allow_unauthenticat
         blockers.append("invalid uploaded workflow E2E")
     if dreamapi_e2e_errors:
         blockers.append("invalid DreamAPI creator E2E")
+    if dreamapi_sidebar_e2e_errors:
+        blockers.append("invalid DreamAPI sidebar E2E")
+    if new_style_e2e_errors:
+        blockers.append("invalid new style E2E")
     if retro_cloud_errors:
         blockers.append("invalid retro creator cloud E2E")
     if public_quota_errors:
@@ -793,6 +869,8 @@ def preflight_decision(config, server_source, execute=False, allow_unauthenticat
         "uploaded_workflow_live_schema_errors": uploaded_live_schema_errors,
         "uploaded_workflow_e2e_errors": uploaded_e2e_errors,
         "dreamapi_e2e_errors": dreamapi_e2e_errors,
+        "dreamapi_sidebar_e2e_errors": dreamapi_sidebar_e2e_errors,
+        "new_style_e2e_errors": new_style_e2e_errors,
         "retro_cloud_e2e_errors": retro_cloud_errors,
         "public_billable_quota_errors": public_quota_errors,
         "public_upload_quota_errors": public_upload_quota_errors,
@@ -1390,7 +1468,8 @@ def deploy(files, public_base=PUBLIC_BASE):
                 raise RuntimeError("public route markers missing")
             if not all(marker in creator for marker in (
                 b"retro_manga_luxury", b"jt_style321_v1", b"style-retro-manga-luxury.webp",
-                b"genApiBtn", b"gpt-image-2.5-flare", "API结果".encode("utf-8"),
+                b"genApiBtn", b"apiDrawerOpen", b"gpt-image-2.5-flare", "API结果".encode("utf-8"),
+                b"style221", b"style222", b"zxqelun", b"zxqavri",
             )):
                 raise RuntimeError("public creator style/API markers missing")
             expected_preview = (BASE / "static" / "previews" / "style-retro-manga-luxury.webp").read_bytes()

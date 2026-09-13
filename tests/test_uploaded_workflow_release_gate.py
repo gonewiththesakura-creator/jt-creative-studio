@@ -115,6 +115,7 @@ def test_unauthenticated_release_requires_bounded_billable_quota_controls():
 
 def test_dreamapi_live_e2e_evidence_is_verified_before_release():
     assert MODULE.validate_dreamapi_e2e_manifest() == []
+    assert MODULE.validate_dreamapi_sidebar_e2e_manifest() == []
     assert MODULE.DREAMAPI_E2E_MANIFEST.name == "dreamapi_creator_live_e2e.json"
 
 

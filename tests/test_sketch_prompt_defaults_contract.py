@@ -8,7 +8,7 @@ m=re.search(r"const STYLE_CONFIGS=(.*?);const DRAWERS=",HTML,re.S)
 checks["embedded profiles found"]=bool(m)
 if m:
  s=json.loads(m.group(1))
- checks["eight corrected triggers"]={k:v['trigger'] for k,v in s.items()}=={'cold':'jt_style3_v2','sketch':'jt_style1_v1','original_sketch':'jt_style1_v1','graphic':'jt_style2_v1','original_graphic':'jt_style2_v1','hanmanga':'jt_liulistyle_v1','nff':'jt_nffstyle_v1','retro_manga_luxury':'jt_style321_v1'}
+ checks["ten corrected triggers"]={k:v['trigger'] for k,v in s.items()}=={'cold':'jt_style3_v2','sketch':'jt_style1_v1','original_sketch':'jt_style1_v1','graphic':'jt_style2_v1','original_graphic':'jt_style2_v1','hanmanga':'jt_liulistyle_v1','nff':'jt_nffstyle_v1','retro_manga_luxury':'jt_style321_v1','style221':'zxqelun','style222':'zxqavri'}
  checks["sketch has default mode character"]=s['sketch'].get('defaultMode')=='character'
  expected={
   'character_inspired':'祢豆子（成年再演绎）',

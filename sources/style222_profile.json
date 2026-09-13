@@ -1,0 +1,92 @@
+{
+  "id": "style222",
+  "name": "铜版·雕刻排线厚涂",
+  "short": "铜版",
+  "trigger": "zxqavri",
+  "lora1": "10_style222_v1_step400.safetensors",
+  "lora2": "10_style222_v1_step400.safetensors",
+  "strengths": {
+    "LORA1": 0.4,
+    "LORA2": 0.0
+  },
+  "prefix": "masterpiece, best quality",
+  "head": "1woman, adult woman, solo, mature facial proportions",
+  "style": "(semi-realistic anime illustration:1.2), anime realism, painterly 3D rendering, digital oil painting, sculpted CG shading, (fine engraved linework:1.3), (etching texture:1.3), (dense parallel hatching:1.25), (delicate cross-hatching:1.25), fine scratch-like strokes, thousands of thin directional lines following hair, clothing and background, visible dry brush strokes, porcelain skin, soft subsurface scattering, detailed hair strands, delicate facial features, muted elegant colors, low saturation, cinematic soft lighting, fashion editorial composition, mixed media illustration, refined elegant rendering",
+  "negative": "worst quality, low quality, lowres, blurry, child, underage, loli, chibi child proportions, flat anime shading, cel shading, simple cartoon, thick outlines, bold comic outlines, simple lineart, vector art, flat colors, plastic skin, wax skin, rubber skin, overly smooth skin, cheap CGI, game screenshot, doll-like plastic texture, raw photo, hyperrealistic photo, oversaturated, neon colors, harsh HDR, bad anatomy, bad hands, extra fingers, missing fingers, extra limbs, distorted face, asymmetrical eyes, messy background, random text, logo, watermark, signature",
+  "defaultMode": "original",
+  "originalOnly": [],
+  "characterOnly": [
+    "character_inspired"
+  ],
+  "multi": [
+    "special_outfit",
+    "body_modifier",
+    "special_prompt",
+    "seductive_pose",
+    "special_pose"
+  ],
+  "labels": {
+    "special_prompt": "雕版排线",
+    "background": "铜版背景",
+    "accent": "铜版配色"
+  },
+  "additions": {
+    "special_prompt": [
+      [
+        "细密平行排线",
+        "dense fine parallel hatching following the three-dimensional form"
+      ],
+      [
+        "交叉雕刻阴影",
+        "delicate cross-hatching engraved into hair clothing and shadows"
+      ],
+      [
+        "蚀刻刮痕",
+        "fine etched scratch strokes with mixed-media dry-brush texture"
+      ],
+      [
+        "雕塑体积与线刻表面",
+        "sculpted anatomical shading covered by refined engraved line texture"
+      ]
+    ],
+    "background": [
+      [
+        "蓝白植物雕版",
+        "navy-and-ivory botanical background with fine engraved floral lines"
+      ],
+      [
+        "暗灰油画墙",
+        "charcoal painterly wall with vertical dry-brush and etched texture"
+      ],
+      [
+        "浅色高调雕版",
+        "high-key ivory background with delicate pencil hatching and soft bloom"
+      ]
+    ],
+    "accent": [
+      [
+        "象牙白与深海军蓝",
+        "ivory white, deep navy blue and charcoal palette"
+      ],
+      [
+        "冷灰与尘粉",
+        "cool gray with restrained dusty pastel accents"
+      ],
+      [
+        "黑色与银白",
+        "matte black, silver white and subtle blue-black highlights"
+      ]
+    ]
+  },
+  "sparseRandomKeys": [
+    "hair",
+    "expression",
+    "outfit",
+    "accessory",
+    "pose",
+    "camera",
+    "background",
+    "accent",
+    "special_prompt"
+  ]
+}

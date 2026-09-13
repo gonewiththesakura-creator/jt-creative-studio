@@ -1,0 +1,43 @@
+{
+  "verification": "PASS",
+  "verified_at": "2026-09-13T01:18:00+08:00",
+  "request_id": "api-sidebar-live-20260913-two-after-boundary-fix",
+  "submit_attempts": 1,
+  "preflight_rejection": {
+    "request_id": "api-sidebar-live-20260913-one",
+    "http_status": 400,
+    "job_created": false,
+    "upstream_called": false,
+    "reason": "previous panel input limit rejected the request before worker admission"
+  },
+  "job_id": "6193991ace96",
+  "status": "done",
+  "provider_status": "API_DONE",
+  "api_model": "gpt-image-2.5-flare",
+  "requested_quality": "low",
+  "upstream_quality": "medium",
+  "quality_override_disclosed": true,
+  "api_fit": "cover",
+  "panel_prompt_chars": 3690,
+  "prompt_compacted": true,
+  "upstream_positive_chars": 378,
+  "upstream_size": "1086x1448",
+  "output_size": "768x1024",
+  "elapsed_seconds": 104.0,
+  "result_count": 1,
+  "artifact": {
+    "file": "dreamapi_sidebar_long_prompt_20260913.png",
+    "format": "PNG",
+    "width": 768,
+    "height": 1024,
+    "bytes": 1346385,
+    "sha256": "3596874eed855b3187de9a9519c4713f993c388c2cc9b1afeea6fd772afcb271"
+  },
+  "visual_review": {
+    "status": "PASS",
+    "complete_subject": true,
+    "visible_text_logo_watermark": false,
+    "traditional_media_style_visible": true,
+    "note": "Retro manga fashion portrait with paper texture, marker-like black masses, pencil hatching and no visible watermark."
+  }
+}

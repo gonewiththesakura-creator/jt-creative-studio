@@ -96,6 +96,16 @@ def test_api_creator_submission_is_accepted_and_idempotent():
     assert public["api_fit"] == "cover"
     assert job["api_response_id"] == "resp_fixture"
     assert "api_response_id" not in public
+    assert job["prompt"] == BASE["prompt"]
+    assert "prompt" not in public
+    assert "negative_prompt" not in public
+
+    history_status, history = get("/api/jobs?scope=creator")
+    assert history_status == 200
+    history_job = next(row for row in history if row["id"] == job["id"])
+    assert history_job["api_upstream_model"] == "unknown"
+    assert history_job["api_upstream_quality"] == "high"
+    assert history_job["api_upstream_size"] == "1024x1024"
 
 
 def test_api_creator_rejects_non_single_batch_and_hd():
@@ -125,10 +135,21 @@ def test_api_creator_rejects_untrusted_model_quality_fit_and_invalid_size():
 
 def test_api_creator_rejects_oversized_prompts_before_accepting_a_paid_job():
     for field in ("prompt", "negative_prompt"):
-        payload = {**BASE, "client_request_id": "api-long-" + field, field: "x" * 2001}
+        payload = {**BASE, "client_request_id": "api-long-" + field, field: "x" * 12001}
         status, data = post(payload)
         assert status == 400
         assert "too long" in data["error"].lower()
+
+
+def test_api_creator_accepts_long_panel_prompt_for_worker_compaction():
+    for job in server._jobs.values():
+        job["status"] = "done"
+    payload = {**BASE, "client_request_id": "api-worker-compaction", "prompt": "x" * 3690}
+    status, data = post(payload)
+    assert status == 200
+    job = server._jobs[data["job_id"]]
+    assert len(job["prompt"]) == 3690
+    job["status"] = "done"
 
 
 def test_existing_cloud_and_local_prompt_limits_are_not_changed_by_api_channel():

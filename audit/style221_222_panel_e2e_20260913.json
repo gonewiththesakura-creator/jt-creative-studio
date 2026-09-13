@@ -1,0 +1,44 @@
+{
+  "verification": "PASS",
+  "verified_at": "2026-09-13T01:35:00+08:00",
+  "workflows": {
+    "style221": {
+      "model_sha256": "c484a46f6127eab36d2fafb29dace2c13e3bd0a0f3fa9b64db3dd7090be57e3f",
+      "trigger": "zxqelun",
+      "weight": 0.4,
+      "submit_attempts": 1,
+      "job_id": "6b61ec6c4c8a",
+      "status": "done",
+      "provider_status": "DONE",
+      "rh_coins": "5",
+      "elapsed_seconds": 27.5,
+      "result_count": 1,
+      "history_occurrences": 1,
+      "artifact_bytes": 706582,
+      "artifact_sha256": "5cf555e0888c1ffcbe0b9ec560f2fe46ac42b6fc8a6c435ea8652bd0eaa1fd1a",
+      "png_signature": true
+    },
+    "style222": {
+      "model_sha256": "7f5532a086450fa4f1fd8127e34f6dbfefacdb5b718bdf8209cf17d0e411e7e2",
+      "trigger": "zxqavri",
+      "weight": 0.4,
+      "submit_attempts": 1,
+      "job_id": "1d034dbcfdf2",
+      "status": "done",
+      "provider_status": "DONE",
+      "rh_coins": "3",
+      "elapsed_seconds": 18.7,
+      "result_count": 1,
+      "history_occurrences": 1,
+      "artifact_bytes": 430975,
+      "artifact_sha256": "923542efa1963ba5dda30632e294dcf487f97a272b10d994f8e8ae04d4ebb0cf",
+      "png_signature": true
+    }
+  },
+  "visual_matrix": {
+    "local_three_seed_count": 12,
+    "style221": "PASS: semi-realistic digital impasto, visible brushwork and lost-and-found edges; no visible text or watermark",
+    "style222": "PASS: engraved parallel/cross hatching with light 3D sculpting; no visible text or watermark",
+    "preview_decision": "No new formal preview image shipped yet; older single smokes had hand/style weaknesses."
+  }
+}

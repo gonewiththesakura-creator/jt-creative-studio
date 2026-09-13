@@ -17,6 +17,69 @@ def png_b64(width=64, height=96, color=(31, 79, 127)):
     return base64.b64encode(output.getvalue()).decode("ascii")
 
 
+def test_dreamapi_prompt_compaction_preserves_priority_and_bounds_total_input():
+    core = "important-core-style, " + ", ".join(f"style-{i}" for i in range(90))
+    content = ", ".join(f"content-{i}" for i in range(160))
+    negative = ", ".join(["watermark", "text", "bad hands"] * 30)
+    positive, negative_out, compacted = server.compact_dreamapi_prompts(
+        core + ", " + content, negative, max_total=1400)
+    assert compacted is True
+    assert positive.startswith("important-core-style")
+    assert "watermark" in negative_out and "bad hands" in negative_out
+    assert len(positive) + len(negative_out) <= 1400
+    assert positive.count("important-core-style") == 1
+
+
+def test_short_dreamapi_prompt_is_not_rewritten():
+    assert server.compact_dreamapi_prompts("adult portrait", "watermark") == (
+        "adult portrait", "watermark", False)
+
+
+def test_dreamapi_prompt_compaction_keeps_unbroken_long_text_nonempty():
+    positive = "复古漫画质感" * 400
+    negative = "避免文字水印" * 200
+    positive_out, negative_out, compacted = server.compact_dreamapi_prompts(
+        positive, negative, max_total=1600)
+    assert compacted is True
+    assert positive_out
+    assert negative_out
+    assert positive_out.startswith("复古漫画质感")
+    assert negative_out.startswith("避免文字水印")
+    assert len(positive_out) + len(negative_out) <= 1600
+
+
+def test_dreamapi_complete_upstream_input_stays_within_budget():
+    text, compacted, positive_chars = server.build_dreamapi_input(
+        "连续中文画风描述" * 500,
+        "避免文字水印" * 300,
+        "768x1024",
+        "portrait",
+    )
+    assert compacted is True
+    assert positive_chars > 0
+    assert len(text) <= 1600
+    assert "Required canvas: exactly 768x1024" in text
+    assert "Avoid:" in text
+
+
+def test_dreamapi_rejects_prompt_that_normalizes_to_no_subject():
+    for prompt in (",,\n, ,\n", "，，，、。！？……—"):
+        with pytest.raises(ValueError, match="subject"):
+            server.build_dreamapi_input(prompt, "watermark", "768x1024", "portrait")
+
+
+def test_api_failure_sets_terminal_provider_status():
+    job={"workflow":"anima02","generation_backend":"api","id":"api-fail","status":"running"}
+    original=server.dreamapi_run_image
+    try:
+        server.dreamapi_run_image=lambda *_: (_ for _ in ()).throw(RuntimeError("upstream failed"))
+        server.run_job(job)
+    finally:
+        server.dreamapi_run_image=original
+    assert job["status"]=="error"
+    assert job["provider_status"]=="API_ERROR"
+
+
 class FakeResponse:
     def __init__(self, payload):
         self.payload = json.dumps(payload).encode("utf-8")

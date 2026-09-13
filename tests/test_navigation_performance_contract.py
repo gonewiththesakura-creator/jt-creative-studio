@@ -21,7 +21,7 @@ checks={
  "creator pages show RH coin cost":all(x in PAGES[0] for x in ['RH币：','j.rh_coins']),
  "home history server scoped":"/api/jobs?scope=creator" in PAGES[0],
  "builders own performance helpers":all(x in BUILDERS for x in ['scheduleRoutePrefetch','sessionStorage','/api/job/']),
- "result images lazy decode":'loading="lazy"' in PAGES[0] and 'decoding="async"' in PAGES[0],
+ "result images lazy decode":all(x in PAGES[0] for x in ["img.loading='lazy'","img.decoding='async'"]),
 }
 for name,value in checks.items():print(name,value)
 sys.exit(0 if all(checks.values()) else 1)
