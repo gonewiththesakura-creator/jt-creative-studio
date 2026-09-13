@@ -448,6 +448,13 @@ def test_public_job_and_history_strip_provider_media_tokens_and_snapshot_media()
         "comfy_prompt_id": "provider-comfy-prompt-secret",
         "prompt_ids": ["provider-comfy-prompt-secret-2"],
         "api_response_id": "resp_provider_secret",
+        "params": {
+            "width": 768,
+            "prompt": "private-top-level-prompt",
+            "negative": "private-top-level-negative",
+            "response_id": "private-top-level-response",
+            "api_key": "private-top-level-key",
+        },
         "error": "RH task failed at node 123 SecretNode: internal traceback details",
         "selection_snapshot": {
             "source_page": "realism", "workflow": "image_fixture",
@@ -485,6 +492,11 @@ def test_public_job_and_history_strip_provider_media_tokens_and_snapshot_media()
         assert "private-negative-prompt" not in raw
         assert "private-api-key" not in raw
         assert "private-response-id" not in raw
+        assert "private-top-level-prompt" not in raw
+        assert "private-top-level-negative" not in raw
+        assert "private-top-level-response" not in raw
+        assert "private-top-level-key" not in raw
+        assert target.get("params") in ({}, None)
         assert target.get("media") in ({}, None)
 
 

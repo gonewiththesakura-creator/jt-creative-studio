@@ -1074,6 +1074,16 @@ def public_job_selection_snapshot(snapshot):
     return result
 
 
+def public_job_params(job):
+    """Expose only controls declared by the task's trusted workflow schema."""
+    raw = (job or {}).get("params")
+    if not isinstance(raw, dict):
+        return {}
+    workflow = WORKFLOWS.get(str((job or {}).get("workflow") or ""), {})
+    allowed = set((workflow.get("rh_params") or {}).keys())
+    return {key: _json_safe_integer_metadata(raw[key]) for key in allowed if key in raw}
+
+
 def substitute(template_text, mapping):
     return re.sub(r"\{\{[A-Z0-9_]+\}\}", lambda m: str(mapping.get(m.group(0), m.group(0))), template_text)
 
@@ -2819,6 +2829,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 j = {k: src.get(k) for k in allowed}
                 j["error"] = public_job_error(src)
                 j["media"] = public_job_media(src.get("media"))
+                j["params"] = public_job_params(src)
                 j["selection_snapshot"] = public_job_selection_snapshot(src.get("selection_snapshot"))
             self._send(200, json.dumps(j, ensure_ascii=False).encode())
         elif path == "/api/jobs":
