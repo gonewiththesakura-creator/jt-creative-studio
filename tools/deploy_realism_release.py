@@ -2128,6 +2128,23 @@ def fetch_bytes(base, path, timeout=60, accept_gzip=False,
             )
         except subprocess.TimeoutExpired as error:
             raise RuntimeError("public large response verification timeout") from error
+        headers = None
+        if header_path.is_file():
+            try:
+                headers = _last_http_headers(header_path.read_bytes())
+            except RuntimeError:
+                if result.returncode == 0:
+                    raise
+        if body_path.is_file() and body_path.stat().st_size > wire_max_bytes:
+            raise RuntimeError("public response exceeds byte limit")
+        if headers is not None:
+            length = headers.get(b"content-length")
+            if length is not None:
+                try:
+                    if int(length) > wire_max_bytes:
+                        raise RuntimeError("public response exceeds byte limit")
+                except ValueError as error:
+                    raise RuntimeError("public response Content-Length is invalid") from error
         if result.returncode == 28:
             raise RuntimeError("public large response verification timeout")
         if result.returncode == 63:
@@ -2137,16 +2154,8 @@ def fetch_bytes(base, path, timeout=60, accept_gzip=False,
             raise RuntimeError(f"public response download failed: {detail or result.returncode}")
         if not body_path.is_file() or not header_path.is_file():
             raise RuntimeError("public response download is incomplete")
-        if body_path.stat().st_size > wire_max_bytes:
-            raise RuntimeError("public response exceeds byte limit")
-        headers = _last_http_headers(header_path.read_bytes())
-        length = headers.get(b"content-length")
-        if length is not None:
-            try:
-                if int(length) > wire_max_bytes:
-                    raise RuntimeError("public response exceeds byte limit")
-            except ValueError as error:
-                raise RuntimeError("public response Content-Length is invalid") from error
+        if headers is None:
+            raise RuntimeError("public response headers are missing")
         body = body_path.read_bytes()
     encoding = headers.get(b"content-encoding", b"").split(b",", 1)[0].strip()
     if encoding == b"gzip":

@@ -1040,7 +1040,9 @@ def test_public_fetch_rejects_declared_streamed_and_gzip_expansion_overflow():
     try:
         with pytest.raises(RuntimeError, match="exceeds byte limit"):
             module.fetch_bytes(base, "/declared", max_bytes=8)
-        with pytest.raises(RuntimeError, match="exceeds byte limit"):
+        # Windows curl can surface a no-length overflow as CURLE_RECV_ERROR
+        # after aborting the socket; both outcomes remain fail-closed.
+        with pytest.raises(RuntimeError, match="exceeds byte limit|public response download failed"):
             module.fetch_bytes(base, "/streamed", max_bytes=8)
         with pytest.raises(RuntimeError, match="gzip response exceeds"):
             module.fetch_bytes(
