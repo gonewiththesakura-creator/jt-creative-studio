@@ -79,6 +79,16 @@ DREAMAPI_RATIO_SIZES = {
     "9:16": (864, 1536),
     "16:9": (1536, 864),
 }
+# The Responses image tool accepts only these three concrete canvas sizes.
+# Keep the user's requested output ratio separate: tall/wide results are
+# generated on the closest supported canvas and fitted to the requested size.
+DREAMAPI_PROVIDER_SIZE_BY_RATIO = {
+    "1:1": (1024, 1024),
+    "2:3": (1024, 1536),
+    "3:2": (1536, 1024),
+    "9:16": (1024, 1536),
+    "16:9": (1536, 1024),
+}
 
 
 def _dreamapi_contract_document():
@@ -1321,6 +1331,12 @@ def public_job_error(job):
     if backend == "local":
         return f"本地任务失败；请使用面板任务号 {job_id} 联系维护人员"
     if backend == "api":
+        match = re.match(r"^DreamAPI HTTP (5\d\d):", error)
+        if match:
+            return (
+                f"图像API上游暂时失败（HTTP {match.group(1)}），可手动重新生成；"
+                f"请勿连续提交。面板任务号 {job_id}"
+            )
         return f"API任务失败；请使用面板任务号 {job_id} 联系维护人员"
     return f"云端任务失败；请使用面板任务号 {job_id} 联系维护人员"
 
@@ -2212,6 +2228,21 @@ def _dreamapi_size(width, height):
     return f"{width}x{height}"
 
 
+def _dreamapi_provider_size(job):
+    """Map a panel ratio to a concrete canvas accepted by the image tool."""
+    ratio = str(job.get("api_ratio") or "")
+    if ratio:
+        dimensions = DREAMAPI_PROVIDER_SIZE_BY_RATIO.get(ratio)
+        if dimensions is None:
+            raise ValueError("unknown DreamAPI image ratio")
+        return f"{dimensions[0]}x{dimensions[1]}"
+    width = _bounded_request_int(job.get("width"))
+    height = _bounded_request_int(job.get("height"))
+    if width == height:
+        return "1024x1024"
+    return "1536x1024" if width > height else "1024x1536"
+
+
 def _dreamapi_redact_error(detail):
     detail = str(detail or "upstream error")
     if DREAMAPI_KEY:
@@ -2270,12 +2301,21 @@ def compact_dreamapi_prompts(positive, negative, max_total=1600):
     return compact_positive, compact_negative, True
 
 
-def build_dreamapi_input(positive, negative, size, orientation, max_total=1600):
+def build_dreamapi_input(positive, negative, size, orientation, max_total=1600,
+                         final_size=None):
     """Build the complete bounded upstream input, including bridge instructions."""
     prefix = [
         f"Required canvas: exactly {size}, {orientation} composition.",
-        "Keep the important subject inside the center safe area so a final crop will not cut it off.",
     ]
+    if final_size and final_size != size:
+        prefix.append(
+            f"Compose for a centered final crop to {final_size}; keep every important "
+            "subject inside that narrower safe area."
+        )
+    else:
+        prefix.append(
+            "Keep the important subject inside the center safe area so a final crop will not cut it off."
+        )
     bridge_overhead = len("\n".join(prefix)) + 1
     negative_overhead = len("\nAvoid: ") if str(negative or "").strip() else 0
     prompt_budget = max(1, max_total - bridge_overhead - negative_overhead)
@@ -2359,16 +2399,18 @@ def dreamapi_run_image(job, jobdir):
     job["api_action_mode"] = (
         "generate" if model in DREAMAPI_IMAGE_ACTION_MODELS else "omitted"
     )
-    size = _dreamapi_size(job["width"], job["height"])
+    output_size = _dreamapi_size(job["width"], job["height"])
+    provider_size = _dreamapi_provider_size(job)
     orientation = "square" if job["width"] == job["height"] else (
         "landscape" if job["width"] > job["height"] else "portrait")
     upstream_input, compacted, positive_chars = build_dreamapi_input(
-        job.get("prompt"), job.get("negative_prompt"), size, orientation)
+        job.get("prompt"), job.get("negative_prompt"), provider_size, orientation,
+        final_size=output_size)
     job["api_prompt_compacted"] = compacted
     job["api_upstream_prompt_chars"] = positive_chars
     tool = {
         "type": "image_generation", "model": model,
-        "size": size, "quality": quality,
+        "size": provider_size, "quality": quality,
     }
     if model in DREAMAPI_IMAGE_ACTION_MODELS:
         tool["action"] = "generate"
@@ -2385,6 +2427,8 @@ def dreamapi_run_image(job, jobdir):
         method="POST",
     )
     job["provider_status"] = "API_GENERATING"
+    job["progress_pct"] = 15
+    job["api_provider_size"] = provider_size
     job["provider_started"] = time.time()
     result = _dreamapi_request_json(
         request, json.dumps(payload).encode("utf-8"), DREAMAPI_TIMEOUT
@@ -2399,6 +2443,8 @@ def dreamapi_run_image(job, jobdir):
                        and isinstance(item.get("result"), str) and item.get("result")), None)
     if not image_item:
         raise RuntimeError("DreamAPI returned no completed image")
+    job["provider_status"] = "API_PROCESSING_RESULT"
+    job["progress_pct"] = 75
     encoded = image_item["result"]
     if len(encoded) > ((DREAMAPI_MAX_IMAGE_BYTES + 2) // 3) * 4 + 4:
         raise RuntimeError("DreamAPI image data is too large")
@@ -2408,6 +2454,8 @@ def dreamapi_run_image(job, jobdir):
         raise RuntimeError("DreamAPI returned invalid image data") from error
     if len(source) > DREAMAPI_MAX_IMAGE_BYTES:
         raise RuntimeError("DreamAPI image data is too large")
+    job["provider_status"] = "API_FITTING_RESULT"
+    job["progress_pct"] = 88
     from PIL import Image, ImageOps, UnidentifiedImageError
     try:
         opened = Image.open(io.BytesIO(source))
@@ -2449,7 +2497,7 @@ def dreamapi_run_image(job, jobdir):
             "url": f"/api/image/{job['id']}/{filename}",
             "preview_url": f"/api/image/{job['id']}/{filename}",
             "file": filename, "size": destination.stat().st_size, "remote": False,
-            "source_size": source_size, "output_size": size, "archive_status": "ready",
+            "source_size": source_size, "output_size": output_size, "archive_status": "ready",
         }],
     })
     return job["images"]
@@ -3233,6 +3281,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "api_dispatch_profile", "dreamapi_contract_sha256", "api_action_mode",
                     "api_prompt_compacted", "api_upstream_prompt_chars",
                     "api_upstream_model", "api_upstream_quality", "api_upstream_size",
+                    "api_provider_size",
                     "media", "params",
                     "client_request_id",
                     "transfer_index", "transfer_total", "transfer_started", "transfer_finished",
@@ -3270,6 +3319,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         "api_dispatch_profile", "dreamapi_contract_sha256", "api_action_mode",
                         "api_prompt_compacted", "api_upstream_prompt_chars",
                         "api_upstream_model", "api_upstream_quality", "api_upstream_size",
+                        "api_provider_size",
                         "client_request_id",
                         "transfer_index", "transfer_total", "transfer_started", "transfer_finished",
                     )

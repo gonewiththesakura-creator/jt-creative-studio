@@ -62,6 +62,16 @@ def test_dreamapi_complete_upstream_input_stays_within_budget():
     assert "Avoid:" in text
 
 
+def test_dreamapi_input_separates_supported_canvas_from_final_tall_crop():
+    text, compacted, _ = server.build_dreamapi_input(
+        "adult portrait", "watermark", "1024x1536", "portrait",
+        final_size="864x1536",
+    )
+    assert compacted is False
+    assert "Required canvas: exactly 1024x1536" in text
+    assert "centered final crop to 864x1536" in text
+
+
 def test_dreamapi_rejects_prompt_that_normalizes_to_no_subject():
     for prompt in (",,\n, ,\n", "，，，、。！？……—"):
         with pytest.raises(ValueError, match="subject"):
@@ -78,6 +88,16 @@ def test_api_failure_sets_terminal_provider_status():
         server.dreamapi_run_image=original
     assert job["status"]=="error"
     assert job["provider_status"]=="API_ERROR"
+
+
+def test_api_5xx_public_error_is_actionable_without_leaking_upstream_detail():
+    public = server.public_job_error({
+        "id": "api-fail", "generation_backend": "api",
+        "error": "DreamAPI HTTP 502: private upstream detail",
+    })
+    assert "上游暂时失败（HTTP 502）" in public
+    assert "可手动重新生成" in public
+    assert "private upstream detail" not in public
 
 
 class FakeResponse:
@@ -163,6 +183,55 @@ def test_dreamapi_runner_uses_luna_dispatcher_and_saves_exact_png(tmp_path, monk
     assert job["dreamapi_contract_sha256"] == server.DREAMAPI_CONTRACT_SHA256
     assert job["api_action_mode"] == "generate"
     assert job["images"][0]["url"].startswith("/api/image/dreamjob001/")
+
+
+@pytest.mark.parametrize("ratio,provider_size", [
+    ("1:1", "1024x1024"),
+    ("2:3", "1024x1536"),
+    ("3:2", "1536x1024"),
+    ("9:16", "1024x1536"),
+    ("16:9", "1536x1024"),
+])
+def test_dreamapi_ratio_maps_to_supported_provider_canvas(ratio, provider_size):
+    width, height = server.DREAMAPI_RATIO_SIZES[ratio]
+    assert server._dreamapi_provider_size({
+        "api_ratio": ratio, "width": width, "height": height,
+    }) == provider_size
+
+
+def test_dreamapi_tall_ratio_uses_supported_canvas_then_saves_requested_size(
+        tmp_path, monkeypatch):
+    captured = {}
+
+    def fake_open(_request, data, _timeout):
+        captured["body"] = json.loads(data.decode("utf-8"))
+        return FakeResponse({
+            "id": "resp_tall",
+            "output": [{
+                "type": "image_generation_call",
+                "result": png_b64(width=64, height=96),
+                "model": "gpt-image-2.5-flare",
+                "quality": "low",
+                "size": "1024x1536",
+            }],
+        })
+
+    monkeypatch.setattr(server, "DREAMAPI_KEY", "test-key", raising=False)
+    monkeypatch.setattr(server, "_urlopen_bounded", fake_open)
+    job = {
+        "id": "dreamjob-tall", "prompt": "a careful portrait",
+        "negative_prompt": "", "width": 864, "height": 1536,
+        "api_ratio": "9:16", "api_model": "gpt-image-2.5-flare",
+        "api_quality": "low", "api_fit": "cover", "images": [],
+    }
+
+    server.dreamapi_run_image(job, tmp_path)
+
+    assert captured["body"]["tools"][0]["size"] == "1024x1536"
+    assert job["api_provider_size"] == "1024x1536"
+    assert job["images"][0]["output_size"] == "864x1536"
+    with Image.open(Path(tmp_path) / "dreamapi.png") as image:
+        assert image.size == (864, 1536)
 
 
 def test_dreamapi_image_2_omits_action_for_legacy_bridge_compatibility(tmp_path, monkeypatch):

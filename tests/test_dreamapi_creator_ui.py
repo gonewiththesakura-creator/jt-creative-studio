@@ -119,3 +119,49 @@ def test_creator_static_config_does_not_publish_lora_filenames():
 def test_creator_has_no_numeric_progress_label_markup_or_css():
     for page in FILES:
         assert "liquid-percent" not in page.read_text(encoding="utf8"), page
+
+
+def test_api_generation_has_visible_stage_progress_without_fake_percentages():
+    for path in FILES:
+        text = path.read_text(encoding="utf8")
+        for token in (
+            "function installApiProgress()",
+            'data-api-progress-stage',
+            'data-api-progress-elapsed',
+            'role="progressbar"',
+            "function describeApiProgress(job,override={})",
+            "图像模型生成中 · 阶段 2/4",
+            "API_PROCESSING_RESULT",
+            "正在解析生成结果 · 阶段 3/4",
+            "API_FITTING_RESULT",
+            "正在适配目标画布 · 阶段 3/4",
+            "图片已生成 · 阶段 4/4",
+            "上游不提供实时百分比",
+            "仅显示已确认阶段",
+            "function formatApiElapsed(startedAt)",
+            "function creatorPhaseText(job)",
+            "status.textContent=creatorPhaseText(next)",
+            "setInterval(()=>renderApiProgress",
+        ):
+            assert token in text, (path, token)
+        assert "estimatedProgress" not in text, path
+        assert "预计剩余" not in text, path
+
+
+def test_api_progress_covers_terminal_retry_and_refresh_recovery_states():
+    for path in FILES:
+        text = path.read_text(encoding="utf8")
+        for token in (
+            "function isApiCancelled(job)",
+            "function isTerminalJob(job)",
+            "function startApiProgress(job,override={})",
+            "function finishApiProgress(job,override={})",
+            "function pauseApiProgress(message)",
+            "生成失败",
+            "任务已取消",
+            "正在确认任务状态",
+            "不会重复提交",
+            "刷新页面会继续恢复",
+            "installApiProgress();",
+        ):
+            assert token in text, (path, token)
