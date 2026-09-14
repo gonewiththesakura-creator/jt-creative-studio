@@ -1,6 +1,11 @@
 import importlib.util
+import hashlib
 import json
+import subprocess
 from pathlib import Path
+
+import pytest
+from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "tools" / "deploy_realism_release.py"
@@ -145,17 +150,238 @@ def test_dreamapi_e2e_png_is_explicitly_trackable():
     assert "!audit/dreamapi_migration_20260914/*.png" in ignore
 
 
+def test_dreamapi_runtime_payload_uses_framed_v1_git_bytes():
+    assert MODULE.framed_v1_payload_sha256({"a": b"bc"}) == (
+        "e7ab503819a08f424da9ba8421b745917f2f82f92b7e6a09ecce37d61289b827"
+    )
+    assert MODULE.framed_v1_payload_sha256({"a": b"bc"}) != (
+        MODULE.framed_v1_payload_sha256({"ab": b"c"})
+    )
+    assert MODULE.git_runtime_payload_sha256(MODULE.DREAMAPI_TESTED_RELEASE_COMMIT) == (
+        MODULE.DREAMAPI_RUNTIME_PAYLOAD_SHA256
+    )
+    with pytest.raises(RuntimeError, match="does not exist"):
+        MODULE.git_runtime_payload_sha256("0" * 40)
+
+
+def test_dreamapi_runtime_payload_requires_ancestor_and_clean_workspace(tmp_path, monkeypatch):
+    repository = tmp_path / "repo"
+    repository.mkdir()
+
+    def git(*args):
+        return subprocess.run(
+            ["git", *args], cwd=repository, text=True, capture_output=True, check=True,
+        ).stdout.strip()
+
+    git("init", "--initial-branch=main")
+    git("config", "user.email", "release-gate@example.invalid")
+    git("config", "user.name", "Release Gate")
+    for relative in MODULE.DREAMAPI_RUNTIME_PAYLOAD_FILES:
+        path = repository / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"runtime:{relative}\n", encoding="utf8")
+    (repository / "base.txt").write_text("base\n", encoding="utf8")
+    git("add", ".")
+    git("commit", "-m", "base")
+    git("switch", "-c", "tested")
+    (repository / "tested.txt").write_text("tested\n", encoding="utf8")
+    git("add", "tested.txt")
+    git("commit", "-m", "tested")
+    tested_commit = git("rev-parse", "HEAD")
+    tested_digest = MODULE.git_runtime_payload_sha256(tested_commit, repository)
+    git("switch", "main")
+    (repository / "head.txt").write_text("head\n", encoding="utf8")
+    git("add", "head.txt")
+    git("commit", "-m", "head")
+
+    monkeypatch.setattr(MODULE, "DREAMAPI_TESTED_RELEASE_COMMIT", tested_commit)
+    monkeypatch.setattr(MODULE, "DREAMAPI_RUNTIME_PAYLOAD_SHA256", tested_digest)
+    record = {
+        "tested_release_commit": tested_commit,
+        "runtime_payload": {
+            "format": MODULE.DREAMAPI_RUNTIME_PAYLOAD_FORMAT,
+            "files": list(MODULE.DREAMAPI_RUNTIME_PAYLOAD_FILES),
+            "sha256": tested_digest,
+        },
+    }
+    errors = MODULE.validate_dreamapi_runtime_payload(record, repository)
+    assert "DreamAPI tested release commit is not an ancestor of HEAD" in errors
+
+    (repository / "server.py").write_text("changed in workspace\n", encoding="utf8")
+    errors = MODULE.validate_dreamapi_runtime_payload(record, repository)
+    assert "DreamAPI runtime payload differs between HEAD and workspace" in errors
+
+    git("switch", "tested")
+    (repository / "server.py").write_text("changed after tested release\n", encoding="utf8")
+    git("add", "server.py")
+    git("commit", "-m", "runtime drift")
+    errors = MODULE.validate_dreamapi_runtime_payload(record, repository)
+    assert "DreamAPI runtime payload changed after tested release" in errors
+
+
+def test_dreamapi_private_evidence_scan_is_recursive_and_allows_presence_flags():
+    allowed = {
+        "api_response_id_present": True,
+        "repository_contains_key": False,
+        "nested": [{"ordinary": "safe"}],
+    }
+    assert MODULE.find_dreamapi_private_evidence(allowed) == []
+    assert MODULE.find_dreamapi_private_evidence({"API-Key": "redacted"})
+    assert MODULE.find_dreamapi_private_evidence({"nested": [{"apiResponseId": "redacted"}]})
+    assert MODULE.find_dreamapi_private_evidence({"nested": [{"APIResponseId": "redacted"}]})
+    assert MODULE.find_dreamapi_private_evidence({"nested": "  Bearer redacted"})
+    assert MODULE.find_dreamapi_private_evidence(["sk-redacted"])
+    assert MODULE.find_dreamapi_private_evidence([{"value": "resp_redacted"}])
+
+
+def test_dreamapi_png_helper_requires_meaningful_visible_variance(tmp_path):
+    uniform = tmp_path / "uniform.png"
+    Image.new("RGB", (4, 4), "white").save(uniform, format="PNG")
+    uniform_raw = uniform.read_bytes()
+    errors = MODULE.validate_png_artifact(
+        uniform, len(uniform_raw), hashlib.sha256(uniform_raw).hexdigest(), (4, 4),
+    )
+    assert "PNG visible content variance too low" in errors
+
+    one_pixel = tmp_path / "one-pixel.png"
+    image = Image.new("RGB", (512, 512), "white")
+    image.putpixel((0, 0), (0, 0, 0))
+    image.save(one_pixel, format="PNG")
+    one_pixel_raw = one_pixel.read_bytes()
+    assert "PNG visible content variance too low" in MODULE.validate_png_artifact(
+        one_pixel, len(one_pixel_raw), hashlib.sha256(one_pixel_raw).hexdigest(), (512, 512),
+    )
+
+    meaningful = tmp_path / "meaningful.png"
+    image = Image.new("RGB", (16, 16), "white")
+    for x in range(8):
+        for y in range(16):
+            image.putpixel((x, y), (0, 0, 0))
+    image.save(meaningful, format="PNG")
+    raw = meaningful.read_bytes()
+    assert MODULE.validate_png_artifact(
+        meaningful, len(raw), hashlib.sha256(raw).hexdigest(), (16, 16),
+    ) == []
+    assert "PNG format or dimensions invalid" in MODULE.validate_png_artifact(
+        meaningful, len(raw), hashlib.sha256(raw).hexdigest(), (17, 16),
+    )
+
+    transparent = tmp_path / "transparent.png"
+    hidden = Image.new("RGBA", (4, 4), (0, 0, 0, 0))
+    hidden.putpixel((0, 0), (255, 0, 0, 0))
+    hidden.save(transparent, format="PNG")
+    transparent_raw = transparent.read_bytes()
+    assert "PNG visible content variance too low" in MODULE.validate_png_artifact(
+        transparent, len(transparent_raw), hashlib.sha256(transparent_raw).hexdigest(), (4, 4),
+    )
+
+    corrupt = tmp_path / "corrupt.png"
+    corrupt.write_bytes(raw[:-8])
+    corrupt_raw = corrupt.read_bytes()
+    assert "PNG decode invalid" in MODULE.validate_png_artifact(
+        corrupt, len(corrupt_raw), hashlib.sha256(corrupt_raw).hexdigest(), (16, 16),
+    )
+
+
+def test_dreamapi_png_helper_rejects_before_decode_when_metadata_mismatches(tmp_path, monkeypatch):
+    artifact = tmp_path / "untrusted.png"
+    artifact.write_bytes(b"not an image")
+
+    def unexpected_open(*args, **kwargs):
+        raise AssertionError("Pillow must not inspect bytes with a mismatched digest")
+
+    monkeypatch.setattr(MODULE.Image, "open", unexpected_open)
+    assert MODULE.validate_png_artifact(artifact, 999, "0" * 64, (1, 1)) == [
+        "artifact bytes invalid"
+    ]
+
+    class HeaderOnly:
+        format = "PNG"
+        size = (1, 1)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def verify(self):
+            raise AssertionError("dimension mismatch must return before PNG verification")
+
+    monkeypatch.setattr(MODULE.Image, "open", lambda *args, **kwargs: HeaderOnly())
+    raw = artifact.read_bytes()
+    assert MODULE.validate_png_artifact(
+        artifact, len(raw), hashlib.sha256(raw).hexdigest(), (2, 2),
+    ) == ["PNG format or dimensions invalid"]
+
+
+def test_dreamapi_release_identity_evidence_is_exact_and_fail_closed(tmp_path, monkeypatch):
+    original = json.loads(MODULE.DREAMAPI_MIGRATION_E2E_MANIFEST.read_text(encoding="utf8"))
+    assert original["release_identity_evidence"] == MODULE.DREAMAPI_RELEASE_IDENTITY_EVIDENCE
+    mutations = (
+        lambda row: row.update({"method": "job metadata"}),
+        lambda row: row.update({"attestation_scope": "provider-signed"}),
+        lambda row: row.update({"transaction_id": "wrong-transaction"}),
+        lambda row: row.update({"phase": "prepared"}),
+        lambda row: row.update({"phase_mtime": "2026-09-14T20:16:44+08:00"}),
+        lambda row: row.update({"completed_mtime": "2026-09-14T20:16:43+08:00"}),
+        lambda row: row["server_service"].update({"invocation_id": "0" * 32}),
+        lambda row: row["server_service"].update({"active_since": "2026-09-14T20:16:20+08:00"}),
+        lambda row: row["server_service"].update({"restart_count": 1}),
+        lambda row: row["remote_sha256"].update({"server.py": "0" * 64}),
+        lambda row: row["remote_sha256"].update({"unexpected.py": "0" * 64}),
+        lambda row: row["workstation_watchdog"].update({"process_id": 1}),
+        lambda row: row["workstation_watchdog"].update({"active_since": "2026-09-14T18:17:06+08:00"}),
+        lambda row: row["workstation_watchdog"].update({"file_sha256": "0" * 64}),
+        lambda row: row["workstation_watchdog"].update({"launcher_sha256": "0" * 64}),
+        lambda row: row["workstation_watchdog"].update({"dreamapi_contract_sha256": "0" * 64}),
+        lambda row: row["workstation_watchdog"].update({"dreamapi_uncertainty_fence": True}),
+        lambda row: row.update({"first_job_created_at": "2026-09-14T20:19:52.301+08:00"}),
+        lambda row: row.update({"last_job_created_at": "2026-09-14T20:19:52.301+08:00"}),
+    )
+    monkeypatch.setattr(MODULE, "validate_png_artifact", lambda *args, **kwargs: [])
+    for index, mutate in enumerate(mutations):
+        changed = json.loads(json.dumps(original))
+        mutate(changed["release_identity_evidence"])
+        manifest = tmp_path / f"release-identity-{index}.json"
+        manifest.write_text(json.dumps(changed), encoding="utf8")
+        monkeypatch.setattr(MODULE, "DREAMAPI_MIGRATION_E2E_MANIFEST", manifest)
+        errors = MODULE.validate_dreamapi_migration_e2e_manifest()
+        assert "DreamAPI release identity evidence invalid" in errors, index
+    assert "DreamAPI release identity job timeline invalid" in errors
+
+
 def test_dreamapi_migration_e2e_gate_fails_closed_on_contract_job_or_artifact_drift(tmp_path, monkeypatch):
     original = json.loads(MODULE.DREAMAPI_MIGRATION_E2E_MANIFEST.read_text(encoding="utf8"))
     source_dir = MODULE.DREAMAPI_MIGRATION_E2E_MANIFEST.parent
     mutations = (
+        lambda row: row.update({"evidence_scope": "per-model production request-contract matrix"}),
+        lambda row: row.update({"unified_release_e2e": False}),
+        lambda row: row.update({"tested_release_commit": "0" * 40}),
+        lambda row: row["runtime_payload"].update({"format": "raw-concatenation"}),
+        lambda row: row["runtime_payload"].update({"files": list(reversed(row["runtime_payload"]["files"]))}),
+        lambda row: row["runtime_payload"].update({"sha256": "0" * 64}),
         lambda row: row["request_contract"].update({"text_model": "gpt-5.6-sol"}),
+        lambda row: row["request_contract"].update({"client_pixel_dimensions_present": True}),
+        lambda row: row["request_contract"].update({"provider_size_mapped_from_ratio": False}),
         lambda row: row["request_contract"]["action_by_model"].update({"gpt-image-2": "generate"}),
         lambda row: row["request_contract"]["instruction_profile_by_model"].update({"gpt-image-2": "strict"}),
         lambda row: row["production_jobs"]["gpt-image-2.5-sunburst"].update({"status": "error"}),
+        lambda row: row["production_jobs"]["gpt-image-2"].update({"api_model": "gpt-image-2.5-flare"}),
+        lambda row: row["production_jobs"]["gpt-image-2.5-flare"].update({"api_dispatch_profile": "strict"}),
+        lambda row: row["production_jobs"]["gpt-image-2"].update({"api_action_mode": "generate"}),
+        lambda row: row["production_jobs"]["gpt-image-2"].update({"dreamapi_contract_sha256": "0" * 64}),
+        lambda row: row["production_jobs"]["gpt-image-2"].update({"contract_commit": "f7c1798"}),
+        lambda row: row["production_jobs"]["gpt-image-2"].update({"client_request_id": "wrong-request"}),
+        lambda row: row["production_jobs"]["gpt-image-2"].update({"created_at": "2026-09-14T20:19:18+08:00"}),
+        lambda row: row["production_jobs"]["gpt-image-2"].update({"history_occurrences": 2}),
+        lambda row: row["production_jobs"]["gpt-image-2"].update({"requested_ratio": "1024x1024"}),
         lambda row: row["production_jobs"]["gpt-image-2.5-flare"]["artifact"].update({"sha256": "0" * 64}),
         lambda row: row["contrastive_failures"]["sunburst_with_standard_instruction"].update({"instruction_profile": "strict"}),
         lambda row: row["contrastive_failures"].update({"interpretation": "proves deterministic causality"}),
+        lambda row: row.update({"authorization": "redacted"}),
+        lambda row: row["production_jobs"]["gpt-image-2"].update({"metadata": {"secret": "redacted"}}),
+        lambda row: row["production_jobs"]["gpt-image-2"]["visual_review"].update({"note": "Bearer redacted"}),
     )
     for index, mutate in enumerate(mutations):
         case = tmp_path / str(index)
@@ -183,6 +409,33 @@ def test_dreamapi_migration_e2e_gate_fails_closed_on_contract_job_or_artifact_dr
         "artifact bytes invalid" in error
         for error in MODULE.validate_dreamapi_migration_e2e_manifest()
     )
+
+
+def test_dreamapi_migration_e2e_rejects_duplicate_job_and_client_ids(tmp_path, monkeypatch):
+    original = json.loads(MODULE.DREAMAPI_MIGRATION_E2E_MANIFEST.read_text(encoding="utf8"))
+    source_dir = MODULE.DREAMAPI_MIGRATION_E2E_MANIFEST.parent
+    cases = []
+    duplicate_job = json.loads(json.dumps(original))
+    duplicate_job["production_jobs"]["gpt-image-2"]["job_id"] = (
+        duplicate_job["contrastive_failures"]["image_2_with_strict_instruction"]["job_id"]
+    )
+    cases.append((duplicate_job, "DreamAPI migration job IDs are not unique"))
+    duplicate_client = json.loads(json.dumps(original))
+    duplicate_client["production_jobs"]["gpt-image-2"]["client_request_id"] = (
+        duplicate_client["production_jobs"]["gpt-image-2.5-flare"]["client_request_id"]
+    )
+    cases.append((duplicate_client, "DreamAPI migration client request IDs are not unique"))
+
+    for index, (record, expected_error) in enumerate(cases):
+        case = tmp_path / str(index)
+        case.mkdir()
+        manifest = case / "verification.json"
+        manifest.write_text(json.dumps(record), encoding="utf8")
+        for job in original["production_jobs"].values():
+            name = job["artifact"]["file"]
+            (case / name).write_bytes((source_dir / name).read_bytes())
+        monkeypatch.setattr(MODULE, "DREAMAPI_MIGRATION_E2E_MANIFEST", manifest)
+        assert expected_error in MODULE.validate_dreamapi_migration_e2e_manifest()
 
 
 def test_uploaded_workflow_live_schema_evidence_is_fail_closed():

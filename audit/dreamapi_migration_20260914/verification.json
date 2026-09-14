@@ -1,12 +1,51 @@
 {
   "verification": "PASS",
-  "verified_at": "2026-09-14T14:45:26+08:00",
+  "verified_at": "2026-09-14T20:23:39+08:00",
   "provider": "DreamAPI",
-  "evidence_scope": "per-model production request-contract matrix",
+  "evidence_scope": "single-release production E2E for all supported DreamAPI image models",
   "source_project_version": "1.0.3",
   "source_project_checks_passed": 8,
-  "unified_release_e2e": false,
-  "tested_release_commit": null,
+  "unified_release_e2e": true,
+  "tested_release_commit": "f7c179871747355d11cb5f2789f561a256f671d5",
+  "runtime_payload": {
+    "format": "framed-v1",
+    "files": [
+      "comfy_watchdog.py",
+      "server.py",
+      "static/index.html",
+      "static/promptgen.html",
+      "tools/start_comfy_watchdog.ps1"
+    ],
+    "sha256": "631f0a5cd36b648165956fd817d79fa66ba83934746da0bd7ed7c207cbec60f0"
+  },
+  "release_identity_evidence": {
+    "method": "formal release transaction, byte hashes, and process timeline",
+    "attestation_scope": "operational audit evidence, not job-self-attested or provider-signed",
+    "transaction_id": "20260914T121318Z-30c3e020b7104b1b8e4645fe8b48e8ea",
+    "phase": "committed",
+    "phase_mtime": "2026-09-14T20:16:43+08:00",
+    "completed_mtime": "2026-09-14T20:16:44+08:00",
+    "server_service": {
+      "invocation_id": "6b002a3adfca47329e60abbed99b4199",
+      "active_since": "2026-09-14T20:16:19+08:00",
+      "restart_count": 0
+    },
+    "remote_sha256": {
+      "server.py": "0f868fdf1a4e0d37b087dc7e0d9f3a611160a37c476e20243ad66094e81ba9f8",
+      "static/index.html": "a3a8f5a6b8e5aba7648ebc6a3c07b1183f581761046348610a4857191791ec56",
+      "static/promptgen.html": "a3a8f5a6b8e5aba7648ebc6a3c07b1183f581761046348610a4857191791ec56"
+    },
+    "workstation_watchdog": {
+      "process_id": 26924,
+      "active_since": "2026-09-14T18:17:05.129+08:00",
+      "file_sha256": "855c283adc8f21a0ac1a61c3ec68d1d31a73c539068623dba803bf1aea968ffa",
+      "launcher_sha256": "95bcaf1130313b462d2681a7d0758970d33a5e4c83267e2dd4f2a0e741814bae",
+      "dreamapi_contract_sha256": "665d283bd420f76f031d9530f1d757f022d6cc16a5c9e9bc315e4966da797959",
+      "dreamapi_uncertainty_fence": false
+    },
+    "first_job_created_at": "2026-09-14T20:19:18.830+08:00",
+    "last_job_created_at": "2026-09-14T20:20:28.230+08:00"
+  },
   "request_contract": {
     "method": "POST",
     "base_url": "https://dreamapi.club",
@@ -25,6 +64,8 @@
     "tool_count": 1,
     "tool_type": "image_generation",
     "top_level_tool_choice_present": false,
+    "client_pixel_dimensions_present": false,
+    "provider_size_mapped_from_ratio": true,
     "action_by_model": {
       "gpt-image-2": "omitted",
       "gpt-image-2.5-flare": "generate",
@@ -38,50 +79,20 @@
   },
   "production_jobs": {
     "gpt-image-2": {
-      "job_id": "d2a4d4c89b17",
-      "created_at": "2026-09-14T11:50:30.949+08:00",
-      "contract_commit": "bd14286",
+      "job_id": "36aa8e4c8776",
+      "client_request_id": "migration-e2e-f7c1798-gpt-image-2",
+      "created_at": "2026-09-14T20:19:18.830+08:00",
+      "contract_commit": "f7c179871747355d11cb5f2789f561a256f671d5",
       "instruction_profile": "standard",
+      "api_model": "gpt-image-2",
+      "api_dispatch_profile": "standard",
+      "api_action_mode": "omitted",
+      "dreamapi_contract_sha256": "665d283bd420f76f031d9530f1d757f022d6cc16a5c9e9bc315e4966da797959",
       "status": "done",
       "provider_status": "API_DONE",
       "generation_backend": "api",
       "submit_attempts": 1,
-      "requested_quality": "low",
-      "requested_fit": "contain",
-      "requested_ratio": "1:1",
-      "upstream_model_reported": "unknown",
-      "upstream_quality_reported": "medium",
-      "upstream_size_reported": "1254x1254",
-      "source_size": "1254x1254",
-      "output_size": "1024x1024",
-      "elapsed_seconds": 63.8,
-      "api_response_id_present": true,
-      "artifact": {
-        "file": "gpt-image-2.png",
-        "format": "PNG",
-        "width": 1024,
-        "height": 1024,
-        "bytes": 672455,
-        "sha256": "8eb48ef0be604f4f879bfdabb05304114f67a4e38fd3782cd6f4724012013ea8"
-      },
-      "visual_review": {
-        "status": "PASS",
-        "subject": "single blue vase on white",
-        "not_blank_or_corrupt": true,
-        "complete_subject": true,
-        "visible_text_logo_watermark": false,
-        "obvious_crop_problem": false
-      }
-    },
-    "gpt-image-2.5-flare": {
-      "job_id": "b603d35c3feb",
-      "created_at": "2026-09-14T11:51:39.607+08:00",
-      "contract_commit": "bd14286",
-      "instruction_profile": "standard",
-      "status": "done",
-      "provider_status": "API_DONE",
-      "generation_backend": "api",
-      "submit_attempts": 1,
+      "history_occurrences": 1,
       "requested_quality": "low",
       "requested_fit": "contain",
       "requested_ratio": "1:1",
@@ -90,15 +101,57 @@
       "upstream_size_reported": "1254x1254",
       "source_size": "1254x1254",
       "output_size": "1024x1024",
-      "elapsed_seconds": 82.7,
+      "elapsed_seconds": 28.2,
+      "api_response_id_present": true,
+      "artifact": {
+        "file": "gpt-image-2.png",
+        "format": "PNG",
+        "width": 1024,
+        "height": 1024,
+        "bytes": 904227,
+        "sha256": "8d3b69ebc3d1cfe5b86b314673a02d04b4105e93d31998dcc0c33b580e239c09"
+      },
+      "visual_review": {
+        "status": "PASS",
+        "subject": "single blue ceramic vase on white",
+        "not_blank_or_corrupt": true,
+        "complete_subject": true,
+        "visible_text_logo_watermark": false,
+        "obvious_crop_problem": false
+      }
+    },
+    "gpt-image-2.5-flare": {
+      "job_id": "4637a3f0b1f0",
+      "client_request_id": "migration-e2e-f7c1798-gpt-image-2_5-flare",
+      "created_at": "2026-09-14T20:19:52.301+08:00",
+      "contract_commit": "f7c179871747355d11cb5f2789f561a256f671d5",
+      "instruction_profile": "standard",
+      "api_model": "gpt-image-2.5-flare",
+      "api_dispatch_profile": "standard",
+      "api_action_mode": "generate",
+      "dreamapi_contract_sha256": "665d283bd420f76f031d9530f1d757f022d6cc16a5c9e9bc315e4966da797959",
+      "status": "done",
+      "provider_status": "API_DONE",
+      "generation_backend": "api",
+      "submit_attempts": 1,
+      "history_occurrences": 1,
+      "requested_quality": "low",
+      "requested_fit": "contain",
+      "requested_ratio": "1:1",
+      "upstream_model_reported": "unknown",
+      "upstream_quality_reported": "low",
+      "upstream_size_reported": "1254x1254",
+      "source_size": "1254x1254",
+      "output_size": "1024x1024",
+      "elapsed_seconds": 26.2,
       "api_response_id_present": true,
       "artifact": {
         "file": "gpt-image-2_5-flare.png",
         "format": "PNG",
         "width": 1024,
         "height": 1024,
-        "bytes": 926830,
-        "sha256": "941980583693157c1f775fb19893011fdf6cbbc8688f492fc11b7169a1baedbb"
+        "bytes": 970977,
+        "sha256": "e6c9af8ab362be1a56b6dde43707ce03479c4ef4b679d9419df4189a7e72d815"
       },
       "visual_review": {
         "status": "PASS",
@@ -110,14 +163,20 @@
       }
     },
     "gpt-image-2.5-sunburst": {
-      "job_id": "00a4fca82cdd",
-      "created_at": "2026-09-14T12:19:00.535+08:00",
-      "contract_commit": "76ed164",
+      "job_id": "622a20c8e528",
+      "client_request_id": "migration-e2e-f7c1798-gpt-image-2_5-sunburst",
+      "created_at": "2026-09-14T20:20:28.230+08:00",
+      "contract_commit": "f7c179871747355d11cb5f2789f561a256f671d5",
       "instruction_profile": "strict",
+      "api_model": "gpt-image-2.5-sunburst",
+      "api_dispatch_profile": "strict",
+      "api_action_mode": "generate",
+      "dreamapi_contract_sha256": "665d283bd420f76f031d9530f1d757f022d6cc16a5c9e9bc315e4966da797959",
       "status": "done",
       "provider_status": "API_DONE",
       "generation_backend": "api",
       "submit_attempts": 1,
+      "history_occurrences": 1,
       "requested_quality": "low",
       "requested_fit": "contain",
       "requested_ratio": "1:1",
@@ -126,15 +185,15 @@
       "upstream_size_reported": "1254x1254",
       "source_size": "1254x1254",
       "output_size": "1024x1024",
-      "elapsed_seconds": 55.0,
+      "elapsed_seconds": 25.2,
       "api_response_id_present": true,
       "artifact": {
         "file": "gpt-image-2_5-sunburst.png",
         "format": "PNG",
         "width": 1024,
         "height": 1024,
-        "bytes": 706241,
-        "sha256": "542ae18b9d2ebc78f76748ab27b4ad2f04225c92c17fe74cc7fee537b6c59dff"
+        "bytes": 687943,
+        "sha256": "fd387e5927defd65f714a8756efebdb4695d141b708520ef41d33ab4c25d0247"
       },
       "visual_review": {
         "status": "PASS",

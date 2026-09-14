@@ -30,6 +30,8 @@ import time
 import urllib.request
 import uuid
 
+from PIL import Image, ImageStat
+
 BASE = pathlib.Path(__file__).resolve().parents[1]
 E2E_MANIFEST = BASE / "audit" / "private_realism_workflows" / "e2e_manifest.json"
 SCAIL_E2E_MANIFEST = BASE / "audit" / "scail2_video_e2e.json"
@@ -108,6 +110,56 @@ MIN_SCRIPT_CONTRACTS = 55
 MIN_PYTEST_FILES = 35
 RELEASE_TEST_INVENTORY_SHA256 = "e823435150d67179b778e9f05b5d791fad3d823d163b982c9bb761af1307cb3a"
 DREAMAPI_CONTRACT_SHA256 = "665d283bd420f76f031d9530f1d757f022d6cc16a5c9e9bc315e4966da797959"
+DREAMAPI_TESTED_RELEASE_COMMIT = "f7c179871747355d11cb5f2789f561a256f671d5"
+DREAMAPI_RUNTIME_PAYLOAD_FORMAT = "framed-v1"
+DREAMAPI_RUNTIME_PAYLOAD_FILES = (
+    "comfy_watchdog.py",
+    "server.py",
+    "static/index.html",
+    "static/promptgen.html",
+    "tools/start_comfy_watchdog.ps1",
+)
+DREAMAPI_RUNTIME_PAYLOAD_SHA256 = "631f0a5cd36b648165956fd817d79fa66ba83934746da0bd7ed7c207cbec60f0"
+DREAMAPI_MIN_VISIBLE_RGB_STDDEV = 2.0
+DREAMAPI_PRIVATE_NORMALIZED_KEYS = {
+    "api_response_id",
+    "api_key",
+    "authorization",
+    "password",
+    "cookie",
+    "access_token",
+    "refresh_token",
+    "bearer_token",
+    "secret",
+}
+DREAMAPI_RELEASE_IDENTITY_EVIDENCE = {
+    "method": "formal release transaction, byte hashes, and process timeline",
+    "attestation_scope": "operational audit evidence, not job-self-attested or provider-signed",
+    "transaction_id": "20260914T121318Z-30c3e020b7104b1b8e4645fe8b48e8ea",
+    "phase": "committed",
+    "phase_mtime": "2026-09-14T20:16:43+08:00",
+    "completed_mtime": "2026-09-14T20:16:44+08:00",
+    "server_service": {
+        "invocation_id": "6b002a3adfca47329e60abbed99b4199",
+        "active_since": "2026-09-14T20:16:19+08:00",
+        "restart_count": 0,
+    },
+    "remote_sha256": {
+        "server.py": "0f868fdf1a4e0d37b087dc7e0d9f3a611160a37c476e20243ad66094e81ba9f8",
+        "static/index.html": "a3a8f5a6b8e5aba7648ebc6a3c07b1183f581761046348610a4857191791ec56",
+        "static/promptgen.html": "a3a8f5a6b8e5aba7648ebc6a3c07b1183f581761046348610a4857191791ec56",
+    },
+    "workstation_watchdog": {
+        "process_id": 26924,
+        "active_since": "2026-09-14T18:17:05.129+08:00",
+        "file_sha256": "855c283adc8f21a0ac1a61c3ec68d1d31a73c539068623dba803bf1aea968ffa",
+        "launcher_sha256": "95bcaf1130313b462d2681a7d0758970d33a5e4c83267e2dd4f2a0e741814bae",
+        "dreamapi_contract_sha256": DREAMAPI_CONTRACT_SHA256,
+        "dreamapi_uncertainty_fence": False,
+    },
+    "first_job_created_at": "2026-09-14T20:19:18.830+08:00",
+    "last_job_created_at": "2026-09-14T20:20:28.230+08:00",
+}
 KNOWN_BASELINE_SCRIPT_FAILURES = {}
 WATCHDOG_STATE_KEYS = {
     "service_exists", "service_b64", "service_mode",
@@ -662,12 +714,171 @@ def validate_dreamapi_sidebar_e2e_manifest():
     return errors
 
 
+def framed_v1_payload_sha256(payloads):
+    """Hash named bytes with unambiguous big-endian length framing."""
+    if not isinstance(payloads, dict) or not payloads:
+        raise ValueError("framed payloads must be a non-empty mapping")
+    digest = hashlib.sha256()
+    for relative in sorted(payloads):
+        data = payloads[relative]
+        if not isinstance(relative, str) or not isinstance(data, bytes):
+            raise TypeError("framed payload paths must be strings and values must be bytes")
+        path_bytes = relative.encode("utf-8")
+        digest.update(len(path_bytes).to_bytes(4, "big"))
+        digest.update(path_bytes)
+        digest.update(len(data).to_bytes(8, "big"))
+        digest.update(data)
+    return digest.hexdigest()
+
+
+def git_runtime_payload_sha256(commit, repository=None):
+    repository = pathlib.Path(repository or BASE)
+    if not re.fullmatch(r"[0-9a-f]{40}", str(commit or "")):
+        raise RuntimeError("DreamAPI tested release commit must be a full lowercase SHA-1")
+    exists = subprocess.run(
+        ["git", "cat-file", "-e", f"{commit}^{{commit}}"], cwd=repository,
+        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+    )
+    if exists.returncode:
+        raise RuntimeError("DreamAPI tested release commit does not exist")
+    payloads = {}
+    for relative in DREAMAPI_RUNTIME_PAYLOAD_FILES:
+        result = subprocess.run(
+            ["git", "show", f"{commit}:{relative}"], cwd=repository,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        if result.returncode:
+            raise RuntimeError(f"DreamAPI runtime file missing from commit: {relative}")
+        payloads[relative] = bytes(result.stdout)
+    return framed_v1_payload_sha256(payloads)
+
+
+def validate_dreamapi_runtime_payload(record, repository=None):
+    repository = pathlib.Path(repository or BASE)
+    errors = []
+    tested_commit = record.get("tested_release_commit")
+    expected_payload = {
+        "format": DREAMAPI_RUNTIME_PAYLOAD_FORMAT,
+        "files": list(DREAMAPI_RUNTIME_PAYLOAD_FILES),
+        "sha256": DREAMAPI_RUNTIME_PAYLOAD_SHA256,
+    }
+    if tested_commit != DREAMAPI_TESTED_RELEASE_COMMIT:
+        errors.append("DreamAPI tested release commit pin invalid")
+    if (record.get("runtime_payload") or {}) != expected_payload:
+        errors.append("DreamAPI runtime payload metadata invalid")
+
+    try:
+        candidate_digest = git_runtime_payload_sha256(tested_commit, repository)
+    except Exception as error:
+        errors.append(f"DreamAPI tested release commit invalid: {error}")
+        candidate_digest = None
+    try:
+        head_result = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=repository, text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True,
+        )
+        head = head_result.stdout.strip()
+        if not re.fullmatch(r"[0-9a-f]{40}", head):
+            raise RuntimeError("HEAD is not a full commit SHA-1")
+        ancestor = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", str(tested_commit), head], cwd=repository,
+            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+        )
+        if ancestor.returncode == 1:
+            errors.append("DreamAPI tested release commit is not an ancestor of HEAD")
+        elif ancestor.returncode:
+            raise RuntimeError("unable to verify tested release ancestry")
+        head_digest = git_runtime_payload_sha256(head, repository)
+    except Exception as error:
+        errors.append(f"DreamAPI current release commit invalid: {error}")
+        head_digest = None
+
+    workspace = subprocess.run(
+        ["git", "diff", "--quiet", "HEAD", "--", *DREAMAPI_RUNTIME_PAYLOAD_FILES],
+        cwd=repository, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+    )
+    if workspace.returncode == 1:
+        errors.append("DreamAPI runtime payload differs between HEAD and workspace")
+    elif workspace.returncode:
+        errors.append("DreamAPI workspace runtime payload could not be verified")
+
+    recorded_digest = (record.get("runtime_payload") or {}).get("sha256")
+    if candidate_digest is not None and not hmac.compare_digest(
+            candidate_digest, DREAMAPI_RUNTIME_PAYLOAD_SHA256):
+        errors.append("DreamAPI tested release runtime payload digest invalid")
+    if head_digest is not None and candidate_digest is not None and not hmac.compare_digest(
+            head_digest, candidate_digest):
+        errors.append("DreamAPI runtime payload changed after tested release")
+    if candidate_digest is not None and not hmac.compare_digest(
+            candidate_digest, str(recorded_digest or "")):
+        errors.append("DreamAPI recorded runtime payload digest invalid")
+    return errors
+
+
+def normalize_evidence_key(value):
+    with_acronym_boundaries = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1_\2", str(value))
+    with_word_boundaries = re.sub(
+        r"(?<=[a-z0-9])(?=[A-Z])", "_", with_acronym_boundaries,
+    )
+    return re.sub(r"[^a-z0-9]+", "_", with_word_boundaries.lower()).strip("_")
+
+
+def find_dreamapi_private_evidence(value, path="$"):
+    findings = []
+    if isinstance(value, dict):
+        for key, child in value.items():
+            normalized = normalize_evidence_key(key)
+            child_path = f"{path}.{key}"
+            if normalized in DREAMAPI_PRIVATE_NORMALIZED_KEYS:
+                findings.append(f"forbidden key at {child_path}")
+            findings.extend(find_dreamapi_private_evidence(child, child_path))
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            findings.extend(find_dreamapi_private_evidence(child, f"{path}[{index}]"))
+    elif isinstance(value, str):
+        normalized = value.lstrip().lower()
+        if normalized.startswith(("bearer", "sk-", "resp_")):
+            findings.append(f"forbidden value prefix at {path}")
+    return findings
+
+
+def validate_png_artifact(path, expected_bytes, expected_sha256, expected_size):
+    artifact_path = pathlib.Path(path)
+    try:
+        if artifact_path.stat().st_size != expected_bytes:
+            return ["artifact bytes invalid"]
+        raw = artifact_path.read_bytes()
+    except Exception:
+        return ["artifact missing"]
+    if (len(raw) != expected_bytes
+            or hashlib.sha256(raw).hexdigest() != expected_sha256):
+        return ["artifact bytes invalid"]
+    try:
+        with Image.open(io.BytesIO(raw)) as image:
+            if image.format != "PNG" or image.size != expected_size:
+                return ["PNG format or dimensions invalid"]
+            image.verify()
+        with Image.open(io.BytesIO(raw)) as image:
+            image.load()
+            rgba = image.convert("RGBA")
+            visible = Image.alpha_composite(
+                Image.new("RGBA", rgba.size, (255, 255, 255, 255)), rgba,
+            ).convert("RGB")
+            if max(ImageStat.Stat(visible).stddev) < DREAMAPI_MIN_VISIBLE_RGB_STDDEV:
+                return ["PNG visible content variance too low"]
+    except Exception:
+        return ["PNG decode invalid"]
+    return []
+
+
 def validate_dreamapi_migration_e2e_manifest():
     try:
         record = json.loads(DREAMAPI_MIGRATION_E2E_MANIFEST.read_text(encoding="utf-8"))
     except Exception as error:
         return [f"DreamAPI migration E2E manifest unreadable: {error}"]
     errors = []
+    if find_dreamapi_private_evidence(record):
+        errors.append("DreamAPI migration manifest contains private response or credential data")
     standard_instructions = (
         "You are an image generation dispatcher. Call the provided image_generation "
         "tool exactly once. Do not return or rewrite a prompt. Return no text."
@@ -685,18 +896,25 @@ def validate_dreamapi_migration_e2e_manifest():
         },
         "stream": False, "tool_count": 1, "tool_type": "image_generation",
         "top_level_tool_choice_present": False,
+        "client_pixel_dimensions_present": False,
+        "provider_size_mapped_from_ratio": True,
         "action_by_model": {
             "gpt-image-2": "omitted", "gpt-image-2.5-flare": "generate",
             "gpt-image-2.5-sunburst": "generate",
         },
     }
     if (record.get("verification") != "PASS" or record.get("provider") != "DreamAPI"
-            or record.get("evidence_scope") != "per-model production request-contract matrix"
+            or record.get("evidence_scope")
+            != "single-release production E2E for all supported DreamAPI image models"
             or record.get("source_project_version") != "1.0.3"
             or record.get("source_project_checks_passed") != 8
-            or record.get("unified_release_e2e") is not False
-            or record.get("tested_release_commit") is not None):
+            or record.get("unified_release_e2e") is not True
+            or record.get("tested_release_commit") != DREAMAPI_TESTED_RELEASE_COMMIT):
         errors.append("DreamAPI migration E2E identity invalid")
+    errors.extend(validate_dreamapi_runtime_payload(record))
+    release_identity = record.get("release_identity_evidence") or {}
+    if release_identity != DREAMAPI_RELEASE_IDENTITY_EVIDENCE:
+        errors.append("DreamAPI release identity evidence invalid")
     if (record.get("request_contract") or {}) != expected_contract:
         errors.append("DreamAPI migration request contract invalid")
     if (record.get("credential_handling") or {}) != {
@@ -714,30 +932,48 @@ def validate_dreamapi_migration_e2e_manifest():
     jobs = record.get("production_jobs") or {}
     expected_jobs = {
         "gpt-image-2": {
-            "job_id": "d2a4d4c89b17", "upstream_quality_reported": "medium",
-            "contract_commit": "bd14286", "instruction_profile": "standard",
-            "elapsed_seconds": 63.8, "artifact_file": "gpt-image-2.png", "artifact_bytes": 672455,
-            "artifact_sha256": "8eb48ef0be604f4f879bfdabb05304114f67a4e38fd3782cd6f4724012013ea8",
+            "job_id": "36aa8e4c8776",
+            "client_request_id": "migration-e2e-f7c1798-gpt-image-2",
+            "created_at": "2026-09-14T20:19:18.830+08:00",
+            "profile": "standard", "action": "omitted", "elapsed_seconds": 28.2,
+            "artifact_file": "gpt-image-2.png", "artifact_bytes": 904227,
+            "artifact_sha256": "8d3b69ebc3d1cfe5b86b314673a02d04b4105e93d31998dcc0c33b580e239c09",
         },
         "gpt-image-2.5-flare": {
-            "job_id": "b603d35c3feb", "upstream_quality_reported": "low",
-            "contract_commit": "bd14286", "instruction_profile": "standard",
-            "elapsed_seconds": 82.7, "artifact_file": "gpt-image-2_5-flare.png", "artifact_bytes": 926830,
-            "artifact_sha256": "941980583693157c1f775fb19893011fdf6cbbc8688f492fc11b7169a1baedbb",
+            "job_id": "4637a3f0b1f0",
+            "client_request_id": "migration-e2e-f7c1798-gpt-image-2_5-flare",
+            "created_at": "2026-09-14T20:19:52.301+08:00",
+            "profile": "standard", "action": "generate", "elapsed_seconds": 26.2,
+            "artifact_file": "gpt-image-2_5-flare.png", "artifact_bytes": 970977,
+            "artifact_sha256": "e6c9af8ab362be1a56b6dde43707ce03479c4ef4b679d9419df4189a7e72d815",
         },
         "gpt-image-2.5-sunburst": {
-            "job_id": "00a4fca82cdd", "upstream_quality_reported": "low",
-            "contract_commit": "76ed164", "instruction_profile": "strict",
-            "elapsed_seconds": 55.0, "artifact_file": "gpt-image-2_5-sunburst.png", "artifact_bytes": 706241,
-            "artifact_sha256": "542ae18b9d2ebc78f76748ab27b4ad2f04225c92c17fe74cc7fee537b6c59dff",
+            "job_id": "622a20c8e528",
+            "client_request_id": "migration-e2e-f7c1798-gpt-image-2_5-sunburst",
+            "created_at": "2026-09-14T20:20:28.230+08:00",
+            "profile": "strict", "action": "generate", "elapsed_seconds": 25.2,
+            "artifact_file": "gpt-image-2_5-sunburst.png", "artifact_bytes": 687943,
+            "artifact_sha256": "fd387e5927defd65f714a8756efebdb4695d141b708520ef41d33ab4c25d0247",
         },
     }
     if set(jobs) != set(expected_jobs):
         errors.append("DreamAPI migration model coverage invalid")
+    created_at_values = [
+        job.get("created_at") for job in jobs.values() if isinstance(job, dict)
+    ]
+    if (len(created_at_values) != len(expected_jobs)
+            or any(not isinstance(value, str) for value in created_at_values)
+            or release_identity.get("first_job_created_at") != min(created_at_values)
+            or release_identity.get("last_job_created_at") != max(created_at_values)):
+        errors.append("DreamAPI release identity job timeline invalid")
+    production_job_ids = []
+    client_request_ids = []
     for model, expected in expected_jobs.items():
         job = jobs.get(model) or {}
         artifact = job.get("artifact") or {}
         visual = job.get("visual_review") or {}
+        production_job_ids.append(job.get("job_id"))
+        client_request_ids.append(job.get("client_request_id"))
         try:
             created_at = datetime.datetime.fromisoformat(str(job.get("created_at") or ""))
             if created_at.tzinfo is None:
@@ -745,18 +981,26 @@ def validate_dreamapi_migration_e2e_manifest():
         except Exception:
             errors.append(f"DreamAPI migration timestamp invalid: {model}")
         if (job.get("job_id") != expected["job_id"]
-                or job.get("contract_commit") != expected["contract_commit"]
-                or job.get("instruction_profile") != expected["instruction_profile"]
+                or job.get("client_request_id") != expected["client_request_id"]
+                or job.get("created_at") != expected["created_at"]
+                or job.get("contract_commit") != DREAMAPI_TESTED_RELEASE_COMMIT
+                or job.get("instruction_profile") != expected["profile"]
+                or job.get("api_model") != model
+                or job.get("api_dispatch_profile") != expected["profile"]
+                or job.get("api_action_mode") != expected["action"]
+                or job.get("dreamapi_contract_sha256") != DREAMAPI_CONTRACT_SHA256
                 or job.get("status") != "done"
                 or job.get("provider_status") != "API_DONE" or job.get("generation_backend") != "api"
-                or job.get("submit_attempts") != 1 or job.get("requested_quality") != "low"
-                or job.get("requested_fit") != "contain" or job.get("requested_ratio") != "1:1"
+                or job.get("submit_attempts") != 1 or job.get("history_occurrences") != 1
+                or job.get("requested_quality") != "low" or job.get("requested_fit") != "contain"
+                or job.get("requested_ratio") != "1:1"
                 or job.get("upstream_model_reported") != "unknown"
-                or job.get("upstream_quality_reported") != expected["upstream_quality_reported"]
+                or job.get("upstream_quality_reported") != "low"
                 or job.get("upstream_size_reported") != "1254x1254"
                 or job.get("source_size") != "1254x1254" or job.get("output_size") != "1024x1024"
                 or job.get("elapsed_seconds") != expected["elapsed_seconds"]
-                or job.get("api_response_id_present") is not True):
+                or job.get("api_response_id_present") is not True
+                or "api_response_id" in job):
             errors.append(f"DreamAPI migration job contract invalid: {model}")
         if (artifact.get("file") != expected["artifact_file"] or artifact.get("format") != "PNG"
                 or artifact.get("width") != 1024 or artifact.get("height") != 1024
@@ -764,15 +1008,9 @@ def validate_dreamapi_migration_e2e_manifest():
                 or artifact.get("sha256") != expected["artifact_sha256"]):
             errors.append(f"DreamAPI migration artifact metadata invalid: {model}")
         artifact_path = DREAMAPI_MIGRATION_E2E_MANIFEST.parent / expected["artifact_file"]
-        try:
-            raw = artifact_path.read_bytes()
-        except Exception:
-            errors.append(f"DreamAPI migration artifact missing: {model}")
-        else:
-            if (len(raw) != expected["artifact_bytes"]
-                    or hashlib.sha256(raw).hexdigest() != expected["artifact_sha256"]
-                    or not raw.startswith(b"\x89PNG\r\n\x1a\n")):
-                errors.append(f"DreamAPI migration artifact bytes invalid: {model}")
+        for artifact_error in validate_png_artifact(
+                artifact_path, expected["artifact_bytes"], expected["artifact_sha256"], (1024, 1024)):
+            errors.append(f"DreamAPI migration {artifact_error}: {model}")
         if (visual.get("status") != "PASS" or visual.get("not_blank_or_corrupt") is not True
                 or visual.get("complete_subject") is not True
                 or visual.get("visible_text_logo_watermark") is not False
@@ -794,8 +1032,10 @@ def validate_dreamapi_migration_e2e_manifest():
     }
     if set(failures) != {*expected_failures, "interpretation"}:
         errors.append("DreamAPI migration contrastive failure coverage invalid")
+    failure_job_ids = []
     for name, expected in expected_failures.items():
         failure = failures.get(name) or {}
+        failure_job_ids.append(failure.get("job_id"))
         try:
             failed_at = datetime.datetime.fromisoformat(str(failure.get("created_at") or ""))
             if failed_at.tzinfo is None:
@@ -810,6 +1050,13 @@ def validate_dreamapi_migration_e2e_manifest():
                 or failure.get("submit_attempts") != 1
                 or failure.get("error") != expected["error"]):
             errors.append(f"DreamAPI migration contrastive failure invalid: {name}")
+    all_job_ids = production_job_ids + failure_job_ids
+    if (any(not isinstance(value, str) or not value for value in all_job_ids)
+            or len(set(all_job_ids)) != len(all_job_ids)):
+        errors.append("DreamAPI migration job IDs are not unique")
+    if (any(not isinstance(value, str) or not value for value in client_request_ids)
+            or len(set(client_request_ids)) != len(client_request_ids)):
+        errors.append("DreamAPI migration client request IDs are not unique")
     interpretation = str(failures.get("interpretation") or "")
     if ("conservative per-model compatibility mapping" not in interpretation
             or "neither single failure proves deterministic provider causality" not in interpretation.lower()):
