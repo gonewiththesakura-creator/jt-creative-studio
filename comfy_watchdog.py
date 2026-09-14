@@ -23,10 +23,19 @@ DREAMAPI_RESPONSES_URL = "https://dreamapi.club/responses"
 DREAMAPI_REQUEST_LIMIT = 64 * 1024
 DREAMAPI_RESPONSE_LIMIT = 96 * 1024 * 1024
 DREAMAPI_TIMEOUT = 600
+DREAMAPI_TEXT_MODEL = "gpt-5.6-luna"
+DREAMAPI_DISPATCH_INSTRUCTIONS = (
+    "You are an image generation dispatcher. Call the provided image_generation "
+    "tool exactly once. Do not return or rewrite a prompt. Return no text."
+)
 DREAMAPI_IMAGE_QUALITIES = {
     "gpt-image-2": {"low", "medium", "high", "auto"},
     "gpt-image-2.5-flare": {"low", "medium", "high", "xhigh", "max", "auto"},
     "gpt-image-2.5-sunburst": {"low", "medium", "high", "xhigh", "max", "auto"},
+}
+DREAMAPI_IMAGE_ACTION_MODELS = {
+    "gpt-image-2.5-flare",
+    "gpt-image-2.5-sunburst",
 }
 DREAMAPI_SIZES = {"1024x1024", "1024x1536", "1536x1024", "864x1536", "1536x864"}
 
@@ -50,10 +59,13 @@ def _dreamapi_urlopen(request, timeout):
 
 def validate_dreamapi_payload(payload):
     """Accept only the image-generation request shape emitted by panel server.py."""
-    if not isinstance(payload, dict) or set(payload) != {"model", "input", "stream", "tools"}:
+    if not isinstance(payload, dict) or set(payload) != {
+            "model", "instructions", "input", "stream", "tools"}:
         raise ValueError("invalid DreamAPI request shape")
-    if payload.get("model") != "gpt-5.6-sol" or payload.get("stream") is not False:
-        raise ValueError("invalid DreamAPI response model or stream mode")
+    if payload.get("model") != DREAMAPI_TEXT_MODEL or payload.get("stream") is not False:
+        raise ValueError("invalid DreamAPI dispatcher model or stream mode")
+    if payload.get("instructions") != DREAMAPI_DISPATCH_INSTRUCTIONS:
+        raise ValueError("invalid DreamAPI dispatch instructions")
     prompt = payload.get("input")
     if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 2000:
         raise ValueError("invalid DreamAPI prompt")
@@ -61,11 +73,16 @@ def validate_dreamapi_payload(payload):
     if not isinstance(tools, list) or len(tools) != 1 or not isinstance(tools[0], dict):
         raise ValueError("invalid DreamAPI image tool")
     tool = tools[0]
-    if set(tool) != {"type", "action", "model", "size", "quality"}:
-        raise ValueError("invalid DreamAPI image tool shape")
-    if tool.get("type") != "image_generation" or tool.get("action") != "generate":
-        raise ValueError("invalid DreamAPI image action")
     model = tool.get("model")
+    expected_keys = {"type", "model", "size", "quality"}
+    if model in DREAMAPI_IMAGE_ACTION_MODELS:
+        expected_keys.add("action")
+    if set(tool) != expected_keys:
+        raise ValueError("invalid DreamAPI image tool shape")
+    if tool.get("type") != "image_generation":
+        raise ValueError("invalid DreamAPI image tool type")
+    if model in DREAMAPI_IMAGE_ACTION_MODELS and tool.get("action") != "generate":
+        raise ValueError("invalid DreamAPI image action")
     quality = tool.get("quality")
     if model not in DREAMAPI_IMAGE_QUALITIES or quality not in DREAMAPI_IMAGE_QUALITIES[model]:
         raise ValueError("unsupported DreamAPI model or quality")

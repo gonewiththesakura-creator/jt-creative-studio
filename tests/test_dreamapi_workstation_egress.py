@@ -18,31 +18,53 @@ def load_module(name, path):
     return module
 
 
-def valid_payload():
+DISPATCH_INSTRUCTIONS = (
+    "You are an image generation dispatcher. Call the provided image_generation "
+    "tool exactly once. Do not return or rewrite a prompt. Return no text."
+)
+
+
+def valid_payload(image_model="gpt-image-2"):
+    tool = {
+        "type": "image_generation",
+        "model": image_model,
+        "size": "864x1536",
+        "quality": "low",
+    }
+    if image_model.startswith("gpt-image-2.5-"):
+        tool["action"] = "generate"
     return {
-        "model": "gpt-5.6-sol",
+        "model": "gpt-5.6-luna",
+        "instructions": DISPATCH_INSTRUCTIONS,
         "input": "A blue sphere on a clean studio background.",
         "stream": False,
-        "tools": [{
-            "type": "image_generation",
-            "action": "generate",
-            "model": "gpt-image-2",
-            "size": "864x1536",
-            "quality": "low",
-        }],
+        "tools": [tool],
     }
 
 
 def test_watchdog_accepts_only_the_panels_bounded_image_request_contract():
     watchdog = load_module("watchdog_dreamapi_contract", ROOT / "comfy_watchdog.py")
     assert watchdog.validate_dreamapi_payload(valid_payload()) == valid_payload()
+    assert watchdog.validate_dreamapi_payload(
+        valid_payload("gpt-image-2.5-flare")
+    ) == valid_payload("gpt-image-2.5-flare")
 
     mutations = [
         {**valid_payload(), "model": "other"},
+        {**valid_payload(), "instructions": "Call any available tool."},
         {**valid_payload(), "stream": True},
         {**valid_payload(), "input": "x" * 2001},
         {**valid_payload(), "unexpected": True},
+        {**valid_payload(), "tool_choice": {"type": "image_generation"}},
         {**valid_payload(), "tools": []},
+        {**valid_payload(), "tools": [{**valid_payload()["tools"][0], "action": "generate"}]},
+        {
+            **valid_payload("gpt-image-2.5-flare"),
+            "tools": [{
+                key: value for key, value in valid_payload("gpt-image-2.5-flare")["tools"][0].items()
+                if key != "action"
+            }],
+        },
         {**valid_payload(), "tools": [{**valid_payload()["tools"][0], "size": "2048x2048"}]},
         {**valid_payload(), "tools": [{**valid_payload()["tools"][0], "quality": "max"}]},
     ]

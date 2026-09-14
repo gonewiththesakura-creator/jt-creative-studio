@@ -51,6 +51,8 @@ def test_creator_api_channel_has_only_trusted_image_options():
         assert 'apiBaseUrl' not in text
         assert 'DREAMAPI_KEY' not in text
         assert 'gpt-5.6-sol' not in text
+        assert '<option value="gpt-image-2.5-flare" selected>' in text
+        assert text.index('value="gpt-image-2.5-flare"') < text.index('value="gpt-image-2"')
 
 
 def test_api_model_quality_options_are_linked_and_seed_is_not_misrepresented():

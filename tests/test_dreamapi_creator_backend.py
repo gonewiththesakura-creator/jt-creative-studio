@@ -98,7 +98,7 @@ class FakeResponse:
         return self.payload
 
 
-def test_dreamapi_runner_uses_responses_generate_tool_and_saves_exact_png(tmp_path, monkeypatch):
+def test_dreamapi_runner_uses_luna_dispatcher_and_saves_exact_png(tmp_path, monkeypatch):
     captured = {}
 
     def fake_open(request, data, timeout):
@@ -134,7 +134,13 @@ def test_dreamapi_runner_uses_responses_generate_tool_and_saves_exact_png(tmp_pa
     server.dreamapi_run_image(job, tmp_path)
 
     assert captured["url"] == "https://dreamapi.club/responses"
-    assert captured["body"]["model"] == "gpt-5.6-sol"
+    assert captured["body"]["model"] == "gpt-5.6-luna"
+    assert captured["body"]["instructions"] == (
+        "You are an image generation dispatcher. Call the provided "
+        "image_generation tool exactly once. Do not return or rewrite a prompt. "
+        "Return no text."
+    )
+    assert "tool_choice" not in captured["body"]
     assert captured["body"]["stream"] is False
     assert captured["body"]["tools"] == [{
         "type": "image_generation",
@@ -154,6 +160,46 @@ def test_dreamapi_runner_uses_responses_generate_tool_and_saves_exact_png(tmp_pa
     assert job["api_response_id"] == "resp_test_1"
     assert job["provider_status"] == "API_DONE"
     assert job["images"][0]["url"].startswith("/api/image/dreamjob001/")
+
+
+def test_dreamapi_image_2_omits_action_for_legacy_bridge_compatibility(tmp_path, monkeypatch):
+    captured = {}
+
+    def fake_open(_request, data, _timeout):
+        captured["body"] = json.loads(data.decode("utf-8"))
+        return FakeResponse({
+            "id": "resp_image_2",
+            "output": [{
+                "type": "image_generation_call",
+                "result": png_b64(),
+                "model": "gpt-image-2",
+                "quality": "low",
+                "size": "1024x1024",
+            }],
+        })
+
+    monkeypatch.setattr(server, "DREAMAPI_KEY", "test-key", raising=False)
+    monkeypatch.setattr(server, "_urlopen_bounded", fake_open)
+    job = {
+        "id": "dreamjob-image2",
+        "prompt": "a careful portrait",
+        "negative_prompt": "",
+        "width": 1024,
+        "height": 1024,
+        "api_model": "gpt-image-2",
+        "api_quality": "low",
+        "api_fit": "cover",
+        "images": [],
+    }
+
+    server.dreamapi_run_image(job, tmp_path)
+
+    assert captured["body"]["tools"] == [{
+        "type": "image_generation",
+        "model": "gpt-image-2",
+        "size": "1024x1024",
+        "quality": "low",
+    }]
 
 
 def test_dreamapi_runner_surfaces_bounded_json_error_detail(tmp_path, monkeypatch):

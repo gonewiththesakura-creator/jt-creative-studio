@@ -40,7 +40,11 @@ RH_KEY = os.environ.get("RUNNINGHUB_API_KEY", "")
 DREAMAPI_KEY = os.environ.get("DREAMAPI_KEY", "")
 DREAMAPI_BASE_URL = os.environ.get("DREAMAPI_BASE_URL", "https://dreamapi.club").rstrip("/")
 DREAMAPI_EGRESS_URL = os.environ.get("DREAMAPI_EGRESS_URL", "").strip()
-DREAMAPI_TEXT_MODEL = "gpt-5.6-sol"
+DREAMAPI_TEXT_MODEL = "gpt-5.6-luna"
+DREAMAPI_DISPATCH_INSTRUCTIONS = (
+    "You are an image generation dispatcher. Call the provided image_generation "
+    "tool exactly once. Do not return or rewrite a prompt. Return no text."
+)
 DREAMAPI_TIMEOUT = 600
 DREAMAPI_MAX_RESPONSE_BYTES = 96 * 1024 * 1024
 DREAMAPI_MAX_IMAGE_BYTES = 32 * 1024 * 1024
@@ -49,6 +53,10 @@ DREAMAPI_IMAGE_QUALITIES = {
     "gpt-image-2": {"low", "medium", "high", "auto"},
     "gpt-image-2.5-flare": {"low", "medium", "high", "xhigh", "max", "auto"},
     "gpt-image-2.5-sunburst": {"low", "medium", "high", "xhigh", "max", "auto"},
+}
+DREAMAPI_IMAGE_ACTION_MODELS = {
+    "gpt-image-2.5-flare",
+    "gpt-image-2.5-sunburst",
 }
 DREAMAPI_RATIO_SIZES = {
     "1:1": (1024, 1024),
@@ -2263,14 +2271,18 @@ def dreamapi_run_image(job, jobdir):
         job.get("prompt"), job.get("negative_prompt"), size, orientation)
     job["api_prompt_compacted"] = compacted
     job["api_upstream_prompt_chars"] = positive_chars
+    tool = {
+        "type": "image_generation", "model": model,
+        "size": size, "quality": quality,
+    }
+    if model in DREAMAPI_IMAGE_ACTION_MODELS:
+        tool["action"] = "generate"
     payload = {
         "model": DREAMAPI_TEXT_MODEL,
+        "instructions": DREAMAPI_DISPATCH_INSTRUCTIONS,
         "input": upstream_input,
         "stream": False,
-        "tools": [{
-            "type": "image_generation", "action": "generate", "model": model,
-            "size": size, "quality": quality,
-        }],
+        "tools": [tool],
     }
     request = urllib.request.Request(
         _dreamapi_request_endpoint(),
