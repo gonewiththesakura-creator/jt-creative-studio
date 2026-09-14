@@ -136,7 +136,7 @@ def test_dreamapi_runner_uses_luna_dispatcher_and_saves_exact_png(tmp_path, monk
     assert captured["url"] == "https://dreamapi.club/responses"
     assert captured["body"]["model"] == "gpt-5.6-luna"
     assert captured["body"]["instructions"] == (
-        "You are an image generation dispatcher. Call the provided "
+        "You are an image generation dispatcher. You must call the provided "
         "image_generation tool exactly once. Do not return or rewrite a prompt. "
         "Return no text."
     )

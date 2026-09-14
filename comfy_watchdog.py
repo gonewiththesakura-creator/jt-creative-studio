@@ -25,7 +25,7 @@ DREAMAPI_RESPONSE_LIMIT = 96 * 1024 * 1024
 DREAMAPI_TIMEOUT = 600
 DREAMAPI_TEXT_MODEL = "gpt-5.6-luna"
 DREAMAPI_DISPATCH_INSTRUCTIONS = (
-    "You are an image generation dispatcher. Call the provided image_generation "
+    "You are an image generation dispatcher. You must call the provided image_generation "
     "tool exactly once. Do not return or rewrite a prompt. Return no text."
 )
 DREAMAPI_IMAGE_QUALITIES = {

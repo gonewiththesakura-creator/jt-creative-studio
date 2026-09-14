@@ -42,7 +42,7 @@ DREAMAPI_BASE_URL = os.environ.get("DREAMAPI_BASE_URL", "https://dreamapi.club")
 DREAMAPI_EGRESS_URL = os.environ.get("DREAMAPI_EGRESS_URL", "").strip()
 DREAMAPI_TEXT_MODEL = "gpt-5.6-luna"
 DREAMAPI_DISPATCH_INSTRUCTIONS = (
-    "You are an image generation dispatcher. Call the provided image_generation "
+    "You are an image generation dispatcher. You must call the provided image_generation "
     "tool exactly once. Do not return or rewrite a prompt. Return no text."
 )
 DREAMAPI_TIMEOUT = 600
