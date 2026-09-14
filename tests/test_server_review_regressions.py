@@ -368,6 +368,10 @@ def test_creator_favorite_snapshot_survives_sanitization_and_reload(panel):
         "seed": 123456,
         "seed_mode": "fixed",
         "generation_backend": "api",
+        "api_model": "gpt-image-2.5-sunburst",
+        "api_quality": "xhigh",
+        "api_fit": "contain",
+        "api_ratio": "2:3",
         "params": {},
         "media": {"secret": "api/provider-file.png"},
         "media_names": {},
@@ -390,6 +394,10 @@ def test_creator_favorite_snapshot_survives_sanitization_and_reload(panel):
             "seed",
             "seed_mode",
             "generation_backend",
+            "api_model",
+            "api_quality",
+            "api_fit",
+            "api_ratio",
         )
     }
 

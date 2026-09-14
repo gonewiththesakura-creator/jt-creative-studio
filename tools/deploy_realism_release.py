@@ -36,6 +36,7 @@ SCAIL_E2E_MANIFEST = BASE / "audit" / "scail2_video_e2e.json"
 RETRO_CLOUD_E2E_MANIFEST = BASE / "audit" / "retro_manga_panel_e2e_cloud_w04.json"
 DREAMAPI_E2E_MANIFEST = BASE / "audit" / "dreamapi_creator_live_e2e.json"
 DREAMAPI_SIDEBAR_E2E_MANIFEST = BASE / "audit" / "dreamapi_sidebar_long_prompt_e2e.json"
+DREAMAPI_MIGRATION_E2E_MANIFEST = BASE / "audit" / "dreamapi_migration_20260914" / "verification.json"
 NEW_STYLE_E2E_MANIFEST = BASE / "audit" / "style221_222_panel_e2e_20260913.json"
 UPLOADED_WORKFLOW_LIVE_SCHEMA_MANIFEST = BASE / "audit" / "uploaded_workflows_live_schema_20260912.json"
 UPLOADED_WORKFLOW_E2E_MANIFEST = BASE / "audit" / "uploaded_workflows_live_e2e_20260912.json"
@@ -96,14 +97,17 @@ BOOTSTRAP_FENCE_UNIT_BYTES = (
     "RequiredBy=comfy-panel.service\n"
 ).encode("ascii")
 SSH_HOST_KEY_SHA256 = "SHA256:TBBAqO1joLOjtttAHJaGdmYYolwwvpkDJaFXGqKEgWA"
+DEPLOY_SSH_KEY_PATH = BASE / "tools" / "id_ed25519"
+SSH_KEEPALIVE_INTERVAL = 15
 PUBLIC_LARGE_VERIFY_TIMEOUT = 15 * 60
 PUBLIC_RESPONSE_MAX_BYTES = 16 * 1024 * 1024
 PUBLIC_GZIP_WIRE_OVERHEAD = 64 * 1024
 IDLE_STABILITY_CHECKS = 3
 IDLE_STABILITY_INTERVAL = 1.0
 MIN_SCRIPT_CONTRACTS = 55
-MIN_PYTEST_FILES = 34
-RELEASE_TEST_INVENTORY_SHA256 = "1dff2257e43eb6e0fd42778ecff1d6f8f1e2d60c4f0d1d228148f4e67011547b"
+MIN_PYTEST_FILES = 35
+RELEASE_TEST_INVENTORY_SHA256 = "e823435150d67179b778e9f05b5d791fad3d823d163b982c9bb761af1307cb3a"
+DREAMAPI_CONTRACT_SHA256 = "665d283bd420f76f031d9530f1d757f022d6cc16a5c9e9bc315e4966da797959"
 KNOWN_BASELINE_SCRIPT_FAILURES = {}
 WATCHDOG_STATE_KEYS = {
     "service_exists", "service_b64", "service_mode",
@@ -658,6 +662,161 @@ def validate_dreamapi_sidebar_e2e_manifest():
     return errors
 
 
+def validate_dreamapi_migration_e2e_manifest():
+    try:
+        record = json.loads(DREAMAPI_MIGRATION_E2E_MANIFEST.read_text(encoding="utf-8"))
+    except Exception as error:
+        return [f"DreamAPI migration E2E manifest unreadable: {error}"]
+    errors = []
+    standard_instructions = (
+        "You are an image generation dispatcher. Call the provided image_generation "
+        "tool exactly once. Do not return or rewrite a prompt. Return no text."
+    )
+    strict_instructions = standard_instructions.replace(". Call the", ". You must call the", 1)
+    expected_contract = {
+        "method": "POST", "base_url": "https://dreamapi.club", "path": "/responses",
+        "text_model": "gpt-5.6-luna",
+        "instruction_profiles": {
+            "standard": standard_instructions, "strict": strict_instructions,
+        },
+        "instruction_profile_by_model": {
+            "gpt-image-2": "standard", "gpt-image-2.5-flare": "standard",
+            "gpt-image-2.5-sunburst": "strict",
+        },
+        "stream": False, "tool_count": 1, "tool_type": "image_generation",
+        "top_level_tool_choice_present": False,
+        "action_by_model": {
+            "gpt-image-2": "omitted", "gpt-image-2.5-flare": "generate",
+            "gpt-image-2.5-sunburst": "generate",
+        },
+    }
+    if (record.get("verification") != "PASS" or record.get("provider") != "DreamAPI"
+            or record.get("evidence_scope") != "per-model production request-contract matrix"
+            or record.get("source_project_version") != "1.0.3"
+            or record.get("source_project_checks_passed") != 8
+            or record.get("unified_release_e2e") is not False
+            or record.get("tested_release_commit") is not None):
+        errors.append("DreamAPI migration E2E identity invalid")
+    if (record.get("request_contract") or {}) != expected_contract:
+        errors.append("DreamAPI migration request contract invalid")
+    if (record.get("credential_handling") or {}) != {
+        "browser_received_key": False, "repository_contains_key": False,
+        "server_secret_environment_only": True,
+    }:
+        errors.append("DreamAPI migration credential handling invalid")
+    try:
+        verified_at = datetime.datetime.fromisoformat(str(record.get("verified_at") or ""))
+        if verified_at.tzinfo is None:
+            raise ValueError("timezone missing")
+    except Exception:
+        errors.append("DreamAPI migration verification timestamp invalid")
+
+    jobs = record.get("production_jobs") or {}
+    expected_jobs = {
+        "gpt-image-2": {
+            "job_id": "d2a4d4c89b17", "upstream_quality_reported": "medium",
+            "contract_commit": "bd14286", "instruction_profile": "standard",
+            "elapsed_seconds": 63.8, "artifact_file": "gpt-image-2.png", "artifact_bytes": 672455,
+            "artifact_sha256": "8eb48ef0be604f4f879bfdabb05304114f67a4e38fd3782cd6f4724012013ea8",
+        },
+        "gpt-image-2.5-flare": {
+            "job_id": "b603d35c3feb", "upstream_quality_reported": "low",
+            "contract_commit": "bd14286", "instruction_profile": "standard",
+            "elapsed_seconds": 82.7, "artifact_file": "gpt-image-2_5-flare.png", "artifact_bytes": 926830,
+            "artifact_sha256": "941980583693157c1f775fb19893011fdf6cbbc8688f492fc11b7169a1baedbb",
+        },
+        "gpt-image-2.5-sunburst": {
+            "job_id": "00a4fca82cdd", "upstream_quality_reported": "low",
+            "contract_commit": "76ed164", "instruction_profile": "strict",
+            "elapsed_seconds": 55.0, "artifact_file": "gpt-image-2_5-sunburst.png", "artifact_bytes": 706241,
+            "artifact_sha256": "542ae18b9d2ebc78f76748ab27b4ad2f04225c92c17fe74cc7fee537b6c59dff",
+        },
+    }
+    if set(jobs) != set(expected_jobs):
+        errors.append("DreamAPI migration model coverage invalid")
+    for model, expected in expected_jobs.items():
+        job = jobs.get(model) or {}
+        artifact = job.get("artifact") or {}
+        visual = job.get("visual_review") or {}
+        try:
+            created_at = datetime.datetime.fromisoformat(str(job.get("created_at") or ""))
+            if created_at.tzinfo is None:
+                raise ValueError("timezone missing")
+        except Exception:
+            errors.append(f"DreamAPI migration timestamp invalid: {model}")
+        if (job.get("job_id") != expected["job_id"]
+                or job.get("contract_commit") != expected["contract_commit"]
+                or job.get("instruction_profile") != expected["instruction_profile"]
+                or job.get("status") != "done"
+                or job.get("provider_status") != "API_DONE" or job.get("generation_backend") != "api"
+                or job.get("submit_attempts") != 1 or job.get("requested_quality") != "low"
+                or job.get("requested_fit") != "contain" or job.get("requested_ratio") != "1:1"
+                or job.get("upstream_model_reported") != "unknown"
+                or job.get("upstream_quality_reported") != expected["upstream_quality_reported"]
+                or job.get("upstream_size_reported") != "1254x1254"
+                or job.get("source_size") != "1254x1254" or job.get("output_size") != "1024x1024"
+                or job.get("elapsed_seconds") != expected["elapsed_seconds"]
+                or job.get("api_response_id_present") is not True):
+            errors.append(f"DreamAPI migration job contract invalid: {model}")
+        if (artifact.get("file") != expected["artifact_file"] or artifact.get("format") != "PNG"
+                or artifact.get("width") != 1024 or artifact.get("height") != 1024
+                or artifact.get("bytes") != expected["artifact_bytes"]
+                or artifact.get("sha256") != expected["artifact_sha256"]):
+            errors.append(f"DreamAPI migration artifact metadata invalid: {model}")
+        artifact_path = DREAMAPI_MIGRATION_E2E_MANIFEST.parent / expected["artifact_file"]
+        try:
+            raw = artifact_path.read_bytes()
+        except Exception:
+            errors.append(f"DreamAPI migration artifact missing: {model}")
+        else:
+            if (len(raw) != expected["artifact_bytes"]
+                    or hashlib.sha256(raw).hexdigest() != expected["artifact_sha256"]
+                    or not raw.startswith(b"\x89PNG\r\n\x1a\n")):
+                errors.append(f"DreamAPI migration artifact bytes invalid: {model}")
+        if (visual.get("status") != "PASS" or visual.get("not_blank_or_corrupt") is not True
+                or visual.get("complete_subject") is not True
+                or visual.get("visible_text_logo_watermark") is not False
+                or visual.get("obvious_crop_problem") is not False):
+            errors.append(f"DreamAPI migration visual review invalid: {model}")
+
+    failures = record.get("contrastive_failures") or {}
+    expected_failures = {
+        "sunburst_with_standard_instruction": {
+            "job_id": "183417c847fd", "model": "gpt-image-2.5-sunburst",
+            "instruction_profile": "standard",
+            "error": "DreamAPI returned no completed image",
+        },
+        "image_2_with_strict_instruction": {
+            "job_id": "958806f9e3e0", "model": "gpt-image-2",
+            "instruction_profile": "strict",
+            "error": "DreamAPI HTTP 502: Upstream request failed",
+        },
+    }
+    if set(failures) != {*expected_failures, "interpretation"}:
+        errors.append("DreamAPI migration contrastive failure coverage invalid")
+    for name, expected in expected_failures.items():
+        failure = failures.get(name) or {}
+        try:
+            failed_at = datetime.datetime.fromisoformat(str(failure.get("created_at") or ""))
+            if failed_at.tzinfo is None:
+                raise ValueError("timezone missing")
+        except Exception:
+            errors.append(f"DreamAPI migration failure timestamp invalid: {name}")
+        if (failure.get("job_id") != expected["job_id"]
+                or failure.get("model") != expected["model"]
+                or failure.get("instruction_profile") != expected["instruction_profile"]
+                or failure.get("status") != "error"
+                or failure.get("provider_status") != "API_ERROR"
+                or failure.get("submit_attempts") != 1
+                or failure.get("error") != expected["error"]):
+            errors.append(f"DreamAPI migration contrastive failure invalid: {name}")
+    interpretation = str(failures.get("interpretation") or "")
+    if ("conservative per-model compatibility mapping" not in interpretation
+            or "neither single failure proves deterministic provider causality" not in interpretation.lower()):
+        errors.append("DreamAPI migration contrastive interpretation invalid")
+    return errors
+
+
 def validate_new_style_e2e_manifest():
     try:
         record = json.loads(NEW_STYLE_E2E_MANIFEST.read_text(encoding="utf-8"))
@@ -945,6 +1104,7 @@ def preflight_decision(config, server_source, execute=False, allow_unauthenticat
     uploaded_e2e_errors = validate_uploaded_workflow_e2e_manifest(config)
     dreamapi_e2e_errors = validate_dreamapi_e2e_manifest()
     dreamapi_sidebar_e2e_errors = validate_dreamapi_sidebar_e2e_manifest()
+    dreamapi_migration_e2e_errors = validate_dreamapi_migration_e2e_manifest()
     new_style_e2e_errors = validate_new_style_e2e_manifest()
     retro_cloud_errors = validate_retro_cloud_e2e_manifest()
     unauthenticated = auth_is_disabled(server_source)
@@ -967,6 +1127,8 @@ def preflight_decision(config, server_source, execute=False, allow_unauthenticat
         blockers.append("invalid DreamAPI creator E2E")
     if dreamapi_sidebar_e2e_errors:
         blockers.append("invalid DreamAPI sidebar E2E")
+    if dreamapi_migration_e2e_errors:
+        blockers.append("invalid DreamAPI migration E2E")
     if new_style_e2e_errors:
         blockers.append("invalid new style E2E")
     if retro_cloud_errors:
@@ -993,6 +1155,7 @@ def preflight_decision(config, server_source, execute=False, allow_unauthenticat
         "uploaded_workflow_e2e_errors": uploaded_e2e_errors,
         "dreamapi_e2e_errors": dreamapi_e2e_errors,
         "dreamapi_sidebar_e2e_errors": dreamapi_sidebar_e2e_errors,
+        "dreamapi_migration_e2e_errors": dreamapi_migration_e2e_errors,
         "new_style_e2e_errors": new_style_e2e_errors,
         "retro_cloud_e2e_errors": retro_cloud_errors,
         "public_billable_quota_errors": public_quota_errors,
@@ -1048,6 +1211,15 @@ def command(client, text, timeout=240):
     if code:
         raise RuntimeError(f"remote command failed ({code}): {err or out}")
     return out
+
+
+def configure_ssh_transport(client):
+    """Require one active SSH transport and keep it alive during long releases."""
+    transport = client.get_transport()
+    if transport is None or not transport.is_active():
+        raise RuntimeError("SSH transport is not active after authentication")
+    transport.set_keepalive(SSH_KEEPALIVE_INTERVAL)
+    return transport
 
 
 def _bootstrap_fence_probe_source():
@@ -1831,7 +2003,7 @@ for path in sorted(paths,key=lambda value:len(value.parts),reverse=True):
     command(client, "sudo python3 -c " + shlex.quote(script))
 
 
-def stage_file_resilient(client, local, remote, transaction, data):
+def stage_file_resilient(client, sftp, local, remote, transaction, data):
     """Upload and byte-verify one file inside this release transaction."""
     if not isinstance(data, bytes):
         raise TypeError(f"release payload must be immutable bytes: {local}")
@@ -1840,9 +2012,7 @@ def stage_file_resilient(client, local, remote, transaction, data):
     command(client, "mkdir -p -- " + shlex.quote(parent) + "; chmod 0700 -- " + shlex.quote(parent))
     last_error = None
     for attempt in range(1, 4):
-        sftp = None
         try:
-            sftp = client.open_sftp()
             with sftp.open(staged, "wb") as handle:
                 handle.write(data)
             with sftp.open(staged, "rb") as handle:
@@ -1856,12 +2026,6 @@ def stage_file_resilient(client, local, remote, transaction, data):
             if attempt == 3:
                 raise
             time.sleep(2 ** attempt)
-        finally:
-            if sftp is not None:
-                try:
-                    sftp.close()
-                except Exception:
-                    pass
     raise last_error
 
 
@@ -2054,6 +2218,22 @@ def emergency_stop_after_failed_release(client):
 def fetch_json(base, path):
     with urllib.request.urlopen(base.rstrip("/") + path, timeout=60) as response:
         return json.load(response)
+
+
+def require_dreamapi_release_health(health):
+    """Fail closed unless the public panel sees the matching workstation proxy."""
+    if not isinstance(health, dict):
+        raise RuntimeError("public DreamAPI health response is invalid")
+    required_true = (
+        "dreamapi_configured", "dreamapi_workstation_egress", "dreamapi_contract_match",
+    )
+    if any(health.get(field) is not True for field in required_true):
+        raise RuntimeError("public DreamAPI workstation contract is not ready")
+    if health.get("dreamapi_contract_sha256") != DREAMAPI_CONTRACT_SHA256:
+        raise RuntimeError("public DreamAPI contract hash is unexpected")
+    if health.get("dreamapi_uncertainty_fence") is not False:
+        raise RuntimeError("public DreamAPI outcome is still uncertain")
+    return health
 
 
 def require_public_idle(base, phase, samples=IDLE_STABILITY_CHECKS,
@@ -2583,7 +2763,7 @@ def deploy(files, payloads, public_base=PUBLIC_BASE,
                                           for data in payloads.values()):
         raise RuntimeError("immutable release payload set is invalid")
     require_public_idle(public_base, phase="preflight")
-    # Imported and credentials read only after fail-closed local preflight.
+    # Imported and connection metadata/key read only after fail-closed local preflight.
     import paramiko
 
     class PinnedSHA256Policy(paramiko.MissingHostKeyPolicy):
@@ -2598,6 +2778,9 @@ def deploy(files, payloads, public_base=PUBLIC_BASE,
 
     creds_path = BASE / "tools" / "creds.json"
     creds = json.loads(creds_path.read_text(encoding="utf-8"))
+    deploy_key = paramiko.Ed25519Key.from_private_key_file(
+        str(DEPLOY_SSH_KEY_PATH)
+    )
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(PinnedSHA256Policy())
     sftp = None
@@ -2615,9 +2798,10 @@ def deploy(files, payloads, public_base=PUBLIC_BASE,
     try:
         client.connect(
             creds["host"], port=int(creds["port"]), username=creds["user"],
-            password=creds["password"], timeout=30,
+            pkey=deploy_key, timeout=30,
             allow_agent=False, look_for_keys=False,
         )
+        configure_ssh_transport(client)
         # Owner-verified cleanup is safe even when the acquire response is lost.
         lock_acquired = True
         acquire_release_lock(client, transaction)
@@ -2636,10 +2820,10 @@ def deploy(files, payloads, public_base=PUBLIC_BASE,
         watchdog_state = capture_watchdog_state(client)
         remote_parent_paths = sorted({str(pathlib.PurePosixPath(remote).parent) for remote in remote_paths})
         command(client, "mkdir -p -- " + " ".join(shlex.quote(path) for path in remote_parent_paths))
-        for local, remote in files.items():
-            stage_file_resilient(client, local, remote, transaction, payloads[local])
-
         sftp = client.open_sftp()
+        for local, remote in files.items():
+            stage_file_resilient(client, sftp, local, remote, transaction, payloads[local])
+
         staged_server = transaction_file(transaction, REMOTE_ROOT + "/server.py", "stage")
         command(client, f"python3 -m py_compile {shlex.quote(staged_server)}")
         staged_config = transaction_file(transaction, REMOTE_ROOT + "/config.json", "stage")
@@ -2791,6 +2975,9 @@ def deploy(files, payloads, public_base=PUBLIC_BASE,
                 raise RuntimeError("public workflow list missing target workflows")
             if not set(UPLOADED_WORKFLOW_NAMES.values()).issubset(names):
                 raise RuntimeError("public workflow list missing uploaded workflows")
+            health = require_dreamapi_release_health(
+                fetch_json(public_base, "/api/health")
+            )
             install_watchdog_units(client)
             # From this point the release is fully verified. Persist commit before
             # reopening either restart-time or current-process admission.

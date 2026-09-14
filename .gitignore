@@ -15,6 +15,9 @@ reports/
 *.png
 !audit/dreamapi_creator_live_20260912.png
 !audit/dreamapi_sidebar_long_prompt_20260913.png
+!audit/dreamapi_migration_20260914/
+!audit/dreamapi_migration_20260914/*.png
+!audit/dreamapi_migration_20260914/verification.json
 *.jpg
 *.jpeg
 *.webp

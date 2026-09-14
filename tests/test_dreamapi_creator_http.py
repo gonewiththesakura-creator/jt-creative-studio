@@ -39,6 +39,13 @@ BASE = {
     "api_quality": "high",
     "api_fit": "cover",
     "api_ratio": "9:16",
+    "selection_snapshot": {
+        "state": {},
+        "api_model": "retired-image-model",
+        "api_quality": "retired-quality",
+        "api_fit": "stretch",
+        "api_ratio": "4:5",
+    },
     "client_request_id": "api-http-contract-1",
 }
 
@@ -75,6 +82,18 @@ def test_api_creator_submission_is_accepted_and_idempotent():
     assert job["api_model"] == "gpt-image-2.5-flare"
     assert job["api_quality"] == "high"
     assert job["api_fit"] == "cover"
+    assert job["api_dispatch_profile"] == "standard"
+    assert job["dreamapi_contract_sha256"] == server.DREAMAPI_CONTRACT_SHA256
+    assert job["api_action_mode"] == "generate"
+    assert {
+        key: job["selection_snapshot"][key]
+        for key in ("api_model", "api_quality", "api_fit", "api_ratio")
+    } == {
+        "api_model": "gpt-image-2.5-flare",
+        "api_quality": "high",
+        "api_fit": "cover",
+        "api_ratio": "9:16",
+    }
     assert job["batch"] == 1
     assert job["hd"] == 0
     assert job["seed_supported"] is False
@@ -95,6 +114,9 @@ def test_api_creator_submission_is_accepted_and_idempotent():
     assert public["api_model"] == "gpt-image-2.5-flare"
     assert public["api_quality"] == "high"
     assert public["api_fit"] == "cover"
+    assert public["api_dispatch_profile"] == "standard"
+    assert public["dreamapi_contract_sha256"] == server.DREAMAPI_CONTRACT_SHA256
+    assert public["api_action_mode"] == "generate"
     assert job["api_response_id"] == "resp_fixture"
     assert "api_response_id" not in public
     assert job["prompt"] == BASE["prompt"]
@@ -107,6 +129,9 @@ def test_api_creator_submission_is_accepted_and_idempotent():
     assert history_job["api_upstream_model"] == "unknown"
     assert history_job["api_upstream_quality"] == "high"
     assert history_job["api_upstream_size"] == "1024x1024"
+    assert history_job["api_dispatch_profile"] == "standard"
+    assert history_job["dreamapi_contract_sha256"] == server.DREAMAPI_CONTRACT_SHA256
+    assert history_job["api_action_mode"] == "generate"
 
 
 def test_api_creator_rejects_non_single_batch_and_hd():

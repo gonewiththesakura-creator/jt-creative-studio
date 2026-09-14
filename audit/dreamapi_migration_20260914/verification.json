@@ -1,0 +1,172 @@
+{
+  "verification": "PASS",
+  "verified_at": "2026-09-14T14:45:26+08:00",
+  "provider": "DreamAPI",
+  "evidence_scope": "per-model production request-contract matrix",
+  "source_project_version": "1.0.3",
+  "source_project_checks_passed": 8,
+  "unified_release_e2e": false,
+  "tested_release_commit": null,
+  "request_contract": {
+    "method": "POST",
+    "base_url": "https://dreamapi.club",
+    "path": "/responses",
+    "text_model": "gpt-5.6-luna",
+    "instruction_profiles": {
+      "standard": "You are an image generation dispatcher. Call the provided image_generation tool exactly once. Do not return or rewrite a prompt. Return no text.",
+      "strict": "You are an image generation dispatcher. You must call the provided image_generation tool exactly once. Do not return or rewrite a prompt. Return no text."
+    },
+    "instruction_profile_by_model": {
+      "gpt-image-2": "standard",
+      "gpt-image-2.5-flare": "standard",
+      "gpt-image-2.5-sunburst": "strict"
+    },
+    "stream": false,
+    "tool_count": 1,
+    "tool_type": "image_generation",
+    "top_level_tool_choice_present": false,
+    "action_by_model": {
+      "gpt-image-2": "omitted",
+      "gpt-image-2.5-flare": "generate",
+      "gpt-image-2.5-sunburst": "generate"
+    }
+  },
+  "credential_handling": {
+    "browser_received_key": false,
+    "repository_contains_key": false,
+    "server_secret_environment_only": true
+  },
+  "production_jobs": {
+    "gpt-image-2": {
+      "job_id": "d2a4d4c89b17",
+      "created_at": "2026-09-14T11:50:30.949+08:00",
+      "contract_commit": "bd14286",
+      "instruction_profile": "standard",
+      "status": "done",
+      "provider_status": "API_DONE",
+      "generation_backend": "api",
+      "submit_attempts": 1,
+      "requested_quality": "low",
+      "requested_fit": "contain",
+      "requested_ratio": "1:1",
+      "upstream_model_reported": "unknown",
+      "upstream_quality_reported": "medium",
+      "upstream_size_reported": "1254x1254",
+      "source_size": "1254x1254",
+      "output_size": "1024x1024",
+      "elapsed_seconds": 63.8,
+      "api_response_id_present": true,
+      "artifact": {
+        "file": "gpt-image-2.png",
+        "format": "PNG",
+        "width": 1024,
+        "height": 1024,
+        "bytes": 672455,
+        "sha256": "8eb48ef0be604f4f879bfdabb05304114f67a4e38fd3782cd6f4724012013ea8"
+      },
+      "visual_review": {
+        "status": "PASS",
+        "subject": "single blue vase on white",
+        "not_blank_or_corrupt": true,
+        "complete_subject": true,
+        "visible_text_logo_watermark": false,
+        "obvious_crop_problem": false
+      }
+    },
+    "gpt-image-2.5-flare": {
+      "job_id": "b603d35c3feb",
+      "created_at": "2026-09-14T11:51:39.607+08:00",
+      "contract_commit": "bd14286",
+      "instruction_profile": "standard",
+      "status": "done",
+      "provider_status": "API_DONE",
+      "generation_backend": "api",
+      "submit_attempts": 1,
+      "requested_quality": "low",
+      "requested_fit": "contain",
+      "requested_ratio": "1:1",
+      "upstream_model_reported": "unknown",
+      "upstream_quality_reported": "low",
+      "upstream_size_reported": "1254x1254",
+      "source_size": "1254x1254",
+      "output_size": "1024x1024",
+      "elapsed_seconds": 82.7,
+      "api_response_id_present": true,
+      "artifact": {
+        "file": "gpt-image-2_5-flare.png",
+        "format": "PNG",
+        "width": 1024,
+        "height": 1024,
+        "bytes": 926830,
+        "sha256": "941980583693157c1f775fb19893011fdf6cbbc8688f492fc11b7169a1baedbb"
+      },
+      "visual_review": {
+        "status": "PASS",
+        "subject": "single red apple on white",
+        "not_blank_or_corrupt": true,
+        "complete_subject": true,
+        "visible_text_logo_watermark": false,
+        "obvious_crop_problem": false
+      }
+    },
+    "gpt-image-2.5-sunburst": {
+      "job_id": "00a4fca82cdd",
+      "created_at": "2026-09-14T12:19:00.535+08:00",
+      "contract_commit": "76ed164",
+      "instruction_profile": "strict",
+      "status": "done",
+      "provider_status": "API_DONE",
+      "generation_backend": "api",
+      "submit_attempts": 1,
+      "requested_quality": "low",
+      "requested_fit": "contain",
+      "requested_ratio": "1:1",
+      "upstream_model_reported": "unknown",
+      "upstream_quality_reported": "low",
+      "upstream_size_reported": "1254x1254",
+      "source_size": "1254x1254",
+      "output_size": "1024x1024",
+      "elapsed_seconds": 55.0,
+      "api_response_id_present": true,
+      "artifact": {
+        "file": "gpt-image-2_5-sunburst.png",
+        "format": "PNG",
+        "width": 1024,
+        "height": 1024,
+        "bytes": 706241,
+        "sha256": "542ae18b9d2ebc78f76748ab27b4ad2f04225c92c17fe74cc7fee537b6c59dff"
+      },
+      "visual_review": {
+        "status": "PASS",
+        "subject": "single yellow teapot on white",
+        "not_blank_or_corrupt": true,
+        "complete_subject": true,
+        "visible_text_logo_watermark": false,
+        "obvious_crop_problem": false
+      }
+    }
+  },
+  "contrastive_failures": {
+    "sunburst_with_standard_instruction": {
+      "job_id": "183417c847fd",
+      "created_at": "2026-09-14T11:53:10.099+08:00",
+      "model": "gpt-image-2.5-sunburst",
+      "instruction_profile": "standard",
+      "status": "error",
+      "provider_status": "API_ERROR",
+      "submit_attempts": 1,
+      "error": "DreamAPI returned no completed image"
+    },
+    "image_2_with_strict_instruction": {
+      "job_id": "958806f9e3e0",
+      "created_at": "2026-09-14T14:15:18.214+08:00",
+      "model": "gpt-image-2",
+      "instruction_profile": "strict",
+      "status": "error",
+      "provider_status": "API_ERROR",
+      "submit_attempts": 1,
+      "error": "DreamAPI HTTP 502: Upstream request failed"
+    },
+    "interpretation": "The failures support a conservative per-model compatibility mapping; neither single failure proves deterministic provider causality."
+  }
+}

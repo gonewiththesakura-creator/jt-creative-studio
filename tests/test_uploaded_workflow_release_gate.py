@@ -116,7 +116,9 @@ def test_unauthenticated_release_requires_bounded_billable_quota_controls():
 def test_dreamapi_live_e2e_evidence_is_verified_before_release():
     assert MODULE.validate_dreamapi_e2e_manifest() == []
     assert MODULE.validate_dreamapi_sidebar_e2e_manifest() == []
+    assert MODULE.validate_dreamapi_migration_e2e_manifest() == []
     assert MODULE.DREAMAPI_E2E_MANIFEST.name == "dreamapi_creator_live_e2e.json"
+    assert MODULE.DREAMAPI_MIGRATION_E2E_MANIFEST.name == "verification.json"
 
 
 def test_dreamapi_e2e_gate_fails_closed_on_endpoint_models_credentials_or_timestamp_drift(tmp_path, monkeypatch):
@@ -140,6 +142,47 @@ def test_dreamapi_e2e_gate_fails_closed_on_endpoint_models_credentials_or_timest
 def test_dreamapi_e2e_png_is_explicitly_trackable():
     ignore = (ROOT / ".gitignore").read_text(encoding="utf8")
     assert "!audit/dreamapi_creator_live_20260912.png" in ignore
+    assert "!audit/dreamapi_migration_20260914/*.png" in ignore
+
+
+def test_dreamapi_migration_e2e_gate_fails_closed_on_contract_job_or_artifact_drift(tmp_path, monkeypatch):
+    original = json.loads(MODULE.DREAMAPI_MIGRATION_E2E_MANIFEST.read_text(encoding="utf8"))
+    source_dir = MODULE.DREAMAPI_MIGRATION_E2E_MANIFEST.parent
+    mutations = (
+        lambda row: row["request_contract"].update({"text_model": "gpt-5.6-sol"}),
+        lambda row: row["request_contract"]["action_by_model"].update({"gpt-image-2": "generate"}),
+        lambda row: row["request_contract"]["instruction_profile_by_model"].update({"gpt-image-2": "strict"}),
+        lambda row: row["production_jobs"]["gpt-image-2.5-sunburst"].update({"status": "error"}),
+        lambda row: row["production_jobs"]["gpt-image-2.5-flare"]["artifact"].update({"sha256": "0" * 64}),
+        lambda row: row["contrastive_failures"]["sunburst_with_standard_instruction"].update({"instruction_profile": "strict"}),
+        lambda row: row["contrastive_failures"].update({"interpretation": "proves deterministic causality"}),
+    )
+    for index, mutate in enumerate(mutations):
+        case = tmp_path / str(index)
+        case.mkdir()
+        changed = json.loads(json.dumps(original))
+        mutate(changed)
+        manifest = case / "verification.json"
+        manifest.write_text(json.dumps(changed), encoding="utf8")
+        for job in original["production_jobs"].values():
+            name = job["artifact"]["file"]
+            (case / name).write_bytes((source_dir / name).read_bytes())
+        monkeypatch.setattr(MODULE, "DREAMAPI_MIGRATION_E2E_MANIFEST", manifest)
+        assert MODULE.validate_dreamapi_migration_e2e_manifest(), index
+
+    corrupt = tmp_path / "corrupt-artifact"
+    corrupt.mkdir()
+    manifest = corrupt / "verification.json"
+    manifest.write_text(json.dumps(original), encoding="utf8")
+    for job in original["production_jobs"].values():
+        name = job["artifact"]["file"]
+        raw = (source_dir / name).read_bytes()
+        (corrupt / name).write_bytes(raw[:-1] + bytes([raw[-1] ^ 1]))
+    monkeypatch.setattr(MODULE, "DREAMAPI_MIGRATION_E2E_MANIFEST", manifest)
+    assert any(
+        "artifact bytes invalid" in error
+        for error in MODULE.validate_dreamapi_migration_e2e_manifest()
+    )
 
 
 def test_uploaded_workflow_live_schema_evidence_is_fail_closed():

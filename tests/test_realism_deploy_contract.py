@@ -109,12 +109,18 @@ def test_release_creates_every_remote_parent_directory():
     assert "pathlib.PurePosixPath(remote).parent" in source
 
 
-def test_staging_upload_reconnects_and_verifies_each_file():
+def test_staging_upload_reuses_one_sftp_and_verifies_each_file():
     source = SCRIPT.read_text(encoding="utf-8")
-    assert "def stage_file_resilient" in source
-    assert "for attempt in range(1, 4)" in source
-    assert "client.open_sftp()" in source
-    assert "staging mismatch" in source
+    stage = source.split("def stage_file_resilient", 1)[1].split("def backup_release", 1)[0]
+    deploy = source.split("def deploy(", 1)[1].split("def parse_args(", 1)[0]
+    assert "for attempt in range(1, 4)" in stage
+    assert "client.open_sftp()" not in stage
+    assert "staging mismatch" in stage
+    assert deploy.count("client.open_sftp()") == 1
+    assert "stage_file_resilient(client, sftp," in deploy
+    assert deploy.index("sftp = client.open_sftp()") < deploy.index(
+        "for local, remote in files.items():"
+    )
 
 
 def test_watchdog_units_are_installed_and_verified():
@@ -338,12 +344,15 @@ def test_backup_manifest_is_atomically_written_and_hash_verified_before_restore(
     assert rollback.index("hmac.compare_digest") < rollback.index("for remote in remote_paths")
 
 
-def test_release_pins_the_ssh_host_key_before_password_authentication():
+def test_release_pins_the_ssh_host_key_for_public_key_authentication():
     module = load_module()
     source = SCRIPT.read_text(encoding="utf-8")
     assert "AutoAddPolicy" not in source
     assert "PinnedSHA256Policy" in source
     assert "hmac.compare_digest" in source
+    assert "paramiko.Ed25519Key.from_private_key_file" in source
+    assert "pkey=deploy_key" in source
+    assert "password=" not in source
     assert module.SSH_HOST_KEY_SHA256.startswith("SHA256:")
     assert len(module.SSH_HOST_KEY_SHA256) == 50
 

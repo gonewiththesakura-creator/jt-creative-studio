@@ -64,6 +64,29 @@ def test_api_model_quality_options_are_linked_and_seed_is_not_misrepresented():
         assert "backendUi(j.generation_backend).label" in text
 
 
+def test_api_settings_are_captured_and_restored_with_valid_defaults():
+    for path in FILES:
+        text = path.read_text(encoding="utf8")
+        for token in (
+            "function defaultApiSettings()",
+            "function normalizeApiSettings(snapshot={})",
+            "models.includes(snapshot.api_model)&&API_QUALITIES[snapshot.api_model]",
+            "qualities.includes(snapshot.api_quality)",
+            "fits.includes(snapshot.api_fit)",
+            "ratios.includes(snapshot.api_ratio)",
+            "api_model:apiModel.value",
+            "api_quality:apiQuality.value",
+            "api_fit:apiFit.value",
+            "api_ratio:selectedApiRatio()",
+            "const api=normalizeApiSettings(snapshot)",
+            "apiModel.value=api.api_model",
+            "updateApiQualityOptions(api.api_quality)",
+            "apiFit.value=api.api_fit",
+            "input.value===api.api_ratio",
+        ):
+            assert token in text, (path, token)
+
+
 def test_api_gallery_displays_requested_and_actual_upstream_settings():
     for path in FILES:
         text = path.read_text(encoding="utf8")

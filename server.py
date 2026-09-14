@@ -41,10 +41,24 @@ DREAMAPI_KEY = os.environ.get("DREAMAPI_KEY", "")
 DREAMAPI_BASE_URL = os.environ.get("DREAMAPI_BASE_URL", "https://dreamapi.club").rstrip("/")
 DREAMAPI_EGRESS_URL = os.environ.get("DREAMAPI_EGRESS_URL", "").strip()
 DREAMAPI_TEXT_MODEL = "gpt-5.6-luna"
-DREAMAPI_DISPATCH_INSTRUCTIONS = (
+DREAMAPI_STANDARD_DISPATCH_INSTRUCTIONS = (
+    "You are an image generation dispatcher. Call the provided image_generation "
+    "tool exactly once. Do not return or rewrite a prompt. Return no text."
+)
+DREAMAPI_STRICT_DISPATCH_INSTRUCTIONS = (
     "You are an image generation dispatcher. You must call the provided image_generation "
     "tool exactly once. Do not return or rewrite a prompt. Return no text."
 )
+DREAMAPI_DISPATCH_INSTRUCTIONS_BY_MODEL = {
+    "gpt-image-2": DREAMAPI_STANDARD_DISPATCH_INSTRUCTIONS,
+    "gpt-image-2.5-flare": DREAMAPI_STANDARD_DISPATCH_INSTRUCTIONS,
+    "gpt-image-2.5-sunburst": DREAMAPI_STRICT_DISPATCH_INSTRUCTIONS,
+}
+DREAMAPI_DISPATCH_PROFILE_BY_MODEL = {
+    "gpt-image-2": "standard",
+    "gpt-image-2.5-flare": "standard",
+    "gpt-image-2.5-sunburst": "strict",
+}
 DREAMAPI_TIMEOUT = 600
 DREAMAPI_MAX_RESPONSE_BYTES = 96 * 1024 * 1024
 DREAMAPI_MAX_IMAGE_BYTES = 32 * 1024 * 1024
@@ -65,6 +79,50 @@ DREAMAPI_RATIO_SIZES = {
     "9:16": (864, 1536),
     "16:9": (1536, 864),
 }
+
+
+def _dreamapi_contract_document():
+    """Return the public request-shape contract shared with the workstation proxy."""
+    sizes = {f"{width}x{height}" for width, height in DREAMAPI_RATIO_SIZES.values()}
+    models = {}
+    for model in sorted(DREAMAPI_IMAGE_QUALITIES):
+        models[model] = {
+            "action": "generate" if model in DREAMAPI_IMAGE_ACTION_MODELS else "omitted",
+            "qualities": sorted(DREAMAPI_IMAGE_QUALITIES[model]),
+        }
+    return {
+        "contract_version": 2,
+        "dispatcher": {
+            "instructions_by_image_model": {
+                model: DREAMAPI_DISPATCH_INSTRUCTIONS_BY_MODEL[model]
+                for model in sorted(DREAMAPI_IMAGE_QUALITIES)
+            },
+            "model": DREAMAPI_TEXT_MODEL,
+            "stream": False,
+        },
+        "image_tool": {
+            "models": models,
+            "sizes": sorted(sizes),
+            "type": "image_generation",
+        },
+        "request_keys": ["input", "instructions", "model", "stream", "tools"],
+        "runtime_safety": {
+            "kill_worker_on_parent_exit": True,
+            "persistent_uncertainty_fence": True,
+        },
+        "tool_count": 1,
+    }
+
+
+def _dreamapi_contract_sha256():
+    canonical = json.dumps(
+        _dreamapi_contract_document(), ensure_ascii=False, sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
+
+DREAMAPI_CONTRACT_SHA256 = _dreamapi_contract_sha256()
 RH_TIMEOUT_SUBMIT = 60
 RH_TIMEOUT_QUERY = 30
 RH_SUBMIT_HARD_TIMEOUT = 120  # wall-clock cap for the whole submit (all retries)
@@ -915,6 +973,36 @@ def comfy_status_detail():
         pass
     return ok, control_ok, msg
 
+
+def dreamapi_workstation_egress_status():
+    """Probe the configured workstation proxy and verify its request contract."""
+    if not DREAMAPI_EGRESS_URL:
+        return False, False, False
+    try:
+        endpoint = urllib.parse.urlparse(_dreamapi_request_endpoint())
+        control = urllib.parse.urlparse(CONTROL_URL)
+        loopback_hosts = {"127.0.0.1", "::1", "localhost"}
+        if (endpoint.path != "/dreamapi/responses"
+                or control.scheme != "http" or control.hostname not in loopback_hosts
+                or control.username or control.password or control.query or control.fragment
+                or control.path not in {"", "/"}
+                or endpoint.port != control.port):
+            return False, False, False
+        status = http_json(CONTROL_URL + "/status", timeout=5)
+        remote_sha256 = status.get("dreamapi_contract_sha256") if isinstance(status, dict) else None
+        fence_active = (
+            status.get("dreamapi_uncertainty_fence") is not False
+            if isinstance(status, dict) else True
+        )
+        contract_match = (
+            isinstance(remote_sha256, str)
+            and hmac.compare_digest(remote_sha256, DREAMAPI_CONTRACT_SHA256)
+        )
+    except Exception:
+        contract_match = False
+        fence_active = True
+    return contract_match and not fence_active, contract_match, fence_active
+
 def start_comfy_remote():
     """Trigger local ComfyUI startup via the local watchdog control port, then wait."""
     try:
@@ -1274,7 +1362,8 @@ def public_selection_snapshot(snapshot):
         creator_fields = (
             "style", "style_variant", "mode", "state", "locked", "width", "height",
             "batch", "hd", "sequence_mode", "prompt_mode", "manual_positive",
-            "manual_negative", "seed", "seed_mode", "generation_backend", "api_ratio",
+            "manual_negative", "seed", "seed_mode", "generation_backend", "api_model",
+            "api_quality", "api_fit", "api_ratio",
         )
         for key in creator_fields:
             if key in raw:
@@ -2137,7 +2226,8 @@ def _dreamapi_request_endpoint():
         return DREAMAPI_BASE_URL + "/responses"
     parsed = urllib.parse.urlparse(DREAMAPI_EGRESS_URL)
     if (parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "::1", "localhost"}
-            or parsed.username or parsed.password or parsed.query or parsed.fragment):
+            or parsed.username or parsed.password or parsed.path != "/dreamapi/responses"
+            or parsed.query or parsed.fragment):
         raise RuntimeError("DREAMAPI_EGRESS_URL must be a loopback HTTP endpoint")
     return DREAMAPI_EGRESS_URL
 
@@ -2264,6 +2354,11 @@ def dreamapi_run_image(job, jobdir):
         raise ValueError("quality is not supported by the DreamAPI image model")
     if fit not in {"cover", "contain"}:
         raise ValueError("unknown DreamAPI fit mode")
+    job["api_dispatch_profile"] = DREAMAPI_DISPATCH_PROFILE_BY_MODEL[model]
+    job["dreamapi_contract_sha256"] = DREAMAPI_CONTRACT_SHA256
+    job["api_action_mode"] = (
+        "generate" if model in DREAMAPI_IMAGE_ACTION_MODELS else "omitted"
+    )
     size = _dreamapi_size(job["width"], job["height"])
     orientation = "square" if job["width"] == job["height"] else (
         "landscape" if job["width"] > job["height"] else "portrait")
@@ -2279,7 +2374,7 @@ def dreamapi_run_image(job, jobdir):
         tool["action"] = "generate"
     payload = {
         "model": DREAMAPI_TEXT_MODEL,
-        "instructions": DREAMAPI_DISPATCH_INSTRUCTIONS,
+        "instructions": DREAMAPI_DISPATCH_INSTRUCTIONS_BY_MODEL[model],
         "input": upstream_input,
         "stream": False,
         "tools": [tool],
@@ -3044,9 +3139,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._send(200, json.dumps(payload, separators=(",", ":")).encode())
         elif path == "/api/health":
             ok, msg = comfy_ok()
+            dreamapi_egress, dreamapi_contract_match, dreamapi_fence = (
+                dreamapi_workstation_egress_status()
+            )
             self._send(200, json.dumps({"ok": ok, "comfy": bool(ok), "local_comfy_ok": ok,
                                         "dreamapi_configured": bool(DREAMAPI_KEY),
-                                        "dreamapi_workstation_egress": bool(DREAMAPI_EGRESS_URL),
+                                        "dreamapi_workstation_egress": dreamapi_egress,
+                                        "dreamapi_contract_match": dreamapi_contract_match,
+                                        "dreamapi_contract_sha256": DREAMAPI_CONTRACT_SHA256,
+                                        "dreamapi_uncertainty_fence": dreamapi_fence,
                                         "draining": bool(_release_draining),
                                         "cloud_busy": self._running_job_id("cloud") is not None,
                                         "local_busy": self._running_job_id("local") is not None,
@@ -3129,6 +3230,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "prompt_mode", "seed", "seed_mode", "style_id", "style_variant", "mode",
                     "sequence_mode", "sequence_seed", "stage_status", "generation_backend",
                     "seed_supported", "api_model", "api_quality", "api_fit", "api_ratio",
+                    "api_dispatch_profile", "dreamapi_contract_sha256", "api_action_mode",
                     "api_prompt_compacted", "api_upstream_prompt_chars",
                     "api_upstream_model", "api_upstream_quality", "api_upstream_size",
                     "media", "params",
@@ -3165,6 +3267,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         "style_id", "style_variant", "mode", "seed", "seed_mode", "prompt_mode",
                         "sequence_mode", "sequence_seed", "stage_status", "generation_backend",
                         "seed_supported", "api_model", "api_quality", "api_fit", "api_ratio",
+                        "api_dispatch_profile", "dreamapi_contract_sha256", "api_action_mode",
                         "api_prompt_compacted", "api_upstream_prompt_chars",
                         "api_upstream_model", "api_upstream_quality", "api_upstream_size",
                         "client_request_id",
@@ -3958,6 +4061,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
                    "api_quality": api_quality if generation_backend == "api" else None,
                    "api_fit": api_fit if generation_backend == "api" else None,
                    "api_ratio": api_ratio if generation_backend == "api" else None,
+                   "api_dispatch_profile": (
+                       DREAMAPI_DISPATCH_PROFILE_BY_MODEL[api_model]
+                       if generation_backend == "api" else None),
+                   "dreamapi_contract_sha256": (
+                       DREAMAPI_CONTRACT_SHA256 if generation_backend == "api" else None),
+                   "api_action_mode": (
+                       "generate" if generation_backend == "api"
+                       and api_model in DREAMAPI_IMAGE_ACTION_MODELS else
+                       "omitted" if generation_backend == "api" else None),
                    "seed_supported": generation_backend != "api",
                    "comfy_prompt_id": None, "transfer_index": 0, "transfer_total": 0,
                    "transfer_started": None, "transfer_finished": None,
@@ -3965,8 +4077,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                        **(body.get("selection_snapshot") if isinstance(body.get("selection_snapshot"), dict) else {}),
                        "source_page": "creator", "workflow": "anima02",
                        "generation_backend": generation_backend,
-                       **({"api_ratio": api_ratio} if generation_backend == "api" else {}),
-                   })}
+                       **({"api_model": api_model, "api_quality": api_quality,
+                           "api_fit": api_fit, "api_ratio": api_ratio}
+                          if generation_backend == "api" else {}),
+                    })}
             if generation_backend in ("cloud", "api"):
                 quota_status = register_billable_job(job, session_id)
                 if self._billable_quota_rejection(quota_status):

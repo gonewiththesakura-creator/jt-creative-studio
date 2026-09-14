@@ -181,8 +181,12 @@ def test_deploy_checks_idle_before_connect_isolation_and_stop():
     deploy = source.split("def deploy(", 1)[1].split("def parse_args(", 1)[0]
 
     first = deploy.index('require_public_idle(public_base, phase="preflight")')
+    metadata_read = deploy.index('creds_path.read_text(encoding="utf-8")', first)
+    key_read = deploy.index("paramiko.Ed25519Key.from_private_key_file(", metadata_read)
     connect = deploy.index("client.connect(", first)
-    prepared = deploy.index('write_transaction_phase(client, transaction, "prepared")', connect)
+    keepalive = deploy.index("configure_ssh_transport(client)", connect)
+    acquire = deploy.index("acquire_release_lock(client, transaction)", keepalive)
+    prepared = deploy.index('write_transaction_phase(client, transaction, "prepared")', acquire)
     second = deploy.index('require_public_idle(public_base, phase="pre-stop")', prepared)
     start_mark = deploy.index("start_draining_set = True", second)
     start_drain = deploy.index("set_release_start_draining(client, True)", start_mark)
@@ -190,8 +194,108 @@ def test_deploy_checks_idle_before_connect_isolation_and_stop():
     isolated_mark = deploy.index("watchdog_isolated = True", drain)
     isolate = deploy.index("isolate_watchdog(client)", isolated_mark)
     stop = deploy.index('command(client, "sudo systemctl stop comfy-panel"', start_drain)
-    assert first < connect < prepared < second < start_mark < start_drain
+    assert first < metadata_read < key_read < connect < keepalive < acquire < prepared < second
+    assert second < start_mark < start_drain
     assert start_drain < drain < isolated_mark < isolate < stop
+
+
+def test_release_authenticates_with_the_ignored_ed25519_key_not_a_password():
+    source = SCRIPT.read_text(encoding="utf-8")
+    deploy = source.split("def deploy(", 1)[1].split("def parse_args(", 1)[0]
+    ignore_patterns = {
+        line.strip()
+        for line in (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    }
+
+    assert 'DEPLOY_SSH_KEY_PATH = BASE / "tools" / "id_ed25519"' in source
+    assert "paramiko.Ed25519Key.from_private_key_file(" in deploy
+    assert "pkey=deploy_key" in deploy
+    assert "password=" not in deploy
+    assert 'creds["password"]' not in deploy
+    assert "tools/id_ed25519" in ignore_patterns
+
+
+def test_ssh_transport_keepalive_requires_an_active_authenticated_transport():
+    module = load_module()
+    intervals = []
+
+    class Transport:
+        def __init__(self, active):
+            self.active = active
+
+        def is_active(self):
+            return self.active
+
+        def set_keepalive(self, interval):
+            intervals.append(interval)
+
+    active = Transport(True)
+    assert module.configure_ssh_transport(
+        types.SimpleNamespace(get_transport=lambda: active)
+    ) is active
+    assert intervals == [module.SSH_KEEPALIVE_INTERVAL]
+
+    for transport in (None, Transport(False)):
+        with pytest.raises(RuntimeError, match="SSH transport is not active"):
+            module.configure_ssh_transport(
+                types.SimpleNamespace(get_transport=lambda transport=transport: transport)
+            )
+
+
+def test_staging_retries_on_one_sftp_channel_and_byte_verifies(monkeypatch):
+    module = load_module()
+    payload = b"verified payload"
+    stored = bytearray()
+    opens = []
+    writes = 0
+
+    class RemoteFile:
+        def __init__(self, mode):
+            self.mode = mode
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def write(self, data):
+            nonlocal writes
+            writes += 1
+            if writes == 1:
+                raise OSError("transient write failure")
+            stored[:] = data
+
+        def read(self):
+            return bytes(stored)
+
+    class SFTP:
+        def open(self, path, mode):
+            opens.append((path, mode))
+            return RemoteFile(mode)
+
+    commands = []
+    fsyncs = []
+    sleeps = []
+    client = object()
+    sftp = SFTP()
+    transaction = {"stage_root": module.REMOTE_ROOT + "/tx/stage"}
+    remote = module.REMOTE_ROOT + "/static/index.html"
+    monkeypatch.setattr(module, "command", lambda *args: commands.append(args[1]))
+    monkeypatch.setattr(module, "fsync_remote_file", lambda *args: fsyncs.append(args[1]))
+    monkeypatch.setattr(module.time, "sleep", lambda seconds: sleeps.append(seconds))
+
+    staged = module.stage_file_resilient(
+        client, sftp, module.BASE / "static" / "index.html", remote,
+        transaction, payload,
+    )
+
+    assert writes == 2
+    assert [mode for _, mode in opens] == ["wb", "wb", "rb"]
+    assert sleeps == [2]
+    assert fsyncs == [staged]
+    assert any(command.startswith("chmod 0600") for command in commands)
 
 
 def test_default_release_fails_closed_without_the_remote_drain_contract():
@@ -609,6 +713,12 @@ def _exercise_interrupted_deploy(monkeypatch, tmp_path, rollback_error=None,
         def connect(self, *args, **kwargs):
             events.append("connect")
 
+        def get_transport(self):
+            return types.SimpleNamespace(
+                is_active=lambda: True,
+                set_keepalive=lambda interval: events.append(("keepalive", interval)),
+            )
+
         def open_sftp(self):
             return FakeSFTP()
 
@@ -616,6 +726,9 @@ def _exercise_interrupted_deploy(monkeypatch, tmp_path, rollback_error=None,
             events.append("client-close")
 
     fake_paramiko = types.SimpleNamespace(
+        Ed25519Key=types.SimpleNamespace(
+            from_private_key_file=lambda path: object(),
+        ),
         MissingHostKeyPolicy=object,
         SSHException=RuntimeError,
         SSHClient=FakeClient,
@@ -1157,6 +1270,12 @@ def test_public_verification_timeout_enters_rollback_and_reopens_drain(monkeypat
         def connect(self, *args, **kwargs):
             events.append("connect")
 
+        def get_transport(self):
+            return types.SimpleNamespace(
+                is_active=lambda: True,
+                set_keepalive=lambda interval: events.append(("keepalive", interval)),
+            )
+
         def open_sftp(self):
             return FakeSFTP()
 
@@ -1164,6 +1283,9 @@ def test_public_verification_timeout_enters_rollback_and_reopens_drain(monkeypat
             events.append("client-close")
 
     fake_paramiko = types.SimpleNamespace(
+        Ed25519Key=types.SimpleNamespace(
+            from_private_key_file=lambda path: object(),
+        ),
         MissingHostKeyPolicy=object,
         SSHException=RuntimeError,
         SSHClient=FakeClient,
