@@ -1,0 +1,276 @@
+#!/usr/bin/env python3
+"""Stage and run a loopback-only production DreamAPI canary."""
+
+import argparse
+import base64
+import hashlib
+import hmac
+import json
+import os
+import pathlib
+import re
+import shlex
+import subprocess
+import sys
+import time
+import uuid
+
+import deploy_realism_release as release
+
+
+BASE = pathlib.Path(__file__).resolve().parents[1]
+DEFAULT_STATE = BASE / "panel_data" / "dreamapi-native-canary-state.json"
+DEFAULT_OUTPUT = BASE / "audit" / "dreamapi_native_canary_20260915"
+REMOTE_PARENT = "/home/admin/.comfy-panel-canary"
+CANARY_PORT = 8289
+
+
+def _atomic_json(path, value):
+    path = pathlib.Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    raw = (json.dumps(value, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+    with open(tmp, "wb") as handle:
+        handle.write(raw)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(tmp, path)
+
+
+def _connect(credentials, ssh_key):
+    import paramiko
+
+    class PinnedPolicy(paramiko.MissingHostKeyPolicy):
+        def missing_host_key(self, client, hostname, key):
+            actual = "SHA256:" + base64.b64encode(
+                hashlib.sha256(key.asbytes()).digest()
+            ).decode("ascii").rstrip("=")
+            if not hmac.compare_digest(actual, release.SSH_HOST_KEY_SHA256):
+                raise paramiko.SSHException("SSH host key mismatch")
+
+    creds = json.loads(pathlib.Path(credentials).read_text(encoding="utf-8"))
+    key = paramiko.Ed25519Key.from_private_key_file(str(ssh_key))
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(PinnedPolicy())
+    client.connect(
+        creds["host"], port=int(creds["port"]), username=creds["user"],
+        pkey=key, timeout=30, allow_agent=False, look_for_keys=False,
+    )
+    release.configure_ssh_transport(client)
+    return client
+
+
+def _mkdirs(sftp, path):
+    current = pathlib.PurePosixPath("/")
+    for part in pathlib.PurePosixPath(path).parts[1:]:
+        current /= part
+        try:
+            sftp.stat(str(current))
+        except OSError:
+            sftp.mkdir(str(current), 0o700)
+
+
+def _upload(sftp, remote, data, mode=0o600):
+    _mkdirs(sftp, str(pathlib.PurePosixPath(remote).parent))
+    tmp = remote + ".tmp-" + uuid.uuid4().hex
+    with sftp.open(tmp, "wb") as handle:
+        handle.write(data)
+        handle.flush()
+    sftp.chmod(tmp, mode)
+    sftp.posix_rename(tmp, remote)
+    with sftp.open(remote, "rb") as handle:
+        if handle.read() != data:
+            raise RuntimeError("canary upload readback mismatch: " + remote)
+
+
+def _head_and_payloads():
+    head = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=BASE, text=True,
+    ).strip()
+    if not re.fullmatch(r"[0-9a-f]{40}", head):
+        raise RuntimeError("invalid candidate commit")
+    changed = subprocess.run(
+        ["git", "diff", "--quiet", "HEAD", "--", *release.RELEASE_RELATIVE_PATHS],
+        cwd=BASE,
+    )
+    if changed.returncode:
+        raise RuntimeError("release runtime differs from HEAD")
+    files = release.release_files()
+    return head, files, release.release_payloads_from_head(files, head)
+
+
+def prepare(args):
+    state_path = pathlib.Path(args.state)
+    if state_path.exists():
+        raise RuntimeError("canary state already exists; collect or clean it first")
+    head, files, payloads = _head_and_payloads()
+    suffix = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()) + "-" + head[:10]
+    root = REMOTE_PARENT + "/" + suffix
+    unit = "comfy-panel-canary-" + suffix.lower()
+    client = _connect(args.credentials, args.ssh_key)
+    sftp = None
+    try:
+        create = (
+            "import pathlib;"
+            f"parent=pathlib.Path({REMOTE_PARENT!r});root=pathlib.Path({root!r});"
+            "parent.mkdir(mode=0o700,parents=True,exist_ok=True);"
+            "(_ for _ in ()).throw(RuntimeError('candidate root already exists')) if root.exists() else None;"
+            "root.mkdir(mode=0o700)"
+        )
+        release.command(client, "python3 -c " + shlex.quote(create))
+        port_probe = (
+            "import socket;"
+            "s=socket.socket();"
+            f"s.bind(('127.0.0.1',{CANARY_PORT}));s.close()"
+        )
+        release.command(client, "python3 -c " + shlex.quote(port_probe))
+        sftp = client.open_sftp()
+        for local, remote_live in files.items():
+            relative = pathlib.PurePosixPath(remote_live).relative_to(release.REMOTE_ROOT)
+            _upload(sftp, str(pathlib.PurePosixPath(root) / relative), payloads[local])
+        client_source = (BASE / "tools" / "dreamapi_native_canary_client.py").read_bytes()
+        _upload(sftp, root + "/tools/dreamapi_native_canary_client.py", client_source, 0o700)
+        command = [
+            "sudo", "systemd-run", "--unit=" + unit, "--collect",
+            "--property=User=admin", "--property=WorkingDirectory=" + root,
+            "--property=EnvironmentFile=-/etc/comfy-panel.d/dreamapi.env",
+            "--property=EnvironmentFile=/etc/comfy-panel/release.env",
+            "--property=EnvironmentFile=/home/admin/comfy-panel/panel.env",
+            "/usr/bin/env", "PANEL_BIND=127.0.0.1", f"PANEL_PORT={CANARY_PORT}",
+            "PANEL_DIR=" + root + "/data", "PANEL_RELEASE_DRAIN_ON_START=0",
+            "/usr/bin/python3", root + "/server.py",
+        ]
+        release.command(client, " ".join(shlex.quote(item) for item in command))
+        deadline = time.time() + 30
+        health = None
+        while time.time() < deadline:
+            probe = (
+                "import json,urllib.request;"
+                f"print(urllib.request.urlopen('http://127.0.0.1:{CANARY_PORT}/api/health',timeout=3).read().decode())"
+            )
+            try:
+                health = json.loads(release.command(client, "python3 -c " + shlex.quote(probe)))
+                if health.get("dreamapi_contract_match") is True:
+                    break
+            except Exception:
+                time.sleep(1)
+        if not isinstance(health, dict):
+            raise RuntimeError("candidate health did not become available")
+        required = {
+            "dreamapi_configured": True,
+            "dreamapi_workstation_egress": True,
+            "dreamapi_contract_match": True,
+            "dreamapi_uncertainty_fence": False,
+            "draining": False,
+            "api_busy": False,
+        }
+        if any(health.get(key) is not value for key, value in required.items()):
+            raise RuntimeError("candidate DreamAPI health is not ready")
+        state = {
+            "phase": "prepared", "candidate_commit": head,
+            "runtime_payload_sha256": release.git_runtime_payload_sha256(head),
+            "remote_root": root, "unit": unit, "port": CANARY_PORT,
+            "contract_sha256": health.get("dreamapi_contract_sha256"),
+            "prepared_at": time.time(),
+        }
+        _atomic_json(state_path, state)
+        print(json.dumps({key: state[key] for key in (
+            "phase", "candidate_commit", "runtime_payload_sha256",
+            "unit", "port", "contract_sha256",
+        )}, indent=2))
+    finally:
+        if sftp is not None:
+            sftp.close()
+        client.close()
+
+
+def _invoke_client(args, mode):
+    state_path = pathlib.Path(args.state)
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    if mode == "submit" and state.get("phase") != "prepared":
+        raise RuntimeError("paid submit is not allowed from the current phase")
+    if mode == "submit":
+        state["phase"] = "submit_invoked_uncertain"
+        state["submit_invoked_at"] = time.time()
+        _atomic_json(state_path, state)
+    root = str(state["remote_root"])
+    port = int(state["port"])
+    client_id = "native-images-" + str(state["candidate_commit"])[:12] + "-flare-low-9x16"
+    remote_mode = "submit" if mode == "submit" else "collect"
+    command = [
+        "/usr/bin/python3", root + "/tools/dreamapi_native_canary_client.py", remote_mode,
+        "--base", f"http://127.0.0.1:{port}",
+        "--state", root + "/canary-state.json",
+        "--result", root + "/result.json",
+        "--image", root + "/result.png",
+        "--client-request-id", client_id,
+    ]
+    client = _connect(args.credentials, args.ssh_key)
+    try:
+        output = release.command(
+            client, " ".join(shlex.quote(item) for item in command), timeout=720,
+        )
+        output_dir = pathlib.Path(args.output)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        sftp = client.open_sftp()
+        try:
+            sftp.get(root + "/result.json", str(output_dir / "raw-result.json"))
+            sftp.get(root + "/result.png", str(output_dir / "gpt-image-2_5-flare-low-9x16.png"))
+        finally:
+            sftp.close()
+        state["phase"] = "collected"
+        state["client_request_id"] = client_id
+        state["collected_at"] = time.time()
+        _atomic_json(state_path, state)
+        print(output)
+    finally:
+        client.close()
+
+
+def cleanup(args):
+    state_path = pathlib.Path(args.state)
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    root = str(state.get("remote_root") or "")
+    unit = str(state.get("unit") or "")
+    if (state.get("phase") != "collected"
+            or not re.fullmatch(r"/home/admin/\.comfy-panel-canary/[0-9]{8}T[0-9]{6}Z-[0-9a-f]{10}", root)
+            or not re.fullmatch(r"comfy-panel-canary-[0-9]{8}t[0-9]{6}z-[0-9a-f]{10}", unit)):
+        raise RuntimeError("canary cleanup target or phase is invalid")
+    client = _connect(args.credentials, args.ssh_key)
+    try:
+        release.command(client, "sudo systemctl stop " + shlex.quote(unit))
+        remove = (
+            "import pathlib,shutil;"
+            f"root=pathlib.Path({root!r});parent=pathlib.Path({REMOTE_PARENT!r});"
+            "resolved=root.resolve();"
+            "(_ for _ in ()).throw(RuntimeError('invalid cleanup root')) if resolved.parent!=parent else None;"
+            "shutil.rmtree(resolved)"
+        )
+        release.command(client, "python3 -c " + shlex.quote(remove))
+        state["phase"] = "cleaned"
+        state["cleaned_at"] = time.time()
+        _atomic_json(state_path, state)
+        print("CANARY_CLEANUP_OK")
+    finally:
+        client.close()
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser()
+    parser.add_argument("mode", choices=("prepare", "submit", "collect", "cleanup"))
+    parser.add_argument("--credentials", default=str(BASE / "tools" / "creds.json"))
+    parser.add_argument("--ssh-key", default=str(BASE / "tools" / "id_ed25519"))
+    parser.add_argument("--state", default=str(DEFAULT_STATE))
+    parser.add_argument("--output", default=str(DEFAULT_OUTPUT))
+    args = parser.parse_args(argv)
+    if args.mode == "prepare":
+        prepare(args)
+    elif args.mode in {"submit", "collect"}:
+        _invoke_client(args, args.mode)
+    else:
+        cleanup(args)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
