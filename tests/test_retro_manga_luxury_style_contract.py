@@ -1,12 +1,12 @@
 from pathlib import Path
 import hashlib,importlib.util,json,re,sys
+from _style_config_contract import load_style_configs
 ROOT = Path(__file__).resolve().parents[1]
 HTML=(ROOT/'static/promptgen.html').read_text(encoding='utf8')
 SERVER=(ROOT/'server.py').read_text(encoding='utf8')
 BUILD=(ROOT/'build_unified_three_styles.py').read_text(encoding='utf8')
 PREVIEW_BUILD=(ROOT/'tools/build_preview_assets.py').read_text(encoding='utf8')
-match=re.search(r'const STYLE_CONFIGS=(.*?);const DRAWERS=',HTML,re.S)
-styles=json.loads(match.group(1)) if match else {}
+styles=load_style_configs(ROOT)
 style=styles.get('retro_manga_luxury') or {}
 E2E=json.loads((ROOT/'audit/retro_manga_panel_e2e_cloud_w04.json').read_text(encoding='utf8'))
 PREVIEW=ROOT/'static/previews/style-retro-manga-luxury.webp'
@@ -69,7 +69,7 @@ doc_required={
 'background':['minimal cream background','warm orange painterly background','flat yellow background','retro geometric pattern','abstract decorative background','soft pastel background'],
 }
 checks={
- 'style button':'data-style="retro_manga_luxury"' in HTML and '复古日漫奢华时尚手绘' in HTML,
+ 'style button':'data-style="retro_manga_luxury"' in HTML and '>复古日漫</button>' in HTML,
  'eight style touch layout':'#styleSwitch{display:grid;grid-template-columns:repeat(4,minmax(0,1fr))}' in HTML,
  'trusted trigger':style.get('trigger')=='jt_style321_v1' and '"trigger": "jt_style321_v1"' in SERVER,
  'exact lora server trusted':'lora1' not in style and 'lora2' not in style and SERVER.count('09_style321_v1_step200.safetensors')>=2,

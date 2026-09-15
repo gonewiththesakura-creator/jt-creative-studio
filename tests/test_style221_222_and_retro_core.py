@@ -1,12 +1,12 @@
 import json,re
 from pathlib import Path
+from _style_config_contract import load_style_configs
 ROOT=Path(__file__).resolve().parents[1]
 BUILD=(ROOT/'build_unified_three_styles.py').read_text(encoding='utf8')
 SERVER=(ROOT/'server.py').read_text(encoding='utf8')
 
 def styles():
-    html=(ROOT/'static/index.html').read_text(encoding='utf8')
-    return json.loads(re.search(r'const STYLE_CONFIGS=(.*?);const DRAWERS=',html,re.S).group(1))
+    return load_style_configs(ROOT, "index.html")
 
 def test_fixed_style_core_precedes_random_content():
     assert "parts=[cfg().prefix,cfg().head,cfg().style]" in BUILD

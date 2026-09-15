@@ -1,15 +1,18 @@
 from pathlib import Path
 import json, re, sys
+from _style_config_contract import load_style_configs
 ROOT = Path(__file__).resolve().parents[1]
 HTML=(ROOT/"static"/"promptgen.html").read_text(encoding="utf-8")
 MANIFEST=ROOT/"sources"/"pool_union_manifest.json"
 checks={"union manifest exists":MANIFEST.exists()}
 if MANIFEST.exists():
     manifest=json.loads(MANIFEST.read_text(encoding="utf-8"))
-    m=re.search(r"const STYLE_CONFIGS=(.*?);const DRAWERS=",HTML,re.S)
-    checks["embedded style JSON found"]=bool(m)
-    if m:
-        styles=json.loads(m.group(1))
+    try:
+        styles=load_style_configs(ROOT)
+    except (AssertionError, OSError, ValueError):
+        styles={}
+    checks["external style JSON found"]=bool(styles)
+    if styles:
         expected=manifest["union_pools"]
         source_pools=manifest["raw_source_pools"]
         checks["ten profiles present"]=set(styles)=={"cold","sketch","original_sketch","graphic","original_graphic","hanmanga","nff","retro_manga_luxury","style221","style222"}

@@ -1,8 +1,10 @@
 from pathlib import Path
 import json,re,sys
+from _style_config_contract import load_style_configs
 
 ROOT = Path(__file__).resolve().parents[1]
 HTML=(ROOT/"static"/"promptgen.html").read_text(encoding="utf8")
+STYLES=load_style_configs(ROOT)
 MANIFEST=ROOT/"sources"/"pool_union_manifest.json"
 EXPECTED={
  "character_inspired":{"祢豆子（成年再演绎）"},
@@ -36,7 +38,8 @@ if MANIFEST.exists():
  new_prompts="\n".join(x[1].lower() for rows in cur.values() for x in rows)
  banned=[r"\bpussy\b",r"\bvulva\b",r"\bgenitals?\b",r"no panties?",r"no cloth(?:e|es|s)",r"visible nipples?",r"spread(?:ing)? pussy"]
  checks["no explicit additions"]=not any(re.search(x,new_prompts) for x in banned)
- checks["wrong user trigger not added"]="jt_style1_v2" not in HTML
- checks["fixed production triggers intact"]=all(x in HTML for x in ["jt_style3_v2","jt_style1_v1","jt_style2_v1"])
+ serialized=json.dumps(STYLES,ensure_ascii=False)
+ checks["wrong user trigger not added"]="jt_style1_v2" not in serialized
+ checks["fixed production triggers intact"]=all(x in serialized for x in ["jt_style3_v2","jt_style1_v1","jt_style2_v1"])
 for k,v in checks.items():print(k,v)
 sys.exit(0 if checks and all(checks.values()) else 1)

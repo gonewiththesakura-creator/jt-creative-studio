@@ -1,13 +1,13 @@
 from pathlib import Path
 import json,re,sys
+from _style_config_contract import load_style_configs
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE=ROOT/"sources"/"hanmanga_profile.source.json"
 HTML=(ROOT/"static"/"promptgen.html").read_text(encoding="utf8")
 BUILDER=(ROOT/"build_unified_three_styles.py").read_text(encoding="utf8")
 SERVER=(ROOT/"server.py").read_text(encoding="utf8")
-match=re.search(r"const STYLE_CONFIGS=(.*?);const DRAWERS=",HTML,re.S)
-styles=json.loads(match.group(1)) if match else {}
+styles=load_style_configs(ROOT)
 source=json.loads(SOURCE.read_text(encoding="utf8")) if SOURCE.exists() else {}
 han=styles.get("hanmanga") or {}
 checks={

@@ -1,10 +1,10 @@
 from pathlib import Path
 import json,re,sys
+from _style_config_contract import load_style_configs
 ROOT = Path(__file__).resolve().parents[1]
 HOME=(ROOT/'static/promptgen.html').read_text(encoding='utf8')
 SERVER=(ROOT/'server.py').read_text(encoding='utf8')
-match=re.search(r"const STYLE_CONFIGS=(.*?);const DRAWERS=",HOME,re.S)
-styles=json.loads(match.group(1)) if match else {}
+styles=load_style_configs(ROOT)
 checks={
  'original profiles embedded':set(['original_sketch','original_graphic']).issubset(styles),
  'original pool category counts':len(styles.get('original_sketch',{}).get('pools',{}))==17 and len(styles.get('original_graphic',{}).get('pools',{}))==12,

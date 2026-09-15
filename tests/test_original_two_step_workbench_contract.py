@@ -1,9 +1,10 @@
 from pathlib import Path
 import json,re,sys
+from _style_config_contract import load_style_configs
 ROOT=Path(__file__).resolve().parents[1]
 HTML=(ROOT/'static/promptgen.html').read_text(encoding='utf8')
 BUILDER=(ROOT/'build_unified_three_styles.py').read_text(encoding='utf8')
-styles=json.loads(re.search(r'const STYLE_CONFIGS=(.*?);const DRAWERS=',HTML,re.S).group(1))
+styles=load_style_configs(ROOT)
 checks={
  'same creation workbench hierarchy':all(x in HTML for x in ['<h1>创作设置</h1>','class="section-label">人物模式','id="drawers"','id="randomAll"','id="clearAll"']),
  'all option categories start hidden':'openDrawers=new Set()' in HTML and '.drawer-body{display:none' in HTML,

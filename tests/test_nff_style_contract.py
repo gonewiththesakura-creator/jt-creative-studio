@@ -1,13 +1,13 @@
 from pathlib import Path
 import json,re,sys
+from _style_config_contract import load_style_configs
 
 ROOT = Path(__file__).resolve().parents[1]
 HTML=(ROOT/"static"/"promptgen.html").read_text(encoding="utf8")
 BUILDER=(ROOT/"build_unified_three_styles.py").read_text(encoding="utf8")
 SERVER=(ROOT/"server.py").read_text(encoding="utf8")
 
-match=re.search(r"const STYLE_CONFIGS=(.*?);const DRAWERS=",HTML,re.S)
-styles=json.loads(match.group(1)) if match else {}
+styles=load_style_configs(ROOT)
 nff=styles.get("nff") or {};sketch=styles.get("sketch") or {}
 checks={
  "four style buttons":all(x in HTML for x in ['data-style="cold"','data-style="sketch"','data-style="graphic"','data-style="nff"']),
