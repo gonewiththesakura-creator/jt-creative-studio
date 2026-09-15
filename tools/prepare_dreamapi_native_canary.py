@@ -285,7 +285,7 @@ def cleanup(args):
     state = json.loads(state_path.read_text(encoding="utf-8"))
     root = str(state.get("remote_root") or "")
     unit = str(state.get("unit") or "")
-    if (state.get("phase") != "collected"
+    if (state.get("phase") not in {"prepared", "collected"}
             or not re.fullmatch(r"/home/admin/\.comfy-panel-canary/[0-9]{8}T[0-9]{6}Z-[0-9a-f]{10}", root)
             or not re.fullmatch(r"comfy-panel-canary-[0-9]{8}t[0-9]{6}z-[0-9a-f]{10}", unit)):
         raise RuntimeError("canary cleanup target or phase is invalid")
