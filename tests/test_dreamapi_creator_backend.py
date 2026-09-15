@@ -118,8 +118,9 @@ class FakeResponse:
         return self.payload
 
 
-def test_dreamapi_runner_uses_luna_dispatcher_and_saves_exact_png(tmp_path, monkeypatch):
+def test_dreamapi_runner_uses_native_images_api_and_saves_exact_png(tmp_path, monkeypatch):
     captured = {}
+    encoded = png_b64(width=1024, height=1024)
 
     def fake_open(request, data, timeout):
         captured["url"] = request.full_url
@@ -127,14 +128,9 @@ def test_dreamapi_runner_uses_luna_dispatcher_and_saves_exact_png(tmp_path, monk
         captured["body"] = json.loads(data.decode("utf-8"))
         captured["timeout"] = timeout
         return FakeResponse({
-            "id": "resp_test_1",
-            "output": [{
-                "type": "image_generation_call",
-                "result": png_b64(),
-                "model": "gpt-image-2.5-flare",
-                "quality": "high",
-                "size": "64x96",
-            }],
+            "id": "img_test_1",
+            "created": 123,
+            "data": [{"b64_json": encoded}],
         })
 
     monkeypatch.setattr(server, "DREAMAPI_KEY", "test-key", raising=False)
@@ -153,35 +149,29 @@ def test_dreamapi_runner_uses_luna_dispatcher_and_saves_exact_png(tmp_path, monk
 
     server.dreamapi_run_image(job, tmp_path)
 
-    assert captured["url"] == "https://dreamapi.club/responses"
-    assert captured["body"]["model"] == "gpt-5.6-luna"
-    assert captured["body"]["instructions"] == (
-        "You are an image generation dispatcher. Call the provided "
-        "image_generation tool exactly once. Do not return or rewrite a prompt. "
-        "Return no text."
-    )
-    assert "tool_choice" not in captured["body"]
-    assert captured["body"]["stream"] is False
-    assert captured["body"]["tools"] == [{
-        "type": "image_generation",
-        "action": "generate",
+    assert captured["url"] == "https://dreamapi.club/v1/images/generations"
+    assert captured["body"] == {
         "model": "gpt-image-2.5-flare",
+        "prompt": captured["body"]["prompt"],
         "size": "1024x1024",
         "quality": "high",
-    }]
-    assert "a careful portrait" in captured["body"]["input"]
-    assert "text, watermark" in captured["body"]["input"]
+        "n": 1,
+        "output_format": "png",
+    }
+    assert "a careful portrait" in captured["body"]["prompt"]
+    assert "text, watermark" in captured["body"]["prompt"]
     assert captured["headers"]["Authorization"] == "Bearer test-key"
 
     output = Path(tmp_path) / job["images"][0]["file"]
     with Image.open(output) as image:
         assert image.format == "PNG"
         assert image.size == (1024, 1024)
-    assert job["api_response_id"] == "resp_test_1"
+    assert output.read_bytes() == base64.b64decode(encoded)
+    assert job["api_response_id"] == "img_test_1"
     assert job["provider_status"] == "API_DONE"
-    assert job["api_dispatch_profile"] == "standard"
+    assert job["api_transport"] == "images"
+    assert job["api_geometry_normalized"] is False
     assert job["dreamapi_contract_sha256"] == server.DREAMAPI_CONTRACT_SHA256
-    assert job["api_action_mode"] == "generate"
     assert job["images"][0]["url"].startswith("/api/image/dreamjob001/")
 
 
@@ -189,8 +179,8 @@ def test_dreamapi_runner_uses_luna_dispatcher_and_saves_exact_png(tmp_path, monk
     ("1:1", "1024x1024"),
     ("2:3", "1024x1536"),
     ("3:2", "1536x1024"),
-    ("9:16", "1024x1536"),
-    ("16:9", "1536x1024"),
+    ("9:16", "864x1536"),
+    ("16:9", "1536x864"),
 ])
 def test_dreamapi_ratio_maps_to_supported_provider_canvas(ratio, provider_size):
     width, height = server.DREAMAPI_RATIO_SIZES[ratio]
@@ -199,21 +189,16 @@ def test_dreamapi_ratio_maps_to_supported_provider_canvas(ratio, provider_size):
     }) == provider_size
 
 
-def test_dreamapi_tall_ratio_uses_supported_canvas_then_saves_requested_size(
+def test_dreamapi_tall_ratio_uses_exact_native_canvas_without_resampling(
         tmp_path, monkeypatch):
     captured = {}
+    encoded = png_b64(width=864, height=1536)
 
     def fake_open(_request, data, _timeout):
         captured["body"] = json.loads(data.decode("utf-8"))
         return FakeResponse({
-            "id": "resp_tall",
-            "output": [{
-                "type": "image_generation_call",
-                "result": png_b64(width=64, height=96),
-                "model": "gpt-image-2.5-flare",
-                "quality": "low",
-                "size": "1024x1536",
-            }],
+            "id": "img_tall",
+            "data": [{"b64_json": encoded}],
         })
 
     monkeypatch.setattr(server, "DREAMAPI_KEY", "test-key", raising=False)
@@ -227,27 +212,28 @@ def test_dreamapi_tall_ratio_uses_supported_canvas_then_saves_requested_size(
 
     server.dreamapi_run_image(job, tmp_path)
 
-    assert captured["body"]["tools"][0]["size"] == "1024x1536"
-    assert job["api_provider_size"] == "1024x1536"
+    assert captured["body"]["size"] == "864x1536"
+    assert job["api_provider_size"] == "864x1536"
+    assert job["api_geometry_normalized"] is False
     assert job["images"][0]["output_size"] == "864x1536"
-    with Image.open(Path(tmp_path) / "dreamapi.png") as image:
+    output = Path(tmp_path) / "dreamapi.png"
+    assert output.read_bytes() == base64.b64decode(encoded)
+    with Image.open(output) as image:
         assert image.size == (864, 1536)
 
 
-def test_dreamapi_image_2_omits_action_for_legacy_bridge_compatibility(tmp_path, monkeypatch):
+@pytest.mark.parametrize("model", [
+    "gpt-image-2", "gpt-image-2.5-flare", "gpt-image-2.5-sunburst",
+])
+def test_dreamapi_all_models_are_selected_directly_without_tools(
+        tmp_path, monkeypatch, model):
     captured = {}
 
     def fake_open(_request, data, _timeout):
         captured["body"] = json.loads(data.decode("utf-8"))
         return FakeResponse({
-            "id": "resp_image_2",
-            "output": [{
-                "type": "image_generation_call",
-                "result": png_b64(),
-                "model": "gpt-image-2",
-                "quality": "low",
-                "size": "1024x1024",
-            }],
+            "id": "img_direct",
+            "data": [{"b64_json": png_b64(width=1024, height=1024)}],
         })
 
     monkeypatch.setattr(server, "DREAMAPI_KEY", "test-key", raising=False)
@@ -258,7 +244,7 @@ def test_dreamapi_image_2_omits_action_for_legacy_bridge_compatibility(tmp_path,
         "negative_prompt": "",
         "width": 1024,
         "height": 1024,
-        "api_model": "gpt-image-2",
+        "api_model": model,
         "api_quality": "low",
         "api_fit": "cover",
         "images": [],
@@ -266,33 +252,21 @@ def test_dreamapi_image_2_omits_action_for_legacy_bridge_compatibility(tmp_path,
 
     server.dreamapi_run_image(job, tmp_path)
 
-    assert captured["body"]["tools"] == [{
-        "type": "image_generation",
-        "model": "gpt-image-2",
-        "size": "1024x1024",
-        "quality": "low",
-    }]
-    assert captured["body"]["instructions"] == (
-        "You are an image generation dispatcher. Call the provided "
-        "image_generation tool exactly once. Do not return or rewrite a prompt. "
-        "Return no text."
-    )
+    assert captured["body"]["model"] == model
+    assert set(captured["body"]) == {
+        "model", "prompt", "size", "quality", "n", "output_format",
+    }
+    assert job["api_transport"] == "images"
 
 
-def test_dreamapi_sunburst_uses_its_verified_strict_dispatch_instruction(tmp_path, monkeypatch):
+def test_dreamapi_mismatched_source_is_normalized_and_recorded(tmp_path, monkeypatch):
     captured = {}
 
     def fake_open(_request, data, _timeout):
         captured["body"] = json.loads(data.decode("utf-8"))
         return FakeResponse({
-            "id": "resp_sunburst",
-            "output": [{
-                "type": "image_generation_call",
-                "result": png_b64(),
-                "model": "gpt-image-2.5-sunburst",
-                "quality": "low",
-                "size": "1024x1024",
-            }],
+            "id": "img_mismatch",
+            "data": [{"b64_json": png_b64(width=64, height=96)}],
         })
 
     monkeypatch.setattr(server, "DREAMAPI_KEY", "test-key", raising=False)
@@ -303,7 +277,7 @@ def test_dreamapi_sunburst_uses_its_verified_strict_dispatch_instruction(tmp_pat
         "negative_prompt": "",
         "width": 1024,
         "height": 1024,
-        "api_model": "gpt-image-2.5-sunburst",
+        "api_model": "gpt-image-2.5-flare",
         "api_quality": "low",
         "api_fit": "cover",
         "images": [],
@@ -311,60 +285,39 @@ def test_dreamapi_sunburst_uses_its_verified_strict_dispatch_instruction(tmp_pat
 
     server.dreamapi_run_image(job, tmp_path)
 
-    assert captured["body"]["instructions"] == (
-        "You are an image generation dispatcher. You must call the provided "
-        "image_generation tool exactly once. Do not return or rewrite a prompt. "
-        "Return no text."
-    )
-    assert captured["body"]["tools"][0]["model"] == "gpt-image-2.5-sunburst"
-    assert captured["body"]["tools"][0]["action"] == "generate"
-    assert job["api_dispatch_profile"] == "strict"
-    assert job["dreamapi_contract_sha256"] == server.DREAMAPI_CONTRACT_SHA256
-    assert job["api_action_mode"] == "generate"
+    assert captured["body"]["size"] == "1024x1024"
+    assert job["api_geometry_normalized"] is True
+    assert job["images"][0]["source_size"] == "64x96"
+    assert job["images"][0]["output_size"] == "1024x1024"
+    with Image.open(Path(tmp_path) / "dreamapi.png") as image:
+        assert image.size == (1024, 1024)
 
 
-def test_dreamapi_image2_records_omitted_action_contract(tmp_path, monkeypatch):
-    captured = {}
-
-    def fake_open(_request, data, _timeout):
-        captured["body"] = json.loads(data.decode("utf-8"))
-        return FakeResponse({
-            "id": "resp_image2",
-            "output": [{
-                "type": "image_generation_call",
-                "result": png_b64(),
-                "model": "gpt-image-2",
-                "quality": "low",
-                "size": "1024x1024",
-            }],
-        })
-
+def test_dreamapi_empty_data_reports_sanitized_response_shape(tmp_path, monkeypatch):
     monkeypatch.setattr(server, "DREAMAPI_KEY", "test-key", raising=False)
-    monkeypatch.setattr(server, "_urlopen_bounded", fake_open)
+    monkeypatch.setattr(server, "_urlopen_bounded", lambda *_a, **_k: FakeResponse({
+        "id": "img_empty", "created": 123, "data": [], "secret": "not-returned",
+    }))
     job = {
-        "id": "dreamjob-image2",
-        "prompt": "a careful portrait",
-        "negative_prompt": "",
-        "width": 1024,
-        "height": 1024,
-        "api_model": "gpt-image-2",
-        "api_quality": "low",
-        "api_fit": "cover",
-        "images": [],
+        "id": "dreamjob-empty", "prompt": "test", "negative_prompt": "",
+        "width": 1024, "height": 1024, "api_model": "gpt-image-2.5-flare",
+        "api_quality": "low", "api_fit": "cover", "images": [],
     }
-
-    server.dreamapi_run_image(job, tmp_path)
-
-    assert "action" not in captured["body"]["tools"][0]
-    assert job["api_dispatch_profile"] == "standard"
-    assert job["dreamapi_contract_sha256"] == server.DREAMAPI_CONTRACT_SHA256
-    assert job["api_action_mode"] == "omitted"
+    with pytest.raises(RuntimeError) as caught:
+        server.dreamapi_run_image(job, tmp_path)
+    message = str(caught.value)
+    assert "no completed image" in message
+    assert "img_empty" in message
+    assert "created,data,id,secret" in message
+    assert "not-returned" not in message
+    assert job["api_response_id"] == "img_empty"
+    assert job["api_response_shape"] == "created,data,id,secret"
 
 
 def test_dreamapi_runner_surfaces_bounded_json_error_detail(tmp_path, monkeypatch):
     body = io.BytesIO(json.dumps({"error": {"message": "upstream image worker unavailable"}}).encode())
     error = urllib.error.HTTPError(
-        "https://dreamapi.club/responses", 502, "Bad Gateway", {}, body
+        "https://dreamapi.club/v1/images/generations", 502, "Bad Gateway", {}, body
     )
     monkeypatch.setattr(server, "DREAMAPI_KEY", "test-key", raising=False)
     monkeypatch.setattr(server, "_urlopen_bounded", lambda *_args, **_kwargs: (_ for _ in ()).throw(error))
@@ -394,7 +347,9 @@ def test_dreamapi_http_error_redacts_current_key_and_bearer_tokens(tmp_path, mon
     body = io.BytesIO(json.dumps({
         "error": {"message": f"invalid API key {secret}; Authorization: Bearer other-secret-token-123456"}
     }).encode())
-    error = urllib.error.HTTPError("https://dreamapi.club/responses", 401, "Unauthorized", {}, body)
+    error = urllib.error.HTTPError(
+        "https://dreamapi.club/v1/images/generations", 401, "Unauthorized", {}, body,
+    )
     monkeypatch.setattr(server, "DREAMAPI_KEY", secret, raising=False)
     monkeypatch.setattr(server, "_urlopen_bounded", lambda *_a, **_k: (_ for _ in ()).throw(error))
     job = {
@@ -410,7 +365,7 @@ def test_dreamapi_http_error_redacts_current_key_and_bearer_tokens(tmp_path, mon
     assert "[REDACTED]" in message
 
 
-@pytest.mark.parametrize("payload", [None, [], 123, "bad", {"output": "bad"}, {"output": [None]}])
+@pytest.mark.parametrize("payload", [None, [], 123, "bad", {"data": "bad"}, {"data": [None]}])
 def test_dreamapi_rejects_malformed_response_with_stable_error(tmp_path, monkeypatch, payload):
     monkeypatch.setattr(server, "DREAMAPI_KEY", "test-key", raising=False)
     monkeypatch.setattr(server, "_urlopen_bounded", lambda *_a, **_k: FakeResponse(payload))
@@ -428,7 +383,7 @@ def test_dreamapi_rejects_source_image_over_pixel_budget_before_full_decode(tmp_
     monkeypatch.setattr(server, "DREAMAPI_KEY", "test-key", raising=False)
     monkeypatch.setattr(server, "_urlopen_bounded", lambda *_a, **_k: FakeResponse({
         "id": "resp_too_large",
-        "output": [{"type": "image_generation_call", "result": encoded}],
+        "data": [{"b64_json": encoded}],
     }))
     job = {
         "id": "dreamjob-pixels", "prompt": "test", "negative_prompt": "",
@@ -468,7 +423,7 @@ def test_dreamapi_http_error_body_read_is_inside_the_same_hard_deadline(tmp_path
             return b""
 
     error = urllib.error.HTTPError(
-        "https://dreamapi.club/responses", 502, "Bad Gateway", {}, SlowErrorBody()
+        "https://dreamapi.club/v1/images/generations", 502, "Bad Gateway", {}, SlowErrorBody()
     )
     monkeypatch.setattr(server, "DREAMAPI_KEY", "test-key", raising=False)
     monkeypatch.setattr(server, "DREAMAPI_TIMEOUT", 0.05, raising=False)

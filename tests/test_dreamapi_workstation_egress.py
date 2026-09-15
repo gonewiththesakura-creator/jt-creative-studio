@@ -32,34 +32,14 @@ def load_module(name, path):
     return module
 
 
-DISPATCH_INSTRUCTIONS = (
-    "You are an image generation dispatcher. Call the provided image_generation "
-    "tool exactly once. Do not return or rewrite a prompt. Return no text."
-)
-STRICT_DISPATCH_INSTRUCTIONS = DISPATCH_INSTRUCTIONS.replace(
-    ". Call the", ". You must call the", 1,
-)
-
-
-def valid_payload(image_model="gpt-image-2"):
-    tool = {
-        "type": "image_generation",
-        "model": image_model,
-        "size": "864x1536",
-        "quality": "low",
-    }
-    if image_model.startswith("gpt-image-2.5-"):
-        tool["action"] = "generate"
+def valid_payload(image_model="gpt-image-2", quality="low"):
     return {
-        "model": "gpt-5.6-luna",
-        "instructions": (
-            STRICT_DISPATCH_INSTRUCTIONS
-            if image_model == "gpt-image-2.5-sunburst"
-            else DISPATCH_INSTRUCTIONS
-        ),
-        "input": "A blue sphere on a clean studio background.",
-        "stream": False,
-        "tools": [tool],
+        "model": image_model,
+        "prompt": "A blue sphere on a clean studio background.",
+        "size": "864x1536",
+        "quality": quality,
+        "n": 1,
+        "output_format": "png",
     }
 
 
@@ -72,27 +52,21 @@ def test_watchdog_accepts_only_the_panels_bounded_image_request_contract():
     assert watchdog.validate_dreamapi_payload(
         valid_payload("gpt-image-2.5-sunburst")
     ) == valid_payload("gpt-image-2.5-sunburst")
+    assert watchdog.validate_dreamapi_payload(
+        valid_payload("gpt-image-2.5-flare", "max")
+    ) == valid_payload("gpt-image-2.5-flare", "max")
 
     mutations = [
         {**valid_payload(), "model": "other"},
-        {**valid_payload(), "instructions": "Call any available tool."},
-        {**valid_payload(), "instructions": STRICT_DISPATCH_INSTRUCTIONS},
-        {**valid_payload("gpt-image-2.5-sunburst"), "instructions": DISPATCH_INSTRUCTIONS},
+        {**valid_payload(), "model": "gpt-5.6-luna"},
         {**valid_payload(), "stream": True},
-        {**valid_payload(), "input": "x" * 2001},
+        {**valid_payload(), "tools": [{"type": "image_generation"}]},
+        {**valid_payload(), "prompt": "x" * 2001},
         {**valid_payload(), "unexpected": True},
-        {**valid_payload(), "tool_choice": {"type": "image_generation"}},
-        {**valid_payload(), "tools": []},
-        {**valid_payload(), "tools": [{**valid_payload()["tools"][0], "action": "generate"}]},
-        {
-            **valid_payload("gpt-image-2.5-flare"),
-            "tools": [{
-                key: value for key, value in valid_payload("gpt-image-2.5-flare")["tools"][0].items()
-                if key != "action"
-            }],
-        },
-        {**valid_payload(), "tools": [{**valid_payload()["tools"][0], "size": "2048x2048"}]},
-        {**valid_payload(), "tools": [{**valid_payload()["tools"][0], "quality": "max"}]},
+        {**valid_payload(), "n": 2},
+        {**valid_payload(), "size": "2048x2048"},
+        {**valid_payload(), "quality": "max"},
+        {**valid_payload(), "output_format": "jpeg"},
     ]
     for payload in mutations:
         with pytest.raises(ValueError):
@@ -111,7 +85,7 @@ def test_watchdog_forwards_authorization_only_to_fixed_https_dreamapi(monkeypatc
             if captured.get("read"):
                 return b""
             captured["read"] = True
-            return b'{"output":[]}'
+            return b'{"data":[]}'
 
         def __enter__(self):
             return self
@@ -135,8 +109,8 @@ def test_watchdog_forwards_authorization_only_to_fixed_https_dreamapi(monkeypatc
     status, body, content_type = watchdog._decode_dreamapi_worker_output(
         worker_output.getvalue(),
     )
-    assert (status, body, content_type) == (200, b'{"output":[]}', "application/json")
-    assert captured["url"] == "https://dreamapi.club/responses"
+    assert (status, body, content_type) == (200, b'{"data":[]}', "application/json")
+    assert captured["url"] == "https://dreamapi.club/v1/images/generations"
     assert captured["authorization"] == "Bearer local-test-token"
     assert 0 < captured["timeout"] <= watchdog.DREAMAPI_TIMEOUT
     assert captured["payload"] == valid_payload()
@@ -146,7 +120,7 @@ def test_watchdog_forwards_authorization_only_to_fixed_https_dreamapi(monkeypatc
 def test_watchdog_parent_sends_secret_over_stdin_not_process_arguments(monkeypatch):
     watchdog = load_module("watchdog_dreamapi_worker_boundary", ROOT / "comfy_watchdog.py")
     captured = {}
-    body = b'{"output":[]}'
+    body = b'{"data":[]}'
 
     class Process:
         returncode = 0
@@ -238,7 +212,7 @@ def test_watchdog_single_flight_keeps_uncertainty_fence_after_timed_out_worker(m
     allow_worker_exit = threading.Event()
     worker_stopped = threading.Event()
     processes = []
-    body = b'{"output":[]}'
+    body = b'{"data":[]}'
 
     class SlowProcess:
         returncode = None
@@ -292,7 +266,7 @@ def test_watchdog_single_flight_keeps_uncertainty_fence_after_timed_out_worker(m
     def post():
         raw = json.dumps(valid_payload()).encode("utf-8")
         request = urllib.request.Request(
-            f"http://127.0.0.1:{httpd.server_port}/dreamapi/responses",
+            f"http://127.0.0.1:{httpd.server_port}/dreamapi/images/generations",
             data=raw,
             headers={
                 "Authorization": "Bearer local-test-token",
@@ -443,7 +417,7 @@ def test_watchdog_tightens_socket_timeout_before_every_body_read(monkeypatch, re
         def __init__(self):
             self.closed = False
             self.fp = types.SimpleNamespace(raw=types.SimpleNamespace(_sock=FakeSocket()))
-            self.chunks = [b'{"output":[]}', b""]
+            self.chunks = [b'{"data":[]}', b""]
 
         def __enter__(self): return self
         def __exit__(self, *_args): return False
@@ -458,7 +432,7 @@ def test_watchdog_tightens_socket_timeout_before_every_body_read(monkeypatch, re
     def fake_urlopen(*_args, **_kwargs):
         if response_kind == "http_error":
             raise urllib.error.HTTPError(
-                "https://dreamapi.club/responses", 502, "Bad Gateway", {}, body,
+                "https://dreamapi.club/v1/images/generations", 502, "Bad Gateway", {}, body,
             )
         return body
 
@@ -469,7 +443,7 @@ def test_watchdog_tightens_socket_timeout_before_every_body_read(monkeypatch, re
     )
     assert (status, raw, content_type) == (
         502 if response_kind == "http_error" else 200,
-        b'{"output":[]}',
+        b'{"data":[]}',
         "application/json",
     )
     assert len(socket_timeouts) == 2
@@ -514,19 +488,19 @@ def test_server_egress_endpoint_is_optional_and_loopback_only(monkeypatch):
     server = load_module("server_dreamapi_egress", ROOT / "server.py")
     monkeypatch.setattr(server, "DREAMAPI_BASE_URL", "https://dreamapi.club")
     monkeypatch.setattr(server, "DREAMAPI_EGRESS_URL", "")
-    assert server._dreamapi_request_endpoint() == "https://dreamapi.club/responses"
+    assert server._dreamapi_request_endpoint() == "https://dreamapi.club/v1/images/generations"
 
     monkeypatch.setattr(
-        server, "DREAMAPI_EGRESS_URL", "http://127.0.0.1:8198/dreamapi/responses",
+        server, "DREAMAPI_EGRESS_URL", "http://127.0.0.1:8198/dreamapi/images/generations",
     )
-    assert server._dreamapi_request_endpoint() == "http://127.0.0.1:8198/dreamapi/responses"
+    assert server._dreamapi_request_endpoint() == "http://127.0.0.1:8198/dreamapi/images/generations"
 
     for unsafe in (
-        "https://127.0.0.1:8198/dreamapi/responses",
-        "http://8.210.125.65:8198/dreamapi/responses",
-        "http://user:pass@127.0.0.1:8198/dreamapi/responses",
+        "https://127.0.0.1:8198/dreamapi/images/generations",
+        "http://8.210.125.65:8198/dreamapi/images/generations",
+        "http://user:pass@127.0.0.1:8198/dreamapi/images/generations",
         "http://127.0.0.1:8198/wrong-path",
-        "http://127.0.0.1:8198/dreamapi/responses?next=elsewhere",
+        "http://127.0.0.1:8198/dreamapi/images/generations?next=elsewhere",
     ):
         monkeypatch.setattr(server, "DREAMAPI_EGRESS_URL", unsafe)
         with pytest.raises(RuntimeError, match="loopback"):

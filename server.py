@@ -34,31 +34,12 @@ UPLOAD_USAGE_FILE = DATA_DIR / "upload_usage.json"
 RH_BASE = "https://www.runninghub.ai/openapi/v2"
 RH_KEY = os.environ.get("RUNNINGHUB_API_KEY", "")
 
-# DreamAPI Responses image-generation adapter. The browser never sees this key
-# or controls the upstream URL/text model; only an allowlisted image model,
-# quality and fit mode can be selected through the creator endpoint.
+# DreamAPI Images adapter. The browser never sees this key or controls the
+# upstream URL; only an allowlisted image model, quality and fit mode can be
+# selected through the creator endpoint.
 DREAMAPI_KEY = os.environ.get("DREAMAPI_KEY", "")
 DREAMAPI_BASE_URL = os.environ.get("DREAMAPI_BASE_URL", "https://dreamapi.club").rstrip("/")
 DREAMAPI_EGRESS_URL = os.environ.get("DREAMAPI_EGRESS_URL", "").strip()
-DREAMAPI_TEXT_MODEL = "gpt-5.6-luna"
-DREAMAPI_STANDARD_DISPATCH_INSTRUCTIONS = (
-    "You are an image generation dispatcher. Call the provided image_generation "
-    "tool exactly once. Do not return or rewrite a prompt. Return no text."
-)
-DREAMAPI_STRICT_DISPATCH_INSTRUCTIONS = (
-    "You are an image generation dispatcher. You must call the provided image_generation "
-    "tool exactly once. Do not return or rewrite a prompt. Return no text."
-)
-DREAMAPI_DISPATCH_INSTRUCTIONS_BY_MODEL = {
-    "gpt-image-2": DREAMAPI_STANDARD_DISPATCH_INSTRUCTIONS,
-    "gpt-image-2.5-flare": DREAMAPI_STANDARD_DISPATCH_INSTRUCTIONS,
-    "gpt-image-2.5-sunburst": DREAMAPI_STRICT_DISPATCH_INSTRUCTIONS,
-}
-DREAMAPI_DISPATCH_PROFILE_BY_MODEL = {
-    "gpt-image-2": "standard",
-    "gpt-image-2.5-flare": "standard",
-    "gpt-image-2.5-sunburst": "strict",
-}
 DREAMAPI_TIMEOUT = 600
 DREAMAPI_MAX_RESPONSE_BYTES = 96 * 1024 * 1024
 DREAMAPI_MAX_IMAGE_BYTES = 32 * 1024 * 1024
@@ -68,10 +49,6 @@ DREAMAPI_IMAGE_QUALITIES = {
     "gpt-image-2.5-flare": {"low", "medium", "high", "xhigh", "max", "auto"},
     "gpt-image-2.5-sunburst": {"low", "medium", "high", "xhigh", "max", "auto"},
 }
-DREAMAPI_IMAGE_ACTION_MODELS = {
-    "gpt-image-2.5-flare",
-    "gpt-image-2.5-sunburst",
-}
 DREAMAPI_RATIO_SIZES = {
     "1:1": (1024, 1024),
     "2:3": (1024, 1536),
@@ -79,48 +56,32 @@ DREAMAPI_RATIO_SIZES = {
     "9:16": (864, 1536),
     "16:9": (1536, 864),
 }
-# The Responses image tool accepts only these three concrete canvas sizes.
-# Keep the user's requested output ratio separate: tall/wide results are
-# generated on the closest supported canvas and fitted to the requested size.
-DREAMAPI_PROVIDER_SIZE_BY_RATIO = {
-    "1:1": (1024, 1024),
-    "2:3": (1024, 1536),
-    "3:2": (1536, 1024),
-    "9:16": (1024, 1536),
-    "16:9": (1536, 1024),
-}
+DREAMAPI_PROVIDER_SIZE_BY_RATIO = dict(DREAMAPI_RATIO_SIZES)
 
 
 def _dreamapi_contract_document():
     """Return the public request-shape contract shared with the workstation proxy."""
-    sizes = {f"{width}x{height}" for width, height in DREAMAPI_RATIO_SIZES.values()}
     models = {}
     for model in sorted(DREAMAPI_IMAGE_QUALITIES):
         models[model] = {
-            "action": "generate" if model in DREAMAPI_IMAGE_ACTION_MODELS else "omitted",
             "qualities": sorted(DREAMAPI_IMAGE_QUALITIES[model]),
         }
     return {
-        "contract_version": 2,
-        "dispatcher": {
-            "instructions_by_image_model": {
-                model: DREAMAPI_DISPATCH_INSTRUCTIONS_BY_MODEL[model]
-                for model in sorted(DREAMAPI_IMAGE_QUALITIES)
-            },
-            "model": DREAMAPI_TEXT_MODEL,
-            "stream": False,
-        },
-        "image_tool": {
+        "contract_version": 3,
+        "images_api": {
             "models": models,
-            "sizes": sorted(sizes),
-            "type": "image_generation",
+            "output_format": "png",
+            "request_keys": ["model", "n", "output_format", "prompt", "quality", "size"],
+            "sizes_by_ratio": {
+                ratio: f"{width}x{height}"
+                for ratio, (width, height) in DREAMAPI_PROVIDER_SIZE_BY_RATIO.items()
+            },
         },
-        "request_keys": ["input", "instructions", "model", "stream", "tools"],
         "runtime_safety": {
             "kill_worker_on_parent_exit": True,
             "persistent_uncertainty_fence": True,
         },
-        "tool_count": 1,
+        "single_image_count": 1,
     }
 
 
@@ -992,7 +953,7 @@ def dreamapi_workstation_egress_status():
         endpoint = urllib.parse.urlparse(_dreamapi_request_endpoint())
         control = urllib.parse.urlparse(CONTROL_URL)
         loopback_hosts = {"127.0.0.1", "::1", "localhost"}
-        if (endpoint.path != "/dreamapi/responses"
+        if (endpoint.path != "/dreamapi/images/generations"
                 or control.scheme != "http" or control.hostname not in loopback_hosts
                 or control.username or control.password or control.query or control.fragment
                 or control.path not in {"", "/"}
@@ -2229,7 +2190,7 @@ def _dreamapi_size(width, height):
 
 
 def _dreamapi_provider_size(job):
-    """Map a panel ratio to a concrete canvas accepted by the image tool."""
+    """Map a panel ratio to the exact concrete canvas accepted by Images API."""
     ratio = str(job.get("api_ratio") or "")
     if ratio:
         dimensions = DREAMAPI_PROVIDER_SIZE_BY_RATIO.get(ratio)
@@ -2254,10 +2215,11 @@ def _dreamapi_redact_error(detail):
 
 def _dreamapi_request_endpoint():
     if not DREAMAPI_EGRESS_URL:
-        return DREAMAPI_BASE_URL + "/responses"
+        return DREAMAPI_BASE_URL + "/v1/images/generations"
     parsed = urllib.parse.urlparse(DREAMAPI_EGRESS_URL)
     if (parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "::1", "localhost"}
-            or parsed.username or parsed.password or parsed.path != "/dreamapi/responses"
+            or parsed.username or parsed.password
+            or parsed.path != "/dreamapi/images/generations"
             or parsed.query or parsed.fragment):
         raise RuntimeError("DREAMAPI_EGRESS_URL must be a loopback HTTP endpoint")
     return DREAMAPI_EGRESS_URL
@@ -2303,7 +2265,7 @@ def compact_dreamapi_prompts(positive, negative, max_total=1600):
 
 def build_dreamapi_input(positive, negative, size, orientation, max_total=1600,
                          final_size=None):
-    """Build the complete bounded upstream input, including bridge instructions."""
+    """Build the complete bounded native Images API prompt."""
     prefix = [
         f"Required canvas: exactly {size}, {orientation} composition.",
     ]
@@ -2382,7 +2344,7 @@ def _dreamapi_request_json(request, data, timeout):
 
 
 def dreamapi_run_image(job, jobdir):
-    """Generate one image with DreamAPI Responses and archive an exact-size PNG."""
+    """Generate one image with DreamAPI Images and archive an exact-size PNG."""
     if not DREAMAPI_KEY:
         raise RuntimeError("DREAMAPI_KEY is not configured")
     model = str(job.get("api_model") or "gpt-image-2.5-flare")
@@ -2394,11 +2356,10 @@ def dreamapi_run_image(job, jobdir):
         raise ValueError("quality is not supported by the DreamAPI image model")
     if fit not in {"cover", "contain"}:
         raise ValueError("unknown DreamAPI fit mode")
-    job["api_dispatch_profile"] = DREAMAPI_DISPATCH_PROFILE_BY_MODEL[model]
+    job["api_transport"] = "images"
+    job["api_dispatch_profile"] = "native_images"
     job["dreamapi_contract_sha256"] = DREAMAPI_CONTRACT_SHA256
-    job["api_action_mode"] = (
-        "generate" if model in DREAMAPI_IMAGE_ACTION_MODELS else "omitted"
-    )
+    job["api_action_mode"] = "direct"
     output_size = _dreamapi_size(job["width"], job["height"])
     provider_size = _dreamapi_provider_size(job)
     orientation = "square" if job["width"] == job["height"] else (
@@ -2408,22 +2369,21 @@ def dreamapi_run_image(job, jobdir):
         final_size=output_size)
     job["api_prompt_compacted"] = compacted
     job["api_upstream_prompt_chars"] = positive_chars
-    tool = {
-        "type": "image_generation", "model": model,
-        "size": provider_size, "quality": quality,
-    }
-    if model in DREAMAPI_IMAGE_ACTION_MODELS:
-        tool["action"] = "generate"
     payload = {
-        "model": DREAMAPI_TEXT_MODEL,
-        "instructions": DREAMAPI_DISPATCH_INSTRUCTIONS_BY_MODEL[model],
-        "input": upstream_input,
-        "stream": False,
-        "tools": [tool],
+        "model": model,
+        "prompt": upstream_input,
+        "size": provider_size,
+        "quality": quality,
+        "n": 1,
+        "output_format": "png",
     }
     request = urllib.request.Request(
         _dreamapi_request_endpoint(),
-        headers={"Authorization": f"Bearer {DREAMAPI_KEY}", "Content-Type": "application/json"},
+        headers={
+            "Authorization": f"Bearer {DREAMAPI_KEY}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
         method="POST",
     )
     job["provider_status"] = "API_GENERATING"
@@ -2433,19 +2393,23 @@ def dreamapi_run_image(job, jobdir):
     result = _dreamapi_request_json(
         request, json.dumps(payload).encode("utf-8"), DREAMAPI_TIMEOUT
     )
-    if not isinstance(result, dict) or not isinstance(result.get("output"), list):
+    if not isinstance(result, dict) or not isinstance(result.get("data"), list):
         raise RuntimeError("DreamAPI returned malformed response")
-    if any(not isinstance(item, dict) for item in result["output"]):
+    if any(not isinstance(item, dict) for item in result["data"]):
         raise RuntimeError("DreamAPI returned malformed response")
-    image_item = next((item for item in result["output"]
-                       if isinstance(item, dict)
-                       and item.get("type") == "image_generation_call"
-                       and isinstance(item.get("result"), str) and item.get("result")), None)
+    response_id = str(result.get("id") or "")
+    response_shape = ",".join(sorted(str(key) for key in result))
+    job["api_response_id"] = response_id
+    job["api_response_shape"] = response_shape
+    image_item = next((item for item in result["data"]
+                       if isinstance(item.get("b64_json"), str)
+                       and item.get("b64_json")), None)
     if not image_item:
-        raise RuntimeError("DreamAPI returned no completed image")
+        suffix = f" (response_id={response_id or 'none'}, keys={response_shape or 'none'})"
+        raise RuntimeError("DreamAPI returned no completed image" + suffix)
     job["provider_status"] = "API_PROCESSING_RESULT"
     job["progress_pct"] = 75
-    encoded = image_item["result"]
+    encoded = image_item["b64_json"]
     if len(encoded) > ((DREAMAPI_MAX_IMAGE_BYTES + 2) // 3) * 4 + 4:
         raise RuntimeError("DreamAPI image data is too large")
     try:
@@ -2454,7 +2418,7 @@ def dreamapi_run_image(job, jobdir):
         raise RuntimeError("DreamAPI returned invalid image data") from error
     if len(source) > DREAMAPI_MAX_IMAGE_BYTES:
         raise RuntimeError("DreamAPI image data is too large")
-    job["provider_status"] = "API_FITTING_RESULT"
+    job["provider_status"] = "API_VALIDATING_RESULT"
     job["progress_pct"] = 88
     from PIL import Image, ImageOps, UnidentifiedImageError
     try:
@@ -2471,26 +2435,41 @@ def dreamapi_run_image(job, jobdir):
         except Exception as error:
             raise RuntimeError("DreamAPI returned invalid image data") from error
         source_size = f"{decoded.width}x{decoded.height}"
-        converted = decoded.convert("RGB")
         target = (int(job["width"]), int(job["height"]))
-        if fit == "cover":
-            output = ImageOps.fit(converted, target, method=Image.Resampling.LANCZOS,
-                                  centering=(0.5, 0.5))
-        else:
-            output = ImageOps.contain(converted, target, method=Image.Resampling.LANCZOS)
-            canvas = Image.new("RGB", target, "white")
-            canvas.paste(output, ((target[0] - output.width) // 2, (target[1] - output.height) // 2))
-            output = canvas
         jobdir = pathlib.Path(jobdir)
         jobdir.mkdir(parents=True, exist_ok=True)
         filename = "dreamapi.png"
         destination = jobdir / filename
-        output.save(destination, "PNG", optimize=True)
+        geometry_normalized = decoded.size != target
+        reencoded = decoded.format != "PNG" or geometry_normalized
+        if not reencoded:
+            destination.write_bytes(source)
+        else:
+            converted = decoded.convert("RGB")
+            if geometry_normalized and fit == "cover":
+                output = ImageOps.fit(
+                    converted, target, method=Image.Resampling.LANCZOS,
+                    centering=(0.5, 0.5),
+                )
+            elif geometry_normalized:
+                output = ImageOps.contain(
+                    converted, target, method=Image.Resampling.LANCZOS,
+                )
+                canvas = Image.new("RGB", target, "white")
+                canvas.paste(
+                    output,
+                    ((target[0] - output.width) // 2, (target[1] - output.height) // 2),
+                )
+                output = canvas
+            else:
+                output = converted
+            output.save(destination, "PNG", optimize=True)
     job.update({
-        "api_response_id": str(result.get("id") or ""),
-        "api_upstream_model": str(image_item.get("model") or "unknown"),
-        "api_upstream_quality": str(image_item.get("quality") or "unknown"),
-        "api_upstream_size": str(image_item.get("size") or "unknown"),
+        "api_geometry_normalized": geometry_normalized,
+        "api_image_reencoded": reencoded,
+        "api_upstream_model": str(image_item.get("model") or result.get("model") or "unknown"),
+        "api_upstream_quality": str(image_item.get("quality") or result.get("quality") or "unknown"),
+        "api_upstream_size": str(image_item.get("size") or result.get("size") or source_size),
         "provider_finished": time.time(), "download_finished": time.time(),
         "provider_status": "API_DONE", "progress_pct": 100,
         "images": [{
@@ -3279,6 +3258,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "sequence_mode", "sequence_seed", "stage_status", "generation_backend",
                     "seed_supported", "api_model", "api_quality", "api_fit", "api_ratio",
                     "api_dispatch_profile", "dreamapi_contract_sha256", "api_action_mode",
+                    "api_transport", "api_geometry_normalized", "api_image_reencoded",
+                    "api_response_shape",
                     "api_prompt_compacted", "api_upstream_prompt_chars",
                     "api_upstream_model", "api_upstream_quality", "api_upstream_size",
                     "api_provider_size",
@@ -3317,6 +3298,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         "sequence_mode", "sequence_seed", "stage_status", "generation_backend",
                         "seed_supported", "api_model", "api_quality", "api_fit", "api_ratio",
                         "api_dispatch_profile", "dreamapi_contract_sha256", "api_action_mode",
+                        "api_transport", "api_geometry_normalized", "api_image_reencoded",
+                        "api_response_shape",
                         "api_prompt_compacted", "api_upstream_prompt_chars",
                         "api_upstream_model", "api_upstream_quality", "api_upstream_size",
                         "api_provider_size",
@@ -4111,15 +4094,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
                    "api_quality": api_quality if generation_backend == "api" else None,
                    "api_fit": api_fit if generation_backend == "api" else None,
                    "api_ratio": api_ratio if generation_backend == "api" else None,
+                   "api_transport": "images" if generation_backend == "api" else None,
                    "api_dispatch_profile": (
-                       DREAMAPI_DISPATCH_PROFILE_BY_MODEL[api_model]
-                       if generation_backend == "api" else None),
+                       "native_images" if generation_backend == "api" else None),
                    "dreamapi_contract_sha256": (
                        DREAMAPI_CONTRACT_SHA256 if generation_backend == "api" else None),
-                   "api_action_mode": (
-                       "generate" if generation_backend == "api"
-                       and api_model in DREAMAPI_IMAGE_ACTION_MODELS else
-                       "omitted" if generation_backend == "api" else None),
+                   "api_action_mode": "direct" if generation_backend == "api" else None,
+                   "api_geometry_normalized": None,
+                   "api_image_reencoded": None,
+                   "api_response_id": None,
+                   "api_response_shape": None,
                    "seed_supported": generation_backend != "api",
                    "comfy_prompt_id": None, "transfer_index": 0, "transfer_total": 0,
                    "transfer_started": None, "transfer_finished": None,

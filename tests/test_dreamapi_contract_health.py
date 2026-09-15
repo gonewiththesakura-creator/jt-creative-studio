@@ -13,7 +13,7 @@ import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_CONTRACT_SHA256 = "665d283bd420f76f031d9530f1d757f022d6cc16a5c9e9bc315e4966da797959"
+EXPECTED_CONTRACT_SHA256 = "d2e692e229a0525590fbbc5ffc4f466faebe70675278d263a44bfd0dffc6f0fa"
 
 
 def load_module(name, path):
@@ -24,39 +24,31 @@ def load_module(name, path):
 
 
 def expected_contract_document():
-    standard_instructions = (
-        "You are an image generation dispatcher. Call the provided image_generation "
-        "tool exactly once. Do not return or rewrite a prompt. Return no text."
-    )
-    strict_instructions = standard_instructions.replace(". Call the", ". You must call the", 1)
     common = ["auto", "high", "low", "medium"]
     extended = ["auto", "high", "low", "max", "medium", "xhigh"]
     return {
-        "contract_version": 2,
-        "dispatcher": {
-            "instructions_by_image_model": {
-                "gpt-image-2": standard_instructions,
-                "gpt-image-2.5-flare": standard_instructions,
-                "gpt-image-2.5-sunburst": strict_instructions,
-            },
-            "model": "gpt-5.6-luna",
-            "stream": False,
-        },
-        "image_tool": {
+        "contract_version": 3,
+        "images_api": {
             "models": {
-                "gpt-image-2": {"action": "omitted", "qualities": common},
-                "gpt-image-2.5-flare": {"action": "generate", "qualities": extended},
-                "gpt-image-2.5-sunburst": {"action": "generate", "qualities": extended},
+                "gpt-image-2": {"qualities": common},
+                "gpt-image-2.5-flare": {"qualities": extended},
+                "gpt-image-2.5-sunburst": {"qualities": extended},
             },
-            "sizes": ["1024x1024", "1024x1536", "1536x1024", "1536x864", "864x1536"],
-            "type": "image_generation",
+            "output_format": "png",
+            "request_keys": ["model", "n", "output_format", "prompt", "quality", "size"],
+            "sizes_by_ratio": {
+                "1:1": "1024x1024",
+                "2:3": "1024x1536",
+                "3:2": "1536x1024",
+                "9:16": "864x1536",
+                "16:9": "1536x864",
+            },
         },
-        "request_keys": ["input", "instructions", "model", "stream", "tools"],
         "runtime_safety": {
             "kill_worker_on_parent_exit": True,
             "persistent_uncertainty_fence": True,
         },
-        "tool_count": 1,
+        "single_image_count": 1,
     }
 
 
@@ -73,11 +65,7 @@ def test_server_and_watchdog_compute_the_reviewed_contract_hash():
     assert watchdog._dreamapi_contract_document() == expected
     assert server.DREAMAPI_CONTRACT_SHA256 == EXPECTED_CONTRACT_SHA256
     assert watchdog.DREAMAPI_CONTRACT_SHA256 == EXPECTED_CONTRACT_SHA256
-    assert (
-        set(server.DREAMAPI_DISPATCH_PROFILE_BY_MODEL)
-        == set(server.DREAMAPI_DISPATCH_INSTRUCTIONS_BY_MODEL)
-        == set(server.DREAMAPI_IMAGE_QUALITIES)
-    )
+    assert set(server.DREAMAPI_IMAGE_QUALITIES) == set(expected["images_api"]["models"])
 
 
 def test_watchdog_status_and_cli_expose_only_the_public_contract_hash(monkeypatch):
@@ -114,7 +102,10 @@ def test_watchdog_status_and_cli_expose_only_the_public_contract_hash(monkeypatc
 
 def test_configured_workstation_egress_requires_live_matching_status(monkeypatch):
     server = load_module("dreamapi_contract_probe", ROOT / "server.py")
-    monkeypatch.setattr(server, "DREAMAPI_EGRESS_URL", "http://127.0.0.1:8198/dreamapi/responses")
+    monkeypatch.setattr(
+        server, "DREAMAPI_EGRESS_URL",
+        "http://127.0.0.1:8198/dreamapi/images/generations",
+    )
     monkeypatch.setattr(server, "CONTROL_URL", "http://127.0.0.1:8198")
     calls = []
 
@@ -147,7 +138,10 @@ def test_configured_workstation_egress_requires_live_matching_status(monkeypatch
     assert server.dreamapi_workstation_egress_status() == (False, False, True)
 
     monkeypatch.setattr(server, "http_json", matching)
-    monkeypatch.setattr(server, "DREAMAPI_EGRESS_URL", "http://127.0.0.1:8197/dreamapi/responses")
+    monkeypatch.setattr(
+        server, "DREAMAPI_EGRESS_URL",
+        "http://127.0.0.1:8197/dreamapi/images/generations",
+    )
     assert server.dreamapi_workstation_egress_status() == (False, False, False)
 
 
@@ -168,7 +162,10 @@ def test_unconfigured_workstation_egress_does_not_probe_control(monkeypatch):
 def test_api_health_reports_verified_workstation_contract(monkeypatch, remote_hash, ready):
     server = load_module(f"dreamapi_contract_http_{ready}", ROOT / "server.py")
     monkeypatch.setattr(server, "DREAMAPI_KEY", "fixture-secret-never-serialize")
-    monkeypatch.setattr(server, "DREAMAPI_EGRESS_URL", "http://127.0.0.1:8198/dreamapi/responses")
+    monkeypatch.setattr(
+        server, "DREAMAPI_EGRESS_URL",
+        "http://127.0.0.1:8198/dreamapi/images/generations",
+    )
     monkeypatch.setattr(server, "CONTROL_URL", "http://127.0.0.1:8198")
     monkeypatch.setattr(server, "comfy_ok", lambda: (True, "ok"))
     monkeypatch.setattr(server, "http_json", lambda *args, **kwargs: {

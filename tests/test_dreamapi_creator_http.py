@@ -82,9 +82,10 @@ def test_api_creator_submission_is_accepted_and_idempotent():
     assert job["api_model"] == "gpt-image-2.5-flare"
     assert job["api_quality"] == "high"
     assert job["api_fit"] == "cover"
-    assert job["api_dispatch_profile"] == "standard"
+    assert job["api_transport"] == "images"
+    assert job["api_dispatch_profile"] == "native_images"
     assert job["dreamapi_contract_sha256"] == server.DREAMAPI_CONTRACT_SHA256
-    assert job["api_action_mode"] == "generate"
+    assert job["api_action_mode"] == "direct"
     assert {
         key: job["selection_snapshot"][key]
         for key in ("api_model", "api_quality", "api_fit", "api_ratio")
@@ -114,9 +115,10 @@ def test_api_creator_submission_is_accepted_and_idempotent():
     assert public["api_model"] == "gpt-image-2.5-flare"
     assert public["api_quality"] == "high"
     assert public["api_fit"] == "cover"
-    assert public["api_dispatch_profile"] == "standard"
+    assert public["api_transport"] == "images"
+    assert public["api_dispatch_profile"] == "native_images"
     assert public["dreamapi_contract_sha256"] == server.DREAMAPI_CONTRACT_SHA256
-    assert public["api_action_mode"] == "generate"
+    assert public["api_action_mode"] == "direct"
     assert job["api_response_id"] == "resp_fixture"
     assert "api_response_id" not in public
     assert job["prompt"] == BASE["prompt"]
@@ -129,9 +131,10 @@ def test_api_creator_submission_is_accepted_and_idempotent():
     assert history_job["api_upstream_model"] == "unknown"
     assert history_job["api_upstream_quality"] == "high"
     assert history_job["api_upstream_size"] == "1024x1024"
-    assert history_job["api_dispatch_profile"] == "standard"
+    assert history_job["api_transport"] == "images"
+    assert history_job["api_dispatch_profile"] == "native_images"
     assert history_job["dreamapi_contract_sha256"] == server.DREAMAPI_CONTRACT_SHA256
-    assert history_job["api_action_mode"] == "generate"
+    assert history_job["api_action_mode"] == "direct"
 
 
 def test_api_creator_rejects_non_single_batch_and_hd():

@@ -19,7 +19,7 @@ SSH_KEY    = os.environ.get("COMFY_PANEL_SSH_KEY", r"D:\LAN-Share\lora\_work\com
 SERVER     = os.environ.get("COMFY_PANEL_SSH_SERVER", "admin@8.210.125.65")
 SSH_PORT   = os.environ.get("COMFY_PANEL_SSH_PORT", "22")
 CONTROL_PORT = 8198
-DREAMAPI_RESPONSES_URL = "https://dreamapi.club/responses"
+DREAMAPI_IMAGES_URL = "https://dreamapi.club/v1/images/generations"
 DREAMAPI_REQUEST_LIMIT = 64 * 1024
 DREAMAPI_RESPONSE_LIMIT = 96 * 1024 * 1024
 DREAMAPI_TIMEOUT = 600
@@ -35,61 +35,39 @@ DREAMAPI_FENCE_PATH = os.environ.get(
         "JTComfyPanel", "dreamapi-inflight.json",
     ),
 )
-DREAMAPI_TEXT_MODEL = "gpt-5.6-luna"
-DREAMAPI_STANDARD_DISPATCH_INSTRUCTIONS = (
-    "You are an image generation dispatcher. Call the provided image_generation "
-    "tool exactly once. Do not return or rewrite a prompt. Return no text."
-)
-DREAMAPI_STRICT_DISPATCH_INSTRUCTIONS = (
-    "You are an image generation dispatcher. You must call the provided image_generation "
-    "tool exactly once. Do not return or rewrite a prompt. Return no text."
-)
-DREAMAPI_DISPATCH_INSTRUCTIONS_BY_MODEL = {
-    "gpt-image-2": DREAMAPI_STANDARD_DISPATCH_INSTRUCTIONS,
-    "gpt-image-2.5-flare": DREAMAPI_STANDARD_DISPATCH_INSTRUCTIONS,
-    "gpt-image-2.5-sunburst": DREAMAPI_STRICT_DISPATCH_INSTRUCTIONS,
-}
 DREAMAPI_IMAGE_QUALITIES = {
     "gpt-image-2": {"low", "medium", "high", "auto"},
     "gpt-image-2.5-flare": {"low", "medium", "high", "xhigh", "max", "auto"},
     "gpt-image-2.5-sunburst": {"low", "medium", "high", "xhigh", "max", "auto"},
 }
-DREAMAPI_IMAGE_ACTION_MODELS = {
-    "gpt-image-2.5-flare",
-    "gpt-image-2.5-sunburst",
+DREAMAPI_SIZES_BY_RATIO = {
+    "1:1": "1024x1024",
+    "2:3": "1024x1536",
+    "3:2": "1536x1024",
+    "9:16": "864x1536",
+    "16:9": "1536x864",
 }
-DREAMAPI_SIZES = {"1024x1024", "1024x1536", "1536x1024", "864x1536", "1536x864"}
+DREAMAPI_SIZES = set(DREAMAPI_SIZES_BY_RATIO.values())
 
 
 def _dreamapi_contract_document():
     """Return the public request-shape contract shared with the panel server."""
     models = {}
     for model in sorted(DREAMAPI_IMAGE_QUALITIES):
-        models[model] = {
-            "action": "generate" if model in DREAMAPI_IMAGE_ACTION_MODELS else "omitted",
-            "qualities": sorted(DREAMAPI_IMAGE_QUALITIES[model]),
-        }
+        models[model] = {"qualities": sorted(DREAMAPI_IMAGE_QUALITIES[model])}
     return {
-        "contract_version": 2,
-        "dispatcher": {
-            "instructions_by_image_model": {
-                model: DREAMAPI_DISPATCH_INSTRUCTIONS_BY_MODEL[model]
-                for model in sorted(DREAMAPI_IMAGE_QUALITIES)
-            },
-            "model": DREAMAPI_TEXT_MODEL,
-            "stream": False,
-        },
-        "image_tool": {
+        "contract_version": 3,
+        "images_api": {
             "models": models,
-            "sizes": sorted(DREAMAPI_SIZES),
-            "type": "image_generation",
+            "output_format": "png",
+            "request_keys": ["model", "n", "output_format", "prompt", "quality", "size"],
+            "sizes_by_ratio": dict(DREAMAPI_SIZES_BY_RATIO),
         },
-        "request_keys": ["input", "instructions", "model", "stream", "tools"],
         "runtime_safety": {
             "kill_worker_on_parent_exit": True,
             "persistent_uncertainty_fence": True,
         },
-        "tool_count": 1,
+        "single_image_count": 1,
     }
 
 
@@ -216,42 +194,29 @@ def _dreamapi_abort_response(response):
 def validate_dreamapi_payload(payload):
     """Accept only the image-generation request shape emitted by panel server.py."""
     if not isinstance(payload, dict) or set(payload) != {
-            "model", "instructions", "input", "stream", "tools"}:
+            "model", "prompt", "size", "quality", "n", "output_format"}:
         raise ValueError("invalid DreamAPI request shape")
-    if payload.get("model") != DREAMAPI_TEXT_MODEL or payload.get("stream") is not False:
-        raise ValueError("invalid DreamAPI dispatcher model or stream mode")
-    prompt = payload.get("input")
-    if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 2000:
-        raise ValueError("invalid DreamAPI prompt")
-    tools = payload.get("tools")
-    if not isinstance(tools, list) or len(tools) != 1 or not isinstance(tools[0], dict):
-        raise ValueError("invalid DreamAPI image tool")
-    tool = tools[0]
-    model = tool.get("model")
-    expected_instructions = DREAMAPI_DISPATCH_INSTRUCTIONS_BY_MODEL.get(model)
-    if expected_instructions is None or payload.get("instructions") != expected_instructions:
-        raise ValueError("invalid DreamAPI dispatch instructions")
-    expected_keys = {"type", "model", "size", "quality"}
-    if model in DREAMAPI_IMAGE_ACTION_MODELS:
-        expected_keys.add("action")
-    if set(tool) != expected_keys:
-        raise ValueError("invalid DreamAPI image tool shape")
-    if tool.get("type") != "image_generation":
-        raise ValueError("invalid DreamAPI image tool type")
-    if model in DREAMAPI_IMAGE_ACTION_MODELS and tool.get("action") != "generate":
-        raise ValueError("invalid DreamAPI image action")
-    quality = tool.get("quality")
+    model = payload.get("model")
+    quality = payload.get("quality")
     if model not in DREAMAPI_IMAGE_QUALITIES or quality not in DREAMAPI_IMAGE_QUALITIES[model]:
         raise ValueError("unsupported DreamAPI model or quality")
-    if tool.get("size") not in DREAMAPI_SIZES:
+    prompt = payload.get("prompt")
+    if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 2000:
+        raise ValueError("invalid DreamAPI prompt")
+    if payload.get("size") not in DREAMAPI_SIZES:
         raise ValueError("unsupported DreamAPI image size")
+    if (isinstance(payload.get("n"), bool) or not isinstance(payload.get("n"), int)
+            or payload.get("n") != 1):
+        raise ValueError("DreamAPI request must generate exactly one image")
+    if payload.get("output_format") != "png":
+        raise ValueError("unsupported DreamAPI output format")
     return payload
 
 
 def _dreamapi_proxy_request_until(payload, authorization, deadline, state):
     data = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     request = urllib.request.Request(
-        DREAMAPI_RESPONSES_URL,
+        DREAMAPI_IMAGES_URL,
         data=data,
         headers={
             "Authorization": authorization,
@@ -777,7 +742,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         if self.path == "/start":
             self._send({"result": start_comfy()})
-        elif self.path == "/dreamapi/responses":
+        elif self.path == "/dreamapi/images/generations":
             authorization = self.headers.get("Authorization", "")
             try:
                 _validate_dreamapi_authorization(authorization)
