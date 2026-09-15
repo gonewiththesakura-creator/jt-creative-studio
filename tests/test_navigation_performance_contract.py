@@ -22,6 +22,8 @@ checks={
  "home history server scoped":"/api/jobs?scope=creator" in PAGES[0],
  "builders own performance helpers":all(x in BUILDERS for x in ['scheduleRoutePrefetch','sessionStorage','/api/job/']),
  "result images lazy decode":all(x in PAGES[0] for x in ["img.loading='lazy'","img.decoding='async'"]),
+ "creator html fast boot budget":len(PAGES[0].encode('utf8'))<450_000,
+ "creator style data hydrates after shell":all(x in PAGES[0] for x in ['STYLE_CONFIG_URL','renderBootPreview()','loadStyleConfigs().then']),
 }
 for name,value in checks.items():print(name,value)
 sys.exit(0 if all(checks.values()) else 1)

@@ -98,6 +98,9 @@ def test_release_manifest_is_complete_and_excludes_nonproduction_files():
         "deploy/comfy-panel-watchdog.service",
         "deploy/comfy-panel-watchdog.timer",
     }
+    style_data = ["static/" + path.name for path in (ROOT / "static").glob("style-configs.*.json")]
+    assert len(style_data) == 1
+    expected.update(style_data)
     assert set(module.RELEASE_RELATIVE_PATHS) == expected
     assert not any(path.startswith(("tests/", "audit/")) for path in module.RELEASE_RELATIVE_PATHS)
 

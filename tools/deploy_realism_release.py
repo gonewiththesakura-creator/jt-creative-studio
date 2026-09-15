@@ -117,6 +117,7 @@ DREAMAPI_RUNTIME_PAYLOAD_FILES = (
     "server.py",
     "static/index.html",
     "static/promptgen.html",
+    *("static/" + path.name for path in sorted((BASE / "static").glob("style-configs.*.json"))),
     "tools/start_comfy_watchdog.ps1",
 )
 DREAMAPI_RUNTIME_PAYLOAD_SHA256 = "631f0a5cd36b648165956fd817d79fa66ba83934746da0bd7ed7c207cbec60f0"
@@ -280,6 +281,7 @@ RELEASE_RELATIVE_PATHS = (
     "config.json",
     "static/index.html",
     "static/promptgen.html",
+    *("static/" + path.name for path in sorted((BASE / "static").glob("style-configs.*.json"))),
     "static/original_sketch.html",
     "static/original_graphic.html",
     "static/realcomic.html",

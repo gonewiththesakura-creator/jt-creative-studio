@@ -3094,6 +3094,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         request = urllib.parse.urlparse(self.path)
         if request.path.startswith("/static/previews/") and fp.suffix == ".webp" and re.fullmatch(r"v=[0-9a-f]{12}", request.query):
             cache = "public, max-age=31536000, immutable"
+        if (fp.suffix == ".json"
+                and re.fullmatch(r"style-configs\.[0-9a-f]{12}\.json", fp.name)):
+            cache = "public, max-age=31536000, immutable"
         if self.headers.get("If-None-Match") == etag:
             self.send_response(http.HTTPStatus.NOT_MODIFIED)
             self.send_header("ETag", etag)
