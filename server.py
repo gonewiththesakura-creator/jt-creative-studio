@@ -5,6 +5,7 @@ through an SSH reverse tunnel (server:127.0.0.1:8199 -> local:127.0.0.1:8188).
 
 Env:
   COMFY_URL   default http://127.0.0.1:8188
+  PANEL_BIND  default 0.0.0.0
   PANEL_PORT  default 8189
   PANEL_TOKEN required (auth)
   PANEL_DIR   default ./panel_data (jobs + images)
@@ -16,6 +17,7 @@ import socket, base64, struct, subprocess, io, gzip, ipaddress
 BASE = pathlib.Path(__file__).resolve().parent
 COMFY_URL = os.environ.get("COMFY_URL", "http://127.0.0.1:8188").rstrip("/")
 CONTROL_URL = os.environ.get("CONTROL_URL", "http://127.0.0.1:8198").rstrip("/")
+BIND_HOST = os.environ.get("PANEL_BIND", "0.0.0.0").strip() or "0.0.0.0"
 PORT = int(os.environ.get("PANEL_PORT", "8189"))
 TOKEN = os.environ.get("PANEL_TOKEN", "")
 PANEL_RELEASE_TOKEN = os.environ.get("PANEL_RELEASE_TOKEN", "")
@@ -4144,8 +4146,8 @@ def main():
     threading.Thread(target=backfill_completed_rh_coins, daemon=True).start()
     ok, msg = comfy_ok()
     print(f"[panel] comfy {COMFY_URL}: ok={ok} {msg}", flush=True)
-    print(f"[panel] listening 0.0.0.0:{PORT} data={DATA_DIR}", flush=True)
-    BoundedHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
+    print(f"[panel] listening {BIND_HOST}:{PORT} data={DATA_DIR}", flush=True)
+    BoundedHTTPServer((BIND_HOST, PORT), Handler).serve_forever()
 
 if __name__ == "__main__":
     main()
