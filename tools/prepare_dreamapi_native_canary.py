@@ -15,7 +15,10 @@ import sys
 import time
 import uuid
 
-import deploy_realism_release as release
+try:
+    from tools import deploy_realism_release as release
+except ModuleNotFoundError:
+    import deploy_realism_release as release
 
 
 BASE = pathlib.Path(__file__).resolve().parents[1]
@@ -99,6 +102,37 @@ def _head_and_payloads():
     return head, files, release.release_payloads_from_head(files, head)
 
 
+def candidate_launch_command(root, unit):
+    return [
+        "sudo", "systemd-run", "--unit=" + unit, "--collect",
+        "--property=User=admin", "--property=WorkingDirectory=" + root,
+        "--property=EnvironmentFile=-/etc/comfy-panel.d/dreamapi.env",
+        "--property=EnvironmentFile=/etc/comfy-panel/release.env",
+        "--property=EnvironmentFile=/home/admin/comfy-panel/panel.env",
+        "/usr/bin/env", "PANEL_BIND=127.0.0.1", f"PANEL_PORT={CANARY_PORT}",
+        "PANEL_DIR=" + root + "/data", "PANEL_RELEASE_DRAIN_ON_START=0",
+        "DREAMAPI_EGRESS_URL=http://127.0.0.1:8198/dreamapi/images/generations",
+        "/usr/bin/python3", root + "/server.py",
+    ]
+
+
+def _remove_remote_candidate(client, root, unit):
+    if (not re.fullmatch(
+            r"/home/admin/\.comfy-panel-canary/[0-9]{8}T[0-9]{6}Z-[0-9a-f]{10}", root)
+            or not re.fullmatch(
+                r"comfy-panel-canary-[0-9]{8}t[0-9]{6}z-[0-9a-f]{10}", unit)):
+        raise RuntimeError("invalid candidate cleanup identity")
+    release.command(client, "sudo systemctl stop " + shlex.quote(unit) + " || true")
+    remove = (
+        "import pathlib,shutil;"
+        f"root=pathlib.Path({root!r});parent=pathlib.Path({REMOTE_PARENT!r});"
+        "resolved=root.resolve();"
+        "(_ for _ in ()).throw(RuntimeError('invalid cleanup root')) if resolved.parent!=parent else None;"
+        "shutil.rmtree(resolved) if resolved.exists() else None"
+    )
+    release.command(client, "python3 -c " + shlex.quote(remove))
+
+
 def prepare(args):
     state_path = pathlib.Path(args.state)
     if state_path.exists():
@@ -109,6 +143,7 @@ def prepare(args):
     unit = "comfy-panel-canary-" + suffix.lower()
     client = _connect(args.credentials, args.ssh_key)
     sftp = None
+    root_created = False
     try:
         create = (
             "import pathlib;"
@@ -118,6 +153,7 @@ def prepare(args):
             "root.mkdir(mode=0o700)"
         )
         release.command(client, "python3 -c " + shlex.quote(create))
+        root_created = True
         port_probe = (
             "import socket;"
             "s=socket.socket();"
@@ -130,16 +166,7 @@ def prepare(args):
             _upload(sftp, str(pathlib.PurePosixPath(root) / relative), payloads[local])
         client_source = (BASE / "tools" / "dreamapi_native_canary_client.py").read_bytes()
         _upload(sftp, root + "/tools/dreamapi_native_canary_client.py", client_source, 0o700)
-        command = [
-            "sudo", "systemd-run", "--unit=" + unit, "--collect",
-            "--property=User=admin", "--property=WorkingDirectory=" + root,
-            "--property=EnvironmentFile=-/etc/comfy-panel.d/dreamapi.env",
-            "--property=EnvironmentFile=/etc/comfy-panel/release.env",
-            "--property=EnvironmentFile=/home/admin/comfy-panel/panel.env",
-            "/usr/bin/env", "PANEL_BIND=127.0.0.1", f"PANEL_PORT={CANARY_PORT}",
-            "PANEL_DIR=" + root + "/data", "PANEL_RELEASE_DRAIN_ON_START=0",
-            "/usr/bin/python3", root + "/server.py",
-        ]
+        command = candidate_launch_command(root, unit)
         release.command(client, " ".join(shlex.quote(item) for item in command))
         deadline = time.time() + 30
         health = None
@@ -174,10 +201,18 @@ def prepare(args):
             "prepared_at": time.time(),
         }
         _atomic_json(state_path, state)
+        root_created = False
         print(json.dumps({key: state[key] for key in (
             "phase", "candidate_commit", "runtime_payload_sha256",
             "unit", "port", "contract_sha256",
         )}, indent=2))
+    except BaseException as error:
+        if root_created:
+            try:
+                _remove_remote_candidate(client, root, unit)
+            except BaseException as cleanup_error:
+                error.add_note("candidate cleanup failed: " + str(cleanup_error))
+        raise
     finally:
         if sftp is not None:
             sftp.close()
@@ -238,15 +273,7 @@ def cleanup(args):
         raise RuntimeError("canary cleanup target or phase is invalid")
     client = _connect(args.credentials, args.ssh_key)
     try:
-        release.command(client, "sudo systemctl stop " + shlex.quote(unit))
-        remove = (
-            "import pathlib,shutil;"
-            f"root=pathlib.Path({root!r});parent=pathlib.Path({REMOTE_PARENT!r});"
-            "resolved=root.resolve();"
-            "(_ for _ in ()).throw(RuntimeError('invalid cleanup root')) if resolved.parent!=parent else None;"
-            "shutil.rmtree(resolved)"
-        )
-        release.command(client, "python3 -c " + shlex.quote(remove))
+        _remove_remote_candidate(client, root, unit)
         state["phase"] = "cleaned"
         state["cleaned_at"] = time.time()
         _atomic_json(state_path, state)
