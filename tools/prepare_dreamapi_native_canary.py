@@ -98,7 +98,16 @@ def _head_and_payloads():
     )
     if changed.returncode:
         raise RuntimeError("release runtime differs from HEAD")
-    files = release.release_files()
+    relative_paths = tuple(dict.fromkeys((
+        "config.json", "static/index.html", *release.DREAMAPI_RUNTIME_PAYLOAD_FILES,
+    )))
+    files = {
+        BASE / relative: release.REMOTE_ROOT + "/" + relative
+        for relative in relative_paths
+    }
+    missing = [str(path) for path in files if not path.is_file()]
+    if missing:
+        raise RuntimeError("missing canary files: " + ", ".join(missing))
     return head, files, release.release_payloads_from_head(files, head)
 
 
@@ -209,7 +218,16 @@ def prepare(args):
     except BaseException as error:
         if root_created:
             try:
-                _remove_remote_candidate(client, root, unit)
+                cleanup_client = client
+                transport = client.get_transport()
+                if transport is None or not transport.is_active():
+                    client.close()
+                    cleanup_client = _connect(args.credentials, args.ssh_key)
+                try:
+                    _remove_remote_candidate(cleanup_client, root, unit)
+                finally:
+                    if cleanup_client is not client:
+                        cleanup_client.close()
             except BaseException as cleanup_error:
                 error.add_note("candidate cleanup failed: " + str(cleanup_error))
         raise
