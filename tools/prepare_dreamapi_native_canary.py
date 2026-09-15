@@ -5,6 +5,7 @@ import argparse
 import base64
 import hashlib
 import hmac
+import importlib.util
 import json
 import os
 import pathlib
@@ -15,13 +16,12 @@ import sys
 import time
 import uuid
 
-try:
-    from tools import deploy_realism_release as release
-except ModuleNotFoundError:
-    import deploy_realism_release as release
-
-
 BASE = pathlib.Path(__file__).resolve().parents[1]
+_RELEASE_SPEC = importlib.util.spec_from_file_location(
+    "comfy_panel_deploy_realism_release", BASE / "tools" / "deploy_realism_release.py"
+)
+release = importlib.util.module_from_spec(_RELEASE_SPEC)
+_RELEASE_SPEC.loader.exec_module(release)
 DEFAULT_STATE = BASE / "panel_data" / "dreamapi-native-canary-state.json"
 DEFAULT_OUTPUT = BASE / "audit" / "dreamapi_native_canary_20260915"
 REMOTE_PARENT = "/home/admin/.comfy-panel-canary"
