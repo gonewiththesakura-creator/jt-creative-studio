@@ -90,6 +90,7 @@ body {background:transparent;isolation:isolate;color:var(--text)}
 .task-spin,.task-time {flex-shrink:0}
 .task-card {max-width:100%}
 .task-name,.task-meta,.status,.workflow-note,.note,.upload-status,.drop .fn,.gallery-meta,.control-title,.control-help,.job,.file-result {overflow-wrap:anywhere}
+.drop .local-media-preview {display:block;width:100%;max-height:240px;object-fit:contain;border-radius:12px;margin-top:12px;background:rgba(20,25,40,.05)}
 .note,.task-meta,.workflow-note,.control-help,.upload-status,.section-label,.field-label,.form label,.item-name,.settings label {font-size:12px}
 .preview-caption {max-width:calc(100% - 60px);overflow-wrap:anywhere}
 .task-panel-head {gap:8px;flex-wrap:wrap}

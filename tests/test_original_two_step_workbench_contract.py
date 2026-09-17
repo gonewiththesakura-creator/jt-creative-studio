@@ -15,7 +15,7 @@ checks={
  'exact original configs embedded':sum(map(len,styles['original_sketch']['pools'].values()))==230 and sum(map(len,styles['original_graphic']['pools'].values()))==66,
  'builder owns unified profiles':all(x in BUILDER for x in ['"original_sketch":{','"original_graphic":{','RAW_SOURCE_POOLS']),
  'mobile controls remain accessible':all(x in HTML for x in ['.drawer-head{min-height:48px}','.item-actions button{width:44px;height:44px}']),
- 'mobile generation dock is fixed':'position:fixed;left:12px;right:12px;bottom:calc(8px + env(safe-area-inset-bottom))' in HTML,
+ 'mobile generation dock is in document flow':'.creation-footer {position:static' in HTML,
  'mobile generation dock stays one row':'@media(max-width:480px)' in HTML and '.generation-actions{grid-template-columns:repeat(2,minmax(0,1fr));' in HTML and 'id="apiDrawerOpen"' in HTML,
 }
 for k,v in checks.items():print(k,v)

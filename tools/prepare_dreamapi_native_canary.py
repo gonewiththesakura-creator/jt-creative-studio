@@ -99,7 +99,7 @@ def _head_and_payloads():
     if changed.returncode:
         raise RuntimeError("release runtime differs from HEAD")
     relative_paths = tuple(dict.fromkeys((
-        "config.json", "static/index.html", *release.DREAMAPI_RUNTIME_PAYLOAD_FILES,
+        "config.json", "static/index.html", *release.NATIVE_RUNTIME_PAYLOAD_FILES,
     )))
     files = {
         BASE / relative: release.REMOTE_ROOT + "/" + relative
@@ -204,7 +204,7 @@ def prepare(args):
             raise RuntimeError("candidate DreamAPI health is not ready")
         state = {
             "phase": "prepared", "candidate_commit": head,
-            "runtime_payload_sha256": release.git_runtime_payload_sha256(head),
+            "runtime_payload_sha256": release.git_runtime_payload_sha256(head, files=release.NATIVE_RUNTIME_PAYLOAD_FILES),
             "remote_root": root, "unit": unit, "port": CANARY_PORT,
             "contract_sha256": health.get("dreamapi_contract_sha256"),
             "prepared_at": time.time(),

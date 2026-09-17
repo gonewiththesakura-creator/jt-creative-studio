@@ -110,6 +110,10 @@ MIN_SCRIPT_CONTRACTS = 55
 MIN_PYTEST_FILES = 35
 RELEASE_TEST_INVENTORY_SHA256 = "e823435150d67179b778e9f05b5d791fad3d823d163b982c9bb761af1307cb3a"
 DREAMAPI_CONTRACT_SHA256 = "d2e692e229a0525590fbbc5ffc4f466faebe70675278d263a44bfd0dffc6f0fa"
+HISTORICAL_DREAMAPI_CONTRACT_SHA256 = "665d283bd420f76f031d9530f1d757f022d6cc16a5c9e9bc315e4966da797959"
+DREAMAPI_NATIVE_MANIFEST = BASE / "audit" / "dreamapi_native_20260917" / "verification.json"
+# Set only after the single authorized native canary is collected and reviewed.
+DREAMAPI_NATIVE_EVIDENCE_SHA256 = "pending-real-canary"
 DREAMAPI_TESTED_RELEASE_COMMIT = "f7c179871747355d11cb5f2789f561a256f671d5"
 DREAMAPI_RUNTIME_PAYLOAD_FORMAT = "framed-v1"
 DREAMAPI_RUNTIME_PAYLOAD_FILES = (
@@ -117,9 +121,11 @@ DREAMAPI_RUNTIME_PAYLOAD_FILES = (
     "server.py",
     "static/index.html",
     "static/promptgen.html",
-    *("static/" + path.name for path in sorted((BASE / "static").glob("style-configs.*.json"))),
     "tools/start_comfy_watchdog.ps1",
 )
+NATIVE_RUNTIME_PAYLOAD_FILES = (*DREAMAPI_RUNTIME_PAYLOAD_FILES, "config.json",
+    "static/video.html", "static/realism.html",
+    *("static/" + path.name for path in sorted((BASE / "static").glob("style-configs.*.json"))))
 DREAMAPI_RUNTIME_PAYLOAD_SHA256 = "631f0a5cd36b648165956fd817d79fa66ba83934746da0bd7ed7c207cbec60f0"
 DREAMAPI_MIN_VISIBLE_RGB_STDDEV = 2.0
 DREAMAPI_PRIVATE_NORMALIZED_KEYS = {
@@ -155,7 +161,7 @@ DREAMAPI_RELEASE_IDENTITY_EVIDENCE = {
         "active_since": "2026-09-14T18:17:05.129+08:00",
         "file_sha256": "855c283adc8f21a0ac1a61c3ec68d1d31a73c539068623dba803bf1aea968ffa",
         "launcher_sha256": "95bcaf1130313b462d2681a7d0758970d33a5e4c83267e2dd4f2a0e741814bae",
-        "dreamapi_contract_sha256": DREAMAPI_CONTRACT_SHA256,
+        "dreamapi_contract_sha256": HISTORICAL_DREAMAPI_CONTRACT_SHA256,
         "dreamapi_uncertainty_fence": False,
     },
     "first_job_created_at": "2026-09-14T20:19:18.830+08:00",
@@ -733,7 +739,7 @@ def framed_v1_payload_sha256(payloads):
     return digest.hexdigest()
 
 
-def git_runtime_payload_sha256(commit, repository=None):
+def git_runtime_payload_sha256(commit, repository=None, files=None):
     repository = pathlib.Path(repository or BASE)
     if not re.fullmatch(r"[0-9a-f]{40}", str(commit or "")):
         raise RuntimeError("DreamAPI tested release commit must be a full lowercase SHA-1")
@@ -744,7 +750,7 @@ def git_runtime_payload_sha256(commit, repository=None):
     if exists.returncode:
         raise RuntimeError("DreamAPI tested release commit does not exist")
     payloads = {}
-    for relative in DREAMAPI_RUNTIME_PAYLOAD_FILES:
+    for relative in (DREAMAPI_RUNTIME_PAYLOAD_FILES if files is None else files):
         result = subprocess.run(
             ["git", "show", f"{commit}:{relative}"], cwd=repository,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -755,7 +761,7 @@ def git_runtime_payload_sha256(commit, repository=None):
     return framed_v1_payload_sha256(payloads)
 
 
-def validate_dreamapi_runtime_payload(record, repository=None):
+def validate_dreamapi_runtime_payload(record, repository=None, require_current=True):
     repository = pathlib.Path(repository or BASE)
     errors = []
     tested_commit = record.get("tested_release_commit")
@@ -774,6 +780,10 @@ def validate_dreamapi_runtime_payload(record, repository=None):
     except Exception as error:
         errors.append(f"DreamAPI tested release commit invalid: {error}")
         candidate_digest = None
+    if not require_current:
+        if candidate_digest != DREAMAPI_RUNTIME_PAYLOAD_SHA256:
+            errors.append("DreamAPI historical runtime digest invalid")
+        return errors
     try:
         head_result = subprocess.run(
             ["git", "rev-parse", "HEAD"], cwd=repository, text=True,
@@ -913,7 +923,8 @@ def validate_dreamapi_migration_e2e_manifest():
             or record.get("unified_release_e2e") is not True
             or record.get("tested_release_commit") != DREAMAPI_TESTED_RELEASE_COMMIT):
         errors.append("DreamAPI migration E2E identity invalid")
-    errors.extend(validate_dreamapi_runtime_payload(record))
+    # Archived Responses evidence remains verifiable, but is not native release evidence.
+    errors.extend(validate_dreamapi_runtime_payload(record, require_current=False))
     release_identity = record.get("release_identity_evidence") or {}
     if release_identity != DREAMAPI_RELEASE_IDENTITY_EVIDENCE:
         errors.append("DreamAPI release identity evidence invalid")
@@ -990,7 +1001,7 @@ def validate_dreamapi_migration_e2e_manifest():
                 or job.get("api_model") != model
                 or job.get("api_dispatch_profile") != expected["profile"]
                 or job.get("api_action_mode") != expected["action"]
-                or job.get("dreamapi_contract_sha256") != DREAMAPI_CONTRACT_SHA256
+                or job.get("dreamapi_contract_sha256") != HISTORICAL_DREAMAPI_CONTRACT_SHA256
                 or job.get("status") != "done"
                 or job.get("provider_status") != "API_DONE" or job.get("generation_backend") != "api"
                 or job.get("submit_attempts") != 1 or job.get("history_occurrences") != 1
@@ -1298,7 +1309,7 @@ def validate_public_upload_quota(server_source):
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
         and node.func.id == "reserve_upload_attempt"
     )
-    if definitions != 1 or calls != 3:
+    if definitions != 1 or calls != 4:
         errors.append("not all public upload routes are quota guarded")
     if ("_upload_usage_lock = threading.Lock()" not in server_source
             or "load_upload_usage()" not in server_source
@@ -1345,6 +1356,58 @@ def validate_public_billable_quota(server_source):
     return errors
 
 
+def validate_native_dreamapi_evidence():
+    """Require reviewed native-media evidence for the exact current runtime bytes."""
+    try:
+        raw = DREAMAPI_NATIVE_MANIFEST.read_bytes()
+        if hashlib.sha256(raw).hexdigest() != DREAMAPI_NATIVE_EVIDENCE_SHA256:
+            return ["native DreamAPI evidence is absent or not reviewed"]
+        record = json.loads(raw)
+    except Exception:
+        return ["native DreamAPI evidence is absent or unreadable"]
+    errors = []
+    if find_dreamapi_private_evidence(record):
+        errors.append("native DreamAPI evidence contains private data")
+    if record.get("verification") != "PASS" or record.get("scope") != "production-loopback native Flare low 9:16 canary":
+        errors.append("native DreamAPI verification identity invalid")
+    try:
+        commit = record["tested_release_commit"]
+        payload = record["runtime_payload"]
+        expected = git_runtime_payload_sha256(commit, files=NATIVE_RUNTIME_PAYLOAD_FILES)
+        current_head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=BASE, text=True).strip()
+        current = git_runtime_payload_sha256(current_head, files=NATIVE_RUNTIME_PAYLOAD_FILES)
+        if payload != {"format": "framed-v1", "files": list(NATIVE_RUNTIME_PAYLOAD_FILES), "sha256": expected} or current != expected:
+            errors.append("native DreamAPI runtime payload drift")
+        if subprocess.run(["git", "merge-base", "--is-ancestor", commit, current_head], cwd=BASE, capture_output=True).returncode:
+            errors.append("native DreamAPI tested commit is not an ancestor")
+        if subprocess.run(["git", "diff", "--quiet", "HEAD", "--", *NATIVE_RUNTIME_PAYLOAD_FILES], cwd=BASE, capture_output=True).returncode:
+            errors.append("native DreamAPI workspace runtime drift")
+    except Exception:
+        errors.append("native DreamAPI runtime identity invalid")
+    expected_request = {"method": "POST", "path": "/v1/images/generations",
+                        "model": "gpt-image-2.5-flare", "quality": "low", "size": "864x1536", "n": 1, "output_format": "png"}
+    if record.get("request_contract") != expected_request:
+        errors.append("native DreamAPI request contract invalid")
+    job = record.get("job") or {}
+    required = {"status": "done", "provider_status": "API_DONE", "api_model": "gpt-image-2.5-flare",
+                "api_quality": "low", "api_ratio": "9:16", "api_provider_size": "864x1536",
+                "api_transport": "images", "api_action_mode": "direct", "width": 864, "height": 1536,
+                "dreamapi_contract_sha256": DREAMAPI_CONTRACT_SHA256}
+    if any(job.get(key) != value for key, value in required.items()):
+        errors.append("native DreamAPI job contract invalid")
+    if record.get("submit_attempts") != 1 or not re.fullmatch(r"[a-f0-9]{12}", str(job.get("id") or "")):
+        errors.append("native DreamAPI submission evidence invalid")
+    artifact = record.get("artifact") or {}
+    if artifact.get("file") != "flare-low-9x16.png":
+        errors.append("native DreamAPI artifact path invalid")
+    else:
+        errors.extend(validate_png_artifact(DREAMAPI_NATIVE_MANIFEST.parent / artifact["file"],
+                                           artifact.get("bytes"), artifact.get("sha256"), (864, 1536)))
+    if record.get("visual_review") != {"status": "PASS", "not_blank_or_corrupt": True, "complete_subject": True}:
+        errors.append("native DreamAPI visual review missing")
+    return errors
+
+
 def preflight_decision(config, server_source, execute=False, allow_unauthenticated_public=False):
     config_result = validate_release_config(config)
     scail_errors = validate_scail_video_config(config) + validate_scail_e2e_manifest()
@@ -1354,6 +1417,7 @@ def preflight_decision(config, server_source, execute=False, allow_unauthenticat
     dreamapi_e2e_errors = validate_dreamapi_e2e_manifest()
     dreamapi_sidebar_e2e_errors = validate_dreamapi_sidebar_e2e_manifest()
     dreamapi_migration_e2e_errors = validate_dreamapi_migration_e2e_manifest()
+    native_dreamapi_errors = validate_native_dreamapi_evidence()
     new_style_e2e_errors = validate_new_style_e2e_manifest()
     retro_cloud_errors = validate_retro_cloud_e2e_manifest()
     unauthenticated = auth_is_disabled(server_source)
@@ -1378,6 +1442,8 @@ def preflight_decision(config, server_source, execute=False, allow_unauthenticat
         blockers.append("invalid DreamAPI sidebar E2E")
     if dreamapi_migration_e2e_errors:
         blockers.append("invalid DreamAPI migration E2E")
+    if native_dreamapi_errors:
+        blockers.append("invalid native DreamAPI E2E")
     if new_style_e2e_errors:
         blockers.append("invalid new style E2E")
     if retro_cloud_errors:
@@ -1405,6 +1471,7 @@ def preflight_decision(config, server_source, execute=False, allow_unauthenticat
         "dreamapi_e2e_errors": dreamapi_e2e_errors,
         "dreamapi_sidebar_e2e_errors": dreamapi_sidebar_e2e_errors,
         "dreamapi_migration_e2e_errors": dreamapi_migration_e2e_errors,
+        "native_dreamapi_e2e_errors": native_dreamapi_errors,
         "new_style_e2e_errors": new_style_e2e_errors,
         "retro_cloud_e2e_errors": retro_cloud_errors,
         "public_billable_quota_errors": public_quota_errors,

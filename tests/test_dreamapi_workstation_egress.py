@@ -495,11 +495,18 @@ def test_server_egress_endpoint_is_optional_and_loopback_only(monkeypatch):
     )
     assert server._dreamapi_request_endpoint() == "http://127.0.0.1:8198/dreamapi/images/generations"
 
+    monkeypatch.setattr(
+        server, "DREAMAPI_EGRESS_URL", "http://127.0.0.1:8198/dreamapi/responses",
+    )
+    assert server._dreamapi_request_endpoint() == "http://127.0.0.1:8198/dreamapi/images/generations"
+
     for unsafe in (
         "https://127.0.0.1:8198/dreamapi/images/generations",
         "http://8.210.125.65:8198/dreamapi/images/generations",
         "http://user:pass@127.0.0.1:8198/dreamapi/images/generations",
         "http://127.0.0.1:8198/wrong-path",
+        "http://127.0.0.1:8198/dreamapi/responses/extra",
+        "http://127.0.0.1:8198/dreamapi/responses?next=elsewhere",
         "http://127.0.0.1:8198/dreamapi/images/generations?next=elsewhere",
     ):
         monkeypatch.setattr(server, "DREAMAPI_EGRESS_URL", unsafe)

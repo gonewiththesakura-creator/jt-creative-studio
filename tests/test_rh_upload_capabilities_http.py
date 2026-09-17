@@ -1,9 +1,11 @@
 import base64
 import http.client
 import importlib.util
+import io
 import json
 import tempfile
 import threading
+import urllib.parse
 from pathlib import Path
 
 import pytest
@@ -59,6 +61,12 @@ def fake_upload(data, filename, ctype, timeout=120):
     return f"api/provider-private-{len(uploaded)}{Path(filename).suffix}"
 panel.rh_upload_file = fake_upload
 
+raw_uploaded = []
+def fake_upload_temp_file(path, filename, ctype, timeout=120):
+    raw_uploaded.append((filename, ctype, Path(path).read_bytes()))
+    return f"api/provider-private-raw-{len(raw_uploaded)}{Path(filename).suffix}"
+panel.rh_upload_temp_file = fake_upload_temp_file
+
 server = panel.BoundedHTTPServer(("127.0.0.1", 0), panel.Handler)
 thread = threading.Thread(target=server.serve_forever, daemon=True)
 thread.start()
@@ -97,6 +105,23 @@ def upload(path, workflow, input_key, filename, data, cookie=None):
         "workflow": workflow, "input_key": input_key, "filename": filename,
         "data": base64.b64encode(data).decode(),
     }, cookie)
+
+
+def upload_raw_video(workflow, input_key, filename, data, cookie=None):
+    query = urllib.parse.urlencode({
+        "workflow": workflow, "input_key": input_key, "filename": filename,
+    })
+    connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=10)
+    headers = {"Content-Type": "application/octet-stream", "Content-Length": str(len(data))}
+    if cookie:
+        headers["Cookie"] = cookie
+    connection.request("POST", "/api/upload?" + query, data, headers)
+    response = connection.getresponse()
+    payload = json.loads(response.read() or b"{}")
+    set_cookie = response.getheader("Set-Cookie")
+    status = response.status
+    connection.close()
+    return status, payload, set_cookie
 
 
 def upload_with_headers(path, workflow, input_key, filename, data, cookie=None):
@@ -165,6 +190,60 @@ def test_workflow_bootstrap_sets_the_upload_session_before_parallel_uploads():
     assert set_cookie and "jt_session=" in set_cookie
     assert "HttpOnly" in set_cookie and "SameSite=Strict" in set_cookie
     assert session_id(cookie_pair(set_cookie))
+
+
+def test_video_binary_upload_accepts_raw_body_and_uses_private_temp_file():
+    before = len(raw_uploaded)
+    status, result, set_cookie = upload_raw_video(
+        "video_fixture", "driving_video", "phone-motion.mp4", MP4
+    )
+
+    assert status == 200
+    assert result["uploadToken"].startswith("upl_")
+    assert result["filename"] == "phone-motion.mp4"
+    assert "provider-private" not in json.dumps(result)
+    assert raw_uploaded[before:] == [("phone-motion.mp4", "video/mp4", MP4)]
+    assert cookie_pair(set_cookie)
+    assert not list((TMP / 'upload_tmp').glob('*.part'))
+
+
+def test_raw_upload_rejects_wrong_media_and_removes_temp_after_upstream_error(monkeypatch):
+    before = len(raw_uploaded)
+    status, _, _ = upload_raw_video('video_fixture', 'reference_image', 'wrong.png', MP4)
+    assert status == 400 and len(raw_uploaded) == before
+    assert not list((TMP / 'upload_tmp').glob('*.part'))
+    def fail(*args):
+        raise RuntimeError('upstream secret must stay private')
+    monkeypatch.setattr(panel, 'rh_upload_temp_file', fail)
+    status, error, _ = upload_raw_video('video_fixture', 'driving_video', 'clip.mov', MP4)
+    assert status == 502 and 'secret' not in json.dumps(error)
+    assert not list((TMP / 'upload_tmp').glob('*.part'))
+
+
+def test_raw_upload_quota_rejects_before_provider_call(monkeypatch):
+    monkeypatch.setattr(panel, 'reserve_upload_attempt', lambda *args: {'scope': 'session_hour', 'retry_after': 60})
+    before = len(raw_uploaded)
+    status, _, _ = upload_raw_video('video_fixture', 'driving_video', 'clip.mp4', MP4)
+    assert status == 429 and len(raw_uploaded) == before
+    assert not list((TMP / 'upload_tmp').glob('*.part'))
+
+
+@pytest.mark.parametrize('chunk_size', [1, 7, 65536])
+def test_streamed_multipart_preserves_all_bytes_and_declared_length(monkeypatch, chunk_size):
+    payload = bytes(range(256)) * 400
+    source = io.BytesIO(payload)
+    def receive(request, **kwargs):
+        chunks = []
+        while block := request.data.read(chunk_size):
+            chunks.append(block)
+        body = b''.join(chunks)
+        assert len(body) == int(request.get_header('Content-length'))
+        assert body.count(payload) == 1
+        assert b'filename="upload_' in body and body.endswith(b'--\r\n')
+        return {'code': 0, 'data': {'fileName': 'api/safe.mp4'}}
+    monkeypatch.setattr(panel, '_provider_json_request', receive)
+    assert panel._rh_upload_stream(source, len(payload), '手机视频.mp4', 'video/mp4') == 'api/safe.mp4'
+    assert source.closed
 
 
 def test_session_cookie_is_signed_and_tampering_is_rejected():

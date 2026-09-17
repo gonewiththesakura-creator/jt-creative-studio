@@ -12,7 +12,7 @@ Env:
 """
 import json, os, re, sys, time, uuid, threading, urllib.request, urllib.parse, urllib.error, math
 import http.server, http.cookies, socketserver, pathlib, secrets, hashlib, hmac
-import socket, base64, struct, subprocess, io, gzip, ipaddress
+import socket, base64, struct, subprocess, io, gzip, ipaddress, tempfile
 
 BASE = pathlib.Path(__file__).resolve().parent
 COMFY_URL = os.environ.get("COMFY_URL", "http://127.0.0.1:8188").rstrip("/")
@@ -1850,13 +1850,13 @@ def _safe_upload_filename(value):
     return value
 
 
-def upload_media_content_type(data, filename, expected_type):
-    """Validate media by magic/container bytes and require a matching suffix."""
+def _upload_media_content_type_from_header(header, filename, expected_type):
+    """Validate media magic/container bytes and require a matching suffix."""
     filename = _safe_upload_filename(filename)
     suffix = pathlib.Path(filename).suffix.lower()
     expected_type = str(expected_type or "").lower()
     if expected_type == "image":
-        ctype = image_content_type(data, filename)
+        ctype = image_content_type(header, filename)
         allowed = {
             "image/png": {".png"}, "image/jpeg": {".jpg", ".jpeg"},
             "image/webp": {".webp"},
@@ -1866,13 +1866,24 @@ def upload_media_content_type(data, filename, expected_type):
         return ctype
     if expected_type != "video":
         raise ValueError("unsupported upload media type")
-    if len(data) >= 12 and data[4:8] == b"ftyp" and suffix in {".mp4", ".mov"}:
+    if len(header) >= 12 and header[4:8] == b"ftyp" and suffix in {".mp4", ".mov"}:
         return "video/quicktime" if suffix == ".mov" else "video/mp4"
-    if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"AVI " and suffix == ".avi":
+    if len(header) >= 12 and header[:4] == b"RIFF" and header[8:12] == b"AVI " and suffix == ".avi":
         return "video/x-msvideo"
-    if data[:4] == b"\x1aE\xdf\xa3" and suffix in {".mkv", ".webm"}:
+    if header[:4] == b"\x1aE\xdf\xa3" and suffix in {".mkv", ".webm"}:
         return "video/webm" if suffix == ".webm" else "video/x-matroska"
     raise ValueError("invalid video media or extension")
+
+
+def upload_media_content_type(data, filename, expected_type):
+    """Validate in-memory media by magic/container bytes and matching suffix."""
+    return _upload_media_content_type_from_header(bytes(data[:16]), filename, expected_type)
+
+
+def upload_media_file_content_type(path, filename, expected_type):
+    """Validate a temporary upload without materializing it in process memory."""
+    with pathlib.Path(path).open("rb") as source:
+        return _upload_media_content_type_from_header(source.read(16), filename, expected_type)
 
 
 def validate_workflow_upload(workflow, input_key, filename, raw):
@@ -1882,6 +1893,16 @@ def validate_workflow_upload(workflow, input_key, filename, raw):
     safe_name = _safe_upload_filename(filename)
     media_type = str(mapping.get("type") or "").lower()
     ctype = upload_media_content_type(raw, safe_name, media_type)
+    return safe_name, ctype, media_type
+
+
+def validate_workflow_upload_file(workflow, input_key, filename, path):
+    mapping = (workflow.get("rh_media") or {}).get(str(input_key or ""))
+    if not mapping:
+        raise ValueError("unknown upload input")
+    safe_name = _safe_upload_filename(filename)
+    media_type = str(mapping.get("type") or "").lower()
+    ctype = upload_media_file_content_type(path, safe_name, media_type)
     return safe_name, ctype, media_type
 
 
@@ -2221,10 +2242,12 @@ def _dreamapi_request_endpoint():
     parsed = urllib.parse.urlparse(DREAMAPI_EGRESS_URL)
     if (parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "::1", "localhost"}
             or parsed.username or parsed.password
-            or parsed.path != "/dreamapi/images/generations"
+            or parsed.path not in {"/dreamapi/images/generations", "/dreamapi/responses"}
             or parsed.query or parsed.fragment):
         raise RuntimeError("DREAMAPI_EGRESS_URL must be a loopback HTTP endpoint")
-    return DREAMAPI_EGRESS_URL
+    # Existing installations used the old bridge path in their environment.
+    # Normalize only the validated loopback route; never change its authority.
+    return parsed._replace(path="/dreamapi/images/generations").geturl()
 
 
 def compact_dreamapi_prompts(positive, negative, max_total=1600):
@@ -2544,9 +2567,55 @@ def local_run_image(job, jobdir, w, prompt=None, negative_prompt=None,
     return images
 
 
-def rh_upload_file(data, filename, ctype="application/octet-stream", timeout=120):
-    """Upload a binary (image/video) to RunningHub. Returns the RH fileName
-    (relative path) to be placed into LoadImage/LoadVideo fieldValue."""
+class _MultipartUploadStream:
+    """A seek-free multipart body that sends the media part from a file object."""
+
+    def __init__(self, source, size, prefix, suffix):
+        self.source = source
+        self.size = int(size)
+        self.prefix = prefix
+        self.suffix = suffix
+        self._part = 0
+        self._offset = 0
+
+    def __len__(self):
+        return len(self.prefix) + self.size + len(self.suffix)
+
+    def read(self, amount=-1):
+        if amount is None or amount < 0:
+            amount = len(self)
+        chunks = []
+        remaining = amount
+        while remaining > 0 and self._part < 3:
+            if self._part == 0:
+                part = self.prefix
+            elif self._part == 1:
+                part = self.source.read(remaining)
+                if not part:
+                    self._part += 1
+                    self._offset = 0
+                    continue
+                chunks.append(part)
+                remaining -= len(part)
+                continue
+            else:
+                part = self.suffix
+            chunk = part[self._offset:self._offset + remaining]
+            if chunk:
+                chunks.append(chunk)
+                remaining -= len(chunk)
+                self._offset += len(chunk)
+            if self._offset >= len(part):
+                self._part += 1
+                self._offset = 0
+        return b"".join(chunks)
+
+    def close(self):
+        self.source.close()
+
+
+def _rh_upload_stream(source, size, filename, ctype="application/octet-stream", timeout=120):
+    """Upload one known-size stream to RunningHub without copying media bytes."""
     boundary = "----rh" + uuid.uuid4().hex
     safe_suffix = pathlib.Path(_safe_upload_filename(filename)).suffix.lower()
     if not re.fullmatch(r"\.[a-z0-9]{1,8}", safe_suffix):
@@ -2558,20 +2627,24 @@ def rh_upload_file(data, filename, ctype="application/octet-stream", timeout=120
     def _file(name, fname, ctype_):
         return (f"--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"; "
                 f"filename=\"{fname}\"\r\nContent-Type: {ctype_}\r\n\r\n").encode()
-    body = b"".join([
+    prefix = b"".join([
         _field("apiKey", RH_KEY),
         _field("fileType", "input"),
         _file("file", provider_filename, ctype),
-        data, b"\r\n",
-        f"--{boundary}--\r\n".encode(),
     ])
+    suffix = b"\r\n" + f"--{boundary}--\r\n".encode()
+    body = _MultipartUploadStream(source, size, prefix, suffix)
     headers = {
         "Content-Type": f"multipart/form-data; boundary={boundary}",
         "Authorization": f"Bearer {RH_KEY}",
+        "Content-Length": str(len(body)),
     }
     req = urllib.request.Request("https://www.runninghub.cn/task/openapi/upload",
                                  data=body, headers=headers)
-    resp = _provider_json_request(req, timeout=timeout)
+    try:
+        resp = _provider_json_request(req, timeout=timeout)
+    finally:
+        body.close()
     if resp.get("code") != 0:
         raise RuntimeError(f"RH upload failed: {resp.get('code')} {resp.get('msg')}")
     fname = (resp.get("data") or {}).get("fileName")
@@ -2580,6 +2653,17 @@ def rh_upload_file(data, filename, ctype="application/octet-stream", timeout=120
     if ".." in pathlib.PurePosixPath(fname).parts:
         raise RuntimeError("RH upload returned unsafe fileName")
     return fname
+
+
+def rh_upload_file(data, filename, ctype="application/octet-stream", timeout=120):
+    """Legacy in-memory upload helper retained for JSON upload compatibility."""
+    return _rh_upload_stream(io.BytesIO(data), len(data), filename, ctype, timeout)
+
+
+def rh_upload_temp_file(path, filename, ctype="application/octet-stream", timeout=120):
+    """Stream a private temporary upload to RunningHub without loading it in RAM."""
+    path = pathlib.Path(path)
+    return _rh_upload_stream(path.open("rb"), path.stat().st_size, filename, ctype, timeout)
 
 
 def rh_build_video_node_info(job, w):
@@ -3113,7 +3197,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if cookie_header:
             response_headers["Set-Cookie"] = cookie_header
         accepted = self.headers.get("Accept-Encoding", "").lower()
-        if "gzip" in accepted and len(raw) >= 1024 and ctype.startswith(("text/", "application/javascript")):
+        if "gzip" in accepted and len(raw) >= 1024 and ctype.startswith(("text/", "application/javascript", "application/json")):
             body = gzip.compress(raw, compresslevel=6, mtime=0)
             response_headers["Content-Encoding"] = "gzip"
         self._send(200, body, ctype, response_headers)
@@ -3163,6 +3247,37 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 raise TimeoutError("request body deadline exceeded")
             raise ValueError("incomplete request body")
         return json.loads(raw.decode())
+
+    def _read_upload_to_temp_file(self, byte_count):
+        """Read exactly one bounded raw upload into a private temporary file."""
+        byte_count = int(byte_count)
+        if byte_count < 1:
+            raise ValueError("empty file")
+        if byte_count > 60 * 1024 * 1024:
+            raise OverflowError("file too large (>60MB)")
+        upload_dir = DATA_DIR / "upload_tmp"
+        upload_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        fd, raw_path = tempfile.mkstemp(prefix="upload-", suffix=".part", dir=upload_dir)
+        path = pathlib.Path(raw_path)
+        deadline = self._start_absolute_deadline(min(
+            REQUEST_BODY_MAX_TIMEOUT,
+            REQUEST_BODY_BASE_TIMEOUT + byte_count / REQUEST_BODY_MIN_BYTES_PER_SECOND,
+        ))
+        remaining = byte_count
+        try:
+            with os.fdopen(fd, "wb") as target:
+                while remaining:
+                    chunk = self.rfile.read(min(65536, remaining))
+                    if not chunk:
+                        raise ValueError("incomplete request body")
+                    target.write(chunk)
+                    remaining -= len(chunk)
+            return path
+        except Exception:
+            path.unlink(missing_ok=True)
+            raise
+        finally:
+            self._cancel_absolute_deadline(deadline)
 
     def do_GET(self):
         path = urllib.parse.urlparse(self.path).path
@@ -3485,7 +3600,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def do_POST(self):
         global _release_draining
-        path = urllib.parse.urlparse(self.path).path
+        request_target = urllib.parse.urlparse(self.path)
+        path = request_target.path
         try:
             content_length = int(self.headers.get("Content-Length", 0))
         except ValueError:
@@ -3735,6 +3851,52 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._send(200, json.dumps({"job_id": job["id"]}).encode())
         if path == "/api/upload":
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
+            content_type = self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
+            if content_type == "application/octet-stream":
+                if self.headers.get("Content-Length") is None:
+                    return self._send(411, b'{"error":"content length required"}')
+                values = urllib.parse.parse_qs(request_target.query, keep_blank_values=True)
+                workflow_id = str((values.get("workflow") or [""])[0])
+                input_key = str((values.get("input_key") or [""])[0])
+                filename = str((values.get("filename") or [""])[0])
+                w = WORKFLOWS.get(workflow_id)
+                if not w or w.get("kind") != "video" or w.get("backend") != "runninghub":
+                    return self._send(400, b'{"error":"unknown workflow"}')
+                temp_path = None
+                try:
+                    temp_path = self._read_upload_to_temp_file(content_length)
+                    filename, ctype, media_type = validate_workflow_upload_file(
+                        w, input_key, filename, temp_path)
+                except OverflowError as error:
+                    if temp_path:
+                        temp_path.unlink(missing_ok=True)
+                    return self._send(413, json.dumps({"error": str(error)}).encode())
+                except ValueError as error:
+                    if temp_path:
+                        temp_path.unlink(missing_ok=True)
+                    return self._send(400, json.dumps({"error": str(error)}, ensure_ascii=False).encode())
+                except Exception:
+                    if temp_path:
+                        temp_path.unlink(missing_ok=True)
+                    return self._send(400, b'{"error":"invalid upload body"}')
+                try:
+                    session_id, cookie_header = self._upload_session(create=True)
+                    upload_quota = reserve_upload_attempt(session_id, content_length)
+                    if self._upload_quota_rejection(upload_quota):
+                        return
+                    remote_name = rh_upload_temp_file(temp_path, filename, ctype)
+                    upload_token = issue_upload_capability(
+                        remote_name, workflow_id, input_key, media_type, filename, session_id)
+                    headers = {"Set-Cookie": cookie_header} if cookie_header else None
+                    return self._send(200, json.dumps({
+                        "uploadToken": upload_token, "filename": filename,
+                        "mediaType": ctype, "input_key": input_key,
+                    }, ensure_ascii=False).encode(), headers=headers)
+                except Exception:
+                    return self._send(502, json.dumps({"error": "RunningHub上传失败，请稍后重试"}, ensure_ascii=False).encode())
+                finally:
+                    if temp_path:
+                        temp_path.unlink(missing_ok=True)
             try:
                 body = self._read_json(MAX_UPLOAD_JSON_BYTES)
                 workflow_id = str(body.get("workflow") or "")
