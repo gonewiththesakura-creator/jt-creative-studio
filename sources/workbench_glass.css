@@ -1,0 +1,139 @@
+/* Shared workbench material. Edge highlights approximate thickness, not optical refraction. */
+:root {
+  --app-background-image:radial-gradient(ellipse at 12% 12%,#e1e7f8 0%,transparent 48%),radial-gradient(ellipse at 92% 86%,#dfeee9 0%,transparent 46%);
+  --app-background-size:cover;
+  --app-background-position:center;
+  --app-background-opacity:1;
+  --app-background-veil:rgba(246,247,251,.28);
+  --text:#20222a;
+  --muted:#626a79;
+  --border:rgba(68,80,112,.16);
+  --success:#237760;
+  --danger:#a23c3c;
+  --warning:#8b551f;
+  --focus-ring:#4057d9;
+  --glass-tint:rgba(255,255,255,.76);
+  --glass-chrome:rgba(255,255,255,.82);
+  --glass-dialog:rgba(255,255,255,.94);
+  --glass-blur:18px;
+  --glass-saturation:125%;
+  --glass-edge:rgba(255,255,255,.92);
+  --glass-edge-shade:rgba(63,78,113,.14);
+  --glass-shadow:0 10px 30px rgba(31,43,75,.08);
+  --surface:#fff;
+  --surface-soft:rgba(247,249,253,.94);
+  --soft:var(--surface-soft);
+  --field-surface:rgba(255,255,255,.96);
+  --selected-surface:#edf0ff;
+  --radius-shell:22px;
+  --radius-panel:14px;
+  --radius-control:10px;
+}
+body {background:transparent;isolation:isolate;color:var(--text)}
+.app-background {position:fixed;inset:0;z-index:-1;pointer-events:none;background:var(--canvas);overflow:hidden}
+.app-background::before,.app-background::after {content:"";position:absolute;inset:0;pointer-events:none}
+.app-background::before {background-image:var(--app-background-image);background-size:var(--app-background-size);background-position:var(--app-background-position);background-repeat:no-repeat;opacity:var(--app-background-opacity)}
+.app-background::after {background:var(--app-background-veil)}
+.app-shell {background:transparent}
+.topbar,.creation-pane,.preview-stage,.library-panel,.api-popover,.api-settings-popover,.api-drawer {
+  background:var(--surface);
+  border-color:var(--border);
+  box-shadow:var(--glass-shadow),inset 0 1px 0 var(--glass-edge),inset 0 -1px 0 var(--glass-edge-shade);
+}
+.creation-pane,.preview-stage,.library-panel {position:relative;border-radius:var(--radius-shell)}
+.topbar {position:relative;z-index:70}
+@supports ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))) {
+  .topbar,.creation-pane,.preview-stage,.library-panel,.api-popover,.api-settings-popover,.api-drawer {
+    background:var(--glass-tint);
+    -webkit-backdrop-filter:blur(var(--glass-blur)) saturate(var(--glass-saturation));
+    backdrop-filter:blur(var(--glass-blur)) saturate(var(--glass-saturation));
+  }
+  .topbar {background:var(--glass-chrome)}
+  .library-panel,.api-popover,.api-settings-popover,.api-drawer {background:var(--glass-dialog)}
+}
+/* Only the thin perimeter moves; text, hit targets, blur and large surfaces remain still. */
+@supports ((mask-composite:exclude) or (-webkit-mask-composite:xor)) {
+  .creation-pane::after,.preview-stage::after,.library-panel::after,.api-popover::after,.api-settings-popover::after {
+    content:"";position:absolute;inset:0;z-index:2;border-radius:inherit;padding:1px;pointer-events:none;
+    background:linear-gradient(135deg,rgba(255,255,255,.98),rgba(255,255,255,.28) 35%,rgba(80,108,159,.18) 65%,rgba(255,255,255,.72));
+    -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+    mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+    -webkit-mask-composite:xor;mask-composite:exclude;
+    transition:transform 220ms ease,opacity 220ms ease;
+  }
+}
+@media (hover:hover) and (pointer:fine) and (prefers-reduced-motion:no-preference) {
+  .creation-pane:hover::after,.preview-stage:hover::after,.library-panel:hover::after,
+  .creation-pane:focus-within::after,.preview-stage:focus-within::after,.library-panel:focus-within::after {
+    transform:translateY(-.4px) scaleX(1.002);
+  }
+}
+.creation-footer {flex-shrink:0;background:var(--field-surface)}
+.library-header,.library-scroll {background:transparent}
+.library-scroll {overscroll-behavior:contain}
+.library-scroll .job :is(img,video) {display:block;width:100%;max-width:100%;height:auto;max-height:54vh;object-fit:contain;border-radius:10px;background:#f1f3f7}
+.drawer,.config-drawer,.panel.form,.task-panel-head,.task-card,.job {background:var(--field-surface);border-color:var(--border)}
+.item,.control,.settings,.switch {background:var(--surface-soft)}
+.switch button.active,.topnav-link.active,.result-tab.active {background:var(--selected-surface);color:#3549b7}
+.creation-scroll :is(input:not([type=checkbox]):not([type=radio]):not([type=file]),select,textarea),
+.api-popover :is(input:not([type=checkbox]):not([type=radio]),select,textarea),
+.api-drawer :is(input:not([type=checkbox]):not([type=radio]),select,textarea) {background:var(--field-surface);color:var(--text);max-width:100%;min-width:0}
+.gallery-main {background:#f1f3f7}
+.gallery-main:has(video) {background:#15171c}
+.gallery-main video,.gallery-main img {max-width:100%}
+.gallery-actions {background:var(--field-surface)}
+.preview-header {flex-wrap:wrap;gap:10px}
+.preview-header h2 {flex-shrink:0}
+.preview-header .note {width:auto}
+.studio-grid,.creation-scroll,.creation-pane,.preview-pane,.task-info,.task-name,.task-meta,.status,.workflow-note,.control-head,.control-title,.bool-row {min-width:0}
+.task-info {flex:1;margin-left:0}
+.task-spin,.task-time {flex-shrink:0}
+.task-card {max-width:100%}
+.task-name,.task-meta,.status,.workflow-note,.note,.upload-status,.drop .fn,.gallery-meta,.control-title,.control-help,.job,.file-result {overflow-wrap:anywhere}
+.note,.task-meta,.workflow-note,.control-help,.upload-status,.section-label,.field-label,.form label,.item-name,.settings label {font-size:12px}
+.preview-caption {max-width:calc(100% - 60px);overflow-wrap:anywhere}
+.task-panel-head {gap:8px;flex-wrap:wrap}
+.topnav {min-width:0}
+.topbar-tools {flex-shrink:0}
+:is(button,a,input,select,textarea,[tabindex]):focus-visible {outline:2px solid var(--focus-ring);outline-offset:2px}
+.library-overlay {padding-bottom:max(20px,env(safe-area-inset-bottom))}
+
+@media (pointer:coarse) {
+  button,.topnav-link,.dl,.drop,.upload-box {min-height:44px}
+  .item-actions button,.close {min-width:44px;min-height:44px}
+}
+@media(max-width:820px) {
+  :root {--glass-blur:12px;--glass-tint:rgba(255,255,255,.86)}
+  body {height:auto;overflow:auto}
+  .app-shell {height:auto;overflow:visible}
+  .studio-grid {height:auto;grid-template-columns:minmax(0,1fr);padding:12px 12px calc(20px + env(safe-area-inset-bottom))}
+  .creation-scroll {height:auto;overflow:visible;padding:14px}
+  .creation-footer {position:static;inset:auto;z-index:auto;padding:12px 14px 14px;border:0;border-top:1px solid var(--border);border-radius:0;box-shadow:none;-webkit-backdrop-filter:none;backdrop-filter:none}
+  .topbar {gap:8px;padding:10px 12px;position:relative}
+  .topnav {flex:0 0 100%;width:100%;order:3}
+  .brand {gap:7px;font-size:14px}
+  .brand-mark {width:30px;height:30px}
+  .topbar-tools {gap:5px}
+  .topbar-action {min-width:44px;padding:0 7px;font-size:11px}
+  button,.topnav-link,.dl,.drop,.upload-box {min-height:44px}
+  .item-actions button,.close {min-width:44px;min-height:44px}
+  .creation-scroll :is(input:not([type=checkbox]):not([type=radio]):not([type=file]),select,textarea),
+  .api-popover :is(input:not([type=checkbox]):not([type=radio]),select,textarea),
+  .api-drawer :is(input:not([type=checkbox]):not([type=radio]),select,textarea) {min-height:44px;font-size:16px}
+  .result-tabs {flex:1 0 100%;width:100%}
+  .result-tab {flex:1;min-width:0}
+  .task-card:has(>.task-info) {display:grid;grid-template-columns:30px minmax(0,1fr) auto;align-items:start;gap:8px}
+  .task-card>.task-view {grid-column:2 / -1;margin:0;width:100%}
+  .task-time {margin-left:0;float:none}
+  .gallery-actions,.result-actions {grid-template-columns:repeat(2,minmax(0,1fr))}
+  .gallery-actions>* {min-width:0;overflow-wrap:anywhere}
+  .preview-stage {min-height:390px}
+  .library-overlay {padding:8px 8px max(8px,env(safe-area-inset-bottom));height:100vh;height:100dvh}
+  .library-panel {max-height:100%;border-radius:16px}
+}
+@media(prefers-reduced-motion:reduce) {
+  .creation-pane::after,.preview-stage::after,.library-panel::after,.api-popover::after,.api-settings-popover::after {transition:none;transform:none}
+}
+@media(prefers-reduced-transparency:reduce) {
+  .topbar,.creation-pane,.preview-stage,.library-panel,.api-popover,.api-settings-popover,.api-drawer {background:var(--surface);-webkit-backdrop-filter:none;backdrop-filter:none}
+}

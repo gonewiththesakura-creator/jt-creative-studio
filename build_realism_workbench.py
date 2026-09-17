@@ -37,6 +37,9 @@ BODY = r'''
 <div class="library-overlay" id="histOverlay"><div class="library-panel"><div class="library-header"><h2>真人化历史</h2><button class="close">×</button></div><div class="library-scroll"><div id="histList"></div></div></div></div><div class="library-overlay" id="favOverlay"><div class="library-panel"><div class="library-header"><h2>真人化收藏</h2><button class="close">×</button></div><div class="library-scroll"><div id="favList"></div></div></div></div></div>
 '''
 
+CSS += '\n' + (ROOT / 'sources' / 'workbench_glass.css').read_text(encoding='utf8')
+BODY = '<div class="app-background" aria-hidden="true"></div>' + BODY
+
 JS = r'''
 const api=async(path,opt={})=>{const response=await fetch(path,opt);let data={};try{data=await response.json()}catch{}if(!response.ok){const error=new Error(data.error||('HTTP '+response.status));error.data=data;error.status=response.status;throw error}return data};
 const ACTIVE_KEY='jt-active-realism-jobs',SOURCE_PAGE='realism',pendingSubmitKey='jt-pending-realism-submit';let workflows=[],current=null,renderVersion=0;const stateByWorkflow=new Map(),controlRefs=new Map();const tasks=new Map();
