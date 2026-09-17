@@ -16,6 +16,25 @@ def load_module():
     return module
 
 
+def test_public_creator_verifies_external_config_bytes(monkeypatch):
+    module = load_module()
+    config_path = next((ROOT / "static").glob("style-configs.*.json"))
+    raw = config_path.read_bytes()
+    creator = (ROOT / "static/index.html").read_bytes()
+    calls = []
+    def fetch(base, path, **kwargs):
+        calls.append(path)
+        return raw
+    monkeypatch.setattr(module, "fetch_bytes_resilient", fetch)
+    module.verify_public_creator_config("http://example.invalid", creator, {config_path: raw})
+    assert calls == ["/static/" + config_path.name]
+    monkeypatch.setattr(module, "fetch_bytes_resilient", lambda *a, **kw: b"{}")
+    with pytest.raises(RuntimeError, match="bytes mismatch"):
+        module.verify_public_creator_config("http://example.invalid", creator, {config_path: raw})
+    with pytest.raises(RuntimeError, match="immutable release"):
+        module.verify_public_creator_config("http://example.invalid", creator, {})
+
+
 def complete_workflow(internal_id, name, workflow_id):
     return {
         "id": internal_id,
@@ -381,7 +400,7 @@ def test_release_stops_the_service_for_the_complete_file_set_switch():
 def test_release_reads_back_the_new_creator_style_and_exact_preview_bytes():
     source = SCRIPT.read_text(encoding="utf-8")
     deploy_body = source.split("def deploy(", 1)[1].split("def parse_args", 1)[0]
-    for marker in ["retro_manga_luxury", "jt_style321_v1", "style-retro-manga-luxury.webp"]:
+    for marker in ["retro_manga_luxury", "verify_public_creator_config", "style-retro-manga-luxury.webp"]:
         assert marker in deploy_body
     assert "verify_public_large_responses(" in deploy_body
     helper_body = source.split("def verify_public_large_responses(", 1)[1].split("def wait_for_health", 1)[0]

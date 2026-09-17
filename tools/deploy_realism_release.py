@@ -2674,6 +2674,25 @@ def verify_public_large_responses(base, expected_creator, expected_preview,
     return expected_creator, expected_preview
 
 
+def verify_public_creator_config(base, creator, payloads):
+    """Verify the lazy-loaded config referenced by the exact released HTML."""
+    match = re.search(rb'const STYLE_CONFIG_URL="(/static/style-configs\.[0-9a-f]{12}\.json)"', creator)
+    if not match:
+        raise RuntimeError("public creator config reference missing")
+    route = match.group(1).decode("ascii")
+    expected = payloads.get(BASE / route.lstrip("/"))
+    if not isinstance(expected, bytes):
+        raise RuntimeError("creator config missing from immutable release")
+    actual = fetch_bytes_resilient(base, route, max_bytes=len(expected))
+    if actual != expected:
+        raise RuntimeError("public creator config bytes mismatch")
+    profiles = json.loads(actual)
+    for key, trigger in (("retro_manga_luxury", "jt_style321_v1"),
+                         ("style221", "zxqelun"), ("style222", "zxqavri")):
+        if profiles.get(key, {}).get("trigger") != trigger:
+            raise RuntimeError("public creator style config mismatch: " + key)
+
+
 def wait_for_health(base, timeout=60):
     deadline = time.time() + timeout
     last = None
@@ -3213,11 +3232,12 @@ def deploy(files, payloads, public_base=PUBLIC_BASE,
             if b"/api/workflow-generate" not in realism or b"/realism" not in home:
                 raise RuntimeError("public route markers missing")
             if not all(marker in creator for marker in (
-                b"retro_manga_luxury", b"jt_style321_v1", b"style-retro-manga-luxury.webp",
+                b"retro_manga_luxury", b"style-retro-manga-luxury.webp",
                 b"genApiBtn", b"apiDrawerOpen", b"gpt-image-2.5-flare", "API结果".encode("utf-8"),
-                b"style221", b"style222", b"zxqelun", b"zxqavri",
+                b"style221", b"style222",
             )):
                 raise RuntimeError("public creator style/API markers missing")
+            verify_public_creator_config(public_base, creator, payloads)
             if creator_preview != expected_preview:
                 raise RuntimeError("public creator preview mismatch")
             if not set(TARGET_WORKFLOW_NAMES).issubset(names):
