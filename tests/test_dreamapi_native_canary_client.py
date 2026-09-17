@@ -48,6 +48,15 @@ def test_candidate_overrides_the_legacy_egress_path_and_binds_loopback():
     assert "DREAMAPI_EGRESS_URL=http://127.0.0.1:8198/dreamapi/images/generations" in command
 
 
+def test_candidate_key_is_loaded_from_private_env_file_never_command_line():
+    root = '/home/admin/.comfy-panel-canary/20260917T000000Z-0123456789'
+    command = PREPARE.candidate_launch_command(root, 'fixture', candidate_key=True)
+    env = '--property=EnvironmentFile=' + root + '/dreamapi-canary.env'
+    assert command.index(env) > command.index('--property=EnvironmentFile=/home/admin/comfy-panel/panel.env')
+    assert command.index(env) < command.index('/usr/bin/env')
+    assert not any('DREAMAPI_KEY=' in item for item in command)
+
+
 def test_collect_archives_terminal_error_without_polling_or_resubmitting(tmp_path, monkeypatch):
     state = tmp_path / "state.json"
     state.write_text(json.dumps({"job_id": "known", "cookie": "test", "submit_attempts": 1}), encoding="utf-8")

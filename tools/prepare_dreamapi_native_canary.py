@@ -111,13 +111,14 @@ def _head_and_payloads():
     return head, files, release.release_payloads_from_head(files, head)
 
 
-def candidate_launch_command(root, unit):
+def candidate_launch_command(root, unit, candidate_key=False):
     return [
         "sudo", "systemd-run", "--unit=" + unit, "--collect",
         "--property=User=admin", "--property=WorkingDirectory=" + root,
         "--property=EnvironmentFile=-/etc/comfy-panel.d/dreamapi.env",
         "--property=EnvironmentFile=/etc/comfy-panel/release.env",
         "--property=EnvironmentFile=/home/admin/comfy-panel/panel.env",
+        *(["--property=EnvironmentFile=" + root + "/dreamapi-canary.env"] if candidate_key else []),
         "/usr/bin/env", "PANEL_BIND=127.0.0.1", f"PANEL_PORT={CANARY_PORT}",
         "PANEL_DIR=" + root + "/data", "PANEL_RELEASE_DRAIN_ON_START=0",
         "DREAMAPI_EGRESS_URL=http://127.0.0.1:8198/dreamapi/images/generations",
@@ -175,7 +176,13 @@ def prepare(args):
             _upload(sftp, str(pathlib.PurePosixPath(root) / relative), payloads[local])
         client_source = (BASE / "tools" / "dreamapi_native_canary_client.py").read_bytes()
         _upload(sftp, root + "/tools/dreamapi_native_canary_client.py", client_source, 0o700)
-        command = candidate_launch_command(root, unit)
+        candidate_key = bool(getattr(args, "dreamapi_key_file", None))
+        if candidate_key:
+            key = pathlib.Path(args.dreamapi_key_file).read_text(encoding="utf-8").strip()
+            if not re.fullmatch(r"sk-[A-Za-z0-9_-]{16,256}", key):
+                raise RuntimeError("invalid candidate key format")
+            _upload(sftp, root + "/dreamapi-canary.env", ("DREAMAPI_KEY=" + key + "\n").encode(), 0o600)
+        command = candidate_launch_command(root, unit, candidate_key)
         release.command(client, " ".join(shlex.quote(item) for item in command))
         deadline = time.time() + 30
         health = None
@@ -324,6 +331,7 @@ def main(argv=None):
     parser.add_argument("--ssh-key", default=str(BASE / "tools" / "id_ed25519"))
     parser.add_argument("--state", default=str(DEFAULT_STATE))
     parser.add_argument("--output", default=str(DEFAULT_OUTPUT))
+    parser.add_argument("--dreamapi-key-file", help="private local key file, used only by the isolated candidate")
     args = parser.parse_args(argv)
     if args.mode == "prepare":
         prepare(args)
