@@ -109,6 +109,32 @@ def test_main_creator_keeps_cloud_local_on_one_row_and_api_separate():
         assert 'id="apiDrawerOpen"' in text
 
 
+def test_creator_api_settings_are_a_non_modal_upward_popover_in_the_builder():
+    text = (ROOT / "build_unified_three_styles.py").read_text(encoding="utf8")
+    assert 'class="api-popover" id="apiDrawer" hidden inert' in text
+    assert 'aria-expanded="false" aria-controls="apiDrawer"' in text
+    assert 'class="api-popover-head"' in text
+    assert 'bottom:calc(100% + 8px)' in text
+    assert 'max-height:min(70vh,680px)' in text
+    assert "WORKBENCH_CSS=re.sub(r'\\.api-drawer-backdrop" in text
+    assert "html=html.replace('</aside><div class=\"api-drawer-backdrop\" id=\"apiDrawerBackdrop\"></div>','</aside>')" in text
+    assert "html=re.sub(r\"const setApiDrawer=open=>\\{.*?apiDrawerBackdrop" in text
+    assert "apiDrawerOpen.after(apiDrawer)" in text
+    assert "apiDrawer.hidden=false" in text
+    assert "apiDrawer.inert=false" in text
+    assert "apiDrawer.inert=true" in text
+    assert "apiDrawer.hidden=true" in text
+    assert "apiDrawerOpen.setAttribute('aria-expanded','true')" in text
+    assert "apiDrawerOpen.setAttribute('aria-expanded','false')" in text
+    assert "if(event.key==='Escape'&&!apiDrawer.hidden)setApiPopover(false)" in text
+
+
+def test_creator_mobile_footer_returns_to_normal_flow_in_the_builder():
+    text = (ROOT / "build_unified_three_styles.py").read_text(encoding="utf8")
+    assert ".creation-footer{position:static" in text
+    assert "WORKBENCH_CSS=re.sub(r'\\.creation-scroll\\{padding-bottom:calc" in text
+
+
 def test_creator_static_config_does_not_publish_lora_filenames():
     path = ROOT / "static" / "index.html"
     text = path.read_text(encoding="utf8")
