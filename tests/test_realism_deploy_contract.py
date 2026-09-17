@@ -32,6 +32,21 @@ def test_native_release_requires_reviewed_evidence_bytes(tmp_path, monkeypatch):
     assert 'native DreamAPI artifact path invalid' in errors
 
 
+def test_native_evidence_passes_for_the_reviewed_runtime():
+    assert load_module().validate_native_dreamapi_evidence() == []
+
+
+def test_native_evidence_rejects_runtime_drift(monkeypatch):
+    module = load_module()
+    original = module.git_runtime_payload_sha256
+    calls = []
+    def digest(*args, **kwargs):
+        calls.append(True)
+        return original(*args, **kwargs) if len(calls) == 1 else '0' * 64
+    monkeypatch.setattr(module, 'git_runtime_payload_sha256', digest)
+    assert 'native DreamAPI runtime payload drift' in module.validate_native_dreamapi_evidence()
+
+
 def test_public_creator_verifies_external_config_bytes(monkeypatch):
     module = load_module()
     config_path = next((ROOT / "static").glob("style-configs.*.json"))

@@ -1,0 +1,17 @@
+{
+  "verification": "RESOLVED_AFTER_USER_ENABLED_PERMISSION",
+  "path": "/v1/images/generations",
+  "model": "gpt-image-2.5-flare",
+  "quality": "low",
+  "size": "864x1536",
+  "n": 1,
+  "original_key_job": "e40b21fe7cc0",
+  "new_key_job": "7749c61b1c29",
+  "new_key_confirmed_loaded": true,
+  "http_status": 403,
+  "upstream_error": "Image generation is not enabled for this group",
+  "generated_images": 0,
+  "automatic_paid_retry": false,
+  "required_external_change": "Enable allow_image_generation on the API key's group; Hosted bridge and model whitelist are separate controls.",
+  "resolved_by_job": "e41d1cb4bea5"
+}

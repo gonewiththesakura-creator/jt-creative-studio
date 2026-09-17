@@ -1,0 +1,7 @@
+{
+  "scope": "production-loopback candidate raw uploads to RunningHub; no workflow generation",
+  "candidate_commit": "be910546c6bed1f1b7d5edbcd108d9f09fff6af0",
+  "image": {"status": 200, "bytes": 380, "opaque_upload_token": true, "media_type": "image/png"},
+  "video": {"status": 200, "bytes": 1924, "opaque_upload_token": true, "media_type": "video/mp4"},
+  "limits": "Small real fixtures validate transport and provider acceptance; mobile large-file behavior is covered by local browser and bounded-reader tests, not physical-phone network measurements."
+}
