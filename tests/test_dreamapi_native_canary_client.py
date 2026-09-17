@@ -1,4 +1,6 @@
 import importlib.util
+import json
+import pytest
 from pathlib import Path
 
 
@@ -44,3 +46,19 @@ def test_candidate_overrides_the_legacy_egress_path_and_binds_loopback():
     )
     assert "PANEL_BIND=127.0.0.1" in command
     assert "DREAMAPI_EGRESS_URL=http://127.0.0.1:8198/dreamapi/images/generations" in command
+
+
+def test_collect_archives_terminal_error_without_polling_or_resubmitting(tmp_path, monkeypatch):
+    state = tmp_path / "state.json"
+    state.write_text(json.dumps({"job_id": "known", "cookie": "test", "submit_attempts": 1}), encoding="utf-8")
+    calls = []
+    def request(base, path, **kwargs):
+        calls.append(path)
+        return {"id": "known", "status": "error", "error": "provider rejected"}
+    monkeypatch.setattr(CANARY, "_json_request", request)
+    monkeypatch.setattr(CANARY.time, "sleep", lambda _: pytest.fail("terminal error must not poll"))
+    result = tmp_path / "result.json"
+    with pytest.raises(RuntimeError, match="provider rejected"):
+        CANARY.collect("http://127.0.0.1:1", state, result, tmp_path / "image.png")
+    assert calls == ["/api/job/known"]
+    assert json.loads(result.read_text(encoding="utf-8"))["submit_attempts"] == 1

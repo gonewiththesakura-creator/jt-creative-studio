@@ -135,7 +135,7 @@ def collect(base, state_path, result_path, image_path, timeout=660):
     while True:
         job = _json_request(base, "/api/job/" + job_id, cookie=cookie, timeout=15)
         status = str(job.get("status") or "")
-        if status in {"done", "failed"}:
+        if status in {"done", "error", "failed", "cancelled"}:
             break
         if time.monotonic() >= deadline:
             raise RuntimeError("canary job is still running; use collect later, never resubmit")
