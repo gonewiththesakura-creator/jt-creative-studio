@@ -1,0 +1,55 @@
+{
+  "status": "PASS",
+  "verified_at_utc": "2026-09-17T09:58:10Z",
+  "public_base": "http://8.210.125.65:8189",
+  "release_commit": "b34326267c704e060882b2ff29cfa1bf90a56ea0",
+  "transaction_id": "20260917T091426Z-6e79a4a80c6b4304999634ae0ca8cca5",
+  "phase": "committed",
+  "completed": true,
+  "publisher_result": "REALISM_RELEASE_DEPLOY_OK",
+  "release_file_readback": "all hashes matched",
+  "regression": {"script_checks_passed": 55, "pytest_passed": 481},
+  "credentials": {"live_process_has_key": true, "live_key_matches_successful_canary_key": true},
+  "native_canary": {
+    "job_id": "e41d1cb4bea5",
+    "evidence": "verification.json",
+    "same_runtime_payload_as_release": true,
+    "runtime_payload_sha256": "2ee75a92597cd3d0e33560c5d60a3e21cf600057549217831eed0249f68094f3",
+    "additional_billable_calls_after_deploy": 0
+  },
+  "public_browser_checks": {
+    "status": "PASS",
+    "engine": "isolated headless Chromium",
+    "pages": ["/", "/video", "/realism"],
+    "viewports": [[390, 844], [1440, 900]],
+    "checks_passed": 6,
+    "http_status": 200,
+    "page_errors": [],
+    "horizontal_overflow": false,
+    "creator_preview_loaded": true,
+    "popover_inside_viewport_and_above_trigger": true,
+    "non_read_requests": 0,
+    "reproduce": "python tools/verify_public_workbench.py",
+    "local_screenshots": "evidence/public-workbench/"
+  },
+  "public_health": {
+    "ok": false,
+    "comfy": false,
+    "local_comfy_ok": false,
+    "dreamapi_configured": true,
+    "dreamapi_workstation_egress": true,
+    "dreamapi_contract_match": true,
+    "dreamapi_contract_sha256": "d2e692e229a0525590fbbc5ffc4f466faebe70675278d263a44bfd0dffc6f0fa",
+    "dreamapi_uncertainty_fence": false,
+    "draining": false,
+    "cloud_busy": false,
+    "local_busy": false,
+    "api_busy": false
+  },
+  "limitations": [
+    "The independent local ComfyUI health probe is false; DreamAPI checks are true.",
+    "Provider returned medium at 941x1672 for low at 864x1536; final canvas is normalized to 864x1536.",
+    "Only Flare was tested with a real native image request in this release.",
+    "Mobile browser dimensions were tested; physical-phone weak-network testing was not performed."
+  ]
+}
