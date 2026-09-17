@@ -1,4 +1,5 @@
 import importlib.util
+import hashlib
 import json
 from pathlib import Path
 
@@ -14,6 +15,21 @@ def load_module():
     module = importlib.util.module_from_spec(SPEC)
     SPEC.loader.exec_module(module)
     return module
+
+
+def test_native_release_requires_reviewed_evidence_bytes(tmp_path, monkeypatch):
+    module = load_module()
+    manifest = tmp_path / 'verification.json'
+    monkeypatch.setattr(module, 'DREAMAPI_NATIVE_MANIFEST', manifest)
+    assert 'absent' in module.validate_native_dreamapi_evidence()[0]
+    manifest.write_text('{"verification":"PASS"}', encoding='utf8')
+    assert module.validate_native_dreamapi_evidence() == ['native DreamAPI evidence is absent or not reviewed']
+    monkeypatch.setattr(module, 'DREAMAPI_NATIVE_EVIDENCE_SHA256', hashlib.sha256(manifest.read_bytes()).hexdigest())
+    errors = module.validate_native_dreamapi_evidence()
+    assert 'native DreamAPI request contract invalid' in errors
+    assert 'native DreamAPI runtime identity invalid' in errors
+    assert 'native DreamAPI submission evidence invalid' in errors
+    assert 'native DreamAPI artifact path invalid' in errors
 
 
 def test_public_creator_verifies_external_config_bytes(monkeypatch):

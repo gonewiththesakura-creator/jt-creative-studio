@@ -260,9 +260,26 @@ def _invoke_client(args, mode):
     ]
     client = _connect(args.credentials, args.ssh_key)
     try:
-        output = release.command(
-            client, " ".join(shlex.quote(item) for item in command), timeout=720,
-        )
+        try:
+            output = release.command(
+                client, " ".join(shlex.quote(item) for item in command), timeout=720,
+            )
+        except RuntimeError:
+            # Recover the terminal public result without another submission.
+            sftp = client.open_sftp()
+            try:
+                with sftp.open(root + "/result.json", "rb") as handle:
+                    terminal = json.loads(handle.read())
+                if terminal.get("status") in {"error", "failed", "cancelled"}:
+                    _atomic_json(pathlib.Path(args.output) / "failed-result.json", terminal)
+                    state["phase"] = "failed"
+                    state["terminal_status"] = terminal["status"]
+                    _atomic_json(state_path, state)
+            except OSError:
+                pass
+            finally:
+                sftp.close()
+            raise
         output_dir = pathlib.Path(args.output)
         output_dir.mkdir(parents=True, exist_ok=True)
         sftp = client.open_sftp()
@@ -285,7 +302,7 @@ def cleanup(args):
     state = json.loads(state_path.read_text(encoding="utf-8"))
     root = str(state.get("remote_root") or "")
     unit = str(state.get("unit") or "")
-    if (state.get("phase") not in {"prepared", "collected"}
+    if (state.get("phase") not in {"prepared", "collected", "failed"}
             or not re.fullmatch(r"/home/admin/\.comfy-panel-canary/[0-9]{8}T[0-9]{6}Z-[0-9a-f]{10}", root)
             or not re.fullmatch(r"comfy-panel-canary-[0-9]{8}t[0-9]{6}z-[0-9a-f]{10}", unit)):
         raise RuntimeError("canary cleanup target or phase is invalid")
