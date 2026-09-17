@@ -115,7 +115,7 @@ def test_creator_api_settings_are_a_non_modal_upward_popover_in_the_builder():
     assert 'aria-expanded="false" aria-controls="apiDrawer"' in text
     assert 'class="api-popover-head"' in text
     assert 'bottom:calc(100% + 8px)' in text
-    assert 'max-height:min(70vh,680px)' in text
+    assert 'max-height:var(--api-popover-max-height,min(70vh,680px))' in text
     assert "WORKBENCH_CSS=re.sub(r'\\.api-drawer-backdrop" in text
     assert "html=html.replace('</aside><div class=\"api-drawer-backdrop\" id=\"apiDrawerBackdrop\"></div>','</aside>')" in text
     assert "html=re.sub(r\"const setApiDrawer=open=>\\{.*?apiDrawerBackdrop" in text
@@ -127,6 +127,18 @@ def test_creator_api_settings_are_a_non_modal_upward_popover_in_the_builder():
     assert "apiDrawerOpen.setAttribute('aria-expanded','true')" in text
     assert "apiDrawerOpen.setAttribute('aria-expanded','false')" in text
     assert "if(event.key==='Escape'&&!apiDrawer.hidden)setApiPopover(false)" in text
+
+
+def test_creator_api_popover_uses_trigger_anchor_and_viewport_safe_height():
+    text = (ROOT / "build_unified_three_styles.py").read_text(encoding="utf8")
+    assert 'class="api-popover-anchor"' in text
+    assert '.api-popover-anchor{position:relative}' in text
+    assert 'max-height:var(--api-popover-max-height,min(70vh,680px))' in text
+    assert "function refreshApiPopoverBounds()" in text
+    assert "const visibleTop=Math.max(8,paneRect.top+8)" in text
+    assert "apiDrawer.style.setProperty('--api-popover-max-height',Math.max(0,Math.floor(anchorRect.top-visibleTop-8))+'px')" in text
+    assert "apiModel.focus({preventScroll:true})" in text
+    assert "addEventListener('resize',refreshApiPopoverBounds)" in text
 
 
 def test_creator_mobile_footer_returns_to_normal_flow_in_the_builder():
