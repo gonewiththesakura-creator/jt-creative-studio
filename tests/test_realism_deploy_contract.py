@@ -57,6 +57,16 @@ def test_error_presentation_exception_rejects_other_code_changes():
     assert not module.only_public_error_changed(before, after.replace('def public_job_error', '@side_effect\ndef public_job_error'))
 
 
+def test_admission_exception_cannot_change_generation_or_routes():
+    module = load_module()
+    before = 'BILLABLE_GLOBAL_HOURLY_LIMIT = 10\ndef billable_quota_status():\n    return True\ndef dreamapi_run_image():\n    return 1\nclass Handler:\n    def _billable_quota_rejection(self):\n        return True\n    def do_POST(self):\n        return 1\n'
+    after = before.replace('BILLABLE_GLOBAL_HOURLY_LIMIT = 10\n','').replace('return True','return False')
+    assert module.only_error_and_admission_changed(before, after)
+    assert not module.only_error_and_admission_changed(before, after.replace('return 1','return 2',1))
+    assert not module.only_error_and_admission_changed(before, after.replace('def do_POST(self):\n        return 1','def do_POST(self):\n        return 2'))
+    assert not module.only_error_and_admission_changed(before, after.replace('def billable_quota_status', '@execute\ndef billable_quota_status'))
+
+
 def test_public_creator_verifies_external_config_bytes(monkeypatch):
     module = load_module()
     config_path = next((ROOT / "static").glob("style-configs.*.json"))

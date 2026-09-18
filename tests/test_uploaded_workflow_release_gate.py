@@ -99,14 +99,14 @@ def test_public_release_verification_requires_six_names_and_api_creator_markers(
         assert marker in source
 
 
-def test_unauthenticated_release_requires_bounded_billable_quota_controls():
+def test_release_preserves_registration_without_reintroducing_user_removed_caps():
     source = (ROOT / "server.py").read_text(encoding="utf8")
     assert MODULE.validate_public_billable_quota(source) == []
     assert MODULE.validate_public_upload_quota(source) == []
     for changed in (
-        source.replace("BILLABLE_GLOBAL_HOURLY_LIMIT = 10", "BILLABLE_GLOBAL_HOURLY_LIMIT = 1000"),
-        source.replace("BILLABLE_GLOBAL_DAILY_LIMIT = 30", "BILLABLE_GLOBAL_DAILY_LIMIT = 3000"),
-        source.replace("BILLABLE_SESSION_HOURLY_LIMIT = 4", "BILLABLE_SESSION_HOURLY_LIMIT = 400"),
+        source + "\nBILLABLE_GLOBAL_HOURLY_LIMIT = 10\n",
+        source + "\nBILLABLE_GLOBAL_DAILY_LIMIT = 30\n",
+        source + "\nBILLABLE_SESSION_HOURLY_LIMIT = 4\n",
         source.replace("register_billable_job(job, session_id)", "register_unbounded_job(job)", 1),
     ):
         assert MODULE.validate_public_billable_quota(changed)

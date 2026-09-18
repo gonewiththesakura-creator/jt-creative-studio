@@ -1319,25 +1319,18 @@ def validate_public_upload_quota(server_source):
 
 
 def validate_public_billable_quota(server_source):
-    required = {
-        "BILLABLE_GLOBAL_HOURLY_LIMIT": 10,
-        "BILLABLE_GLOBAL_DAILY_LIMIT": 30,
-        "BILLABLE_SESSION_HOURLY_LIMIT": 4,
-    }
+    # The owner explicitly removed website hourly/daily generation caps.
+    # Keep registration/ownership safeguards; do not silently restore quotas.
+    removed_caps = {"BILLABLE_GLOBAL_HOURLY_LIMIT", "BILLABLE_GLOBAL_DAILY_LIMIT",
+                    "BILLABLE_SESSION_HOURLY_LIMIT"}
     try:
         tree = ast.parse(server_source)
     except SyntaxError as error:
         return [f"server source cannot be parsed: {error}"]
-    values = {}
-    for node in tree.body:
-        if isinstance(node, ast.Assign):
-            for target in node.targets:
-                if isinstance(target, ast.Name) and target.id in required and isinstance(node.value, ast.Constant):
-                    values[target.id] = node.value.value
     errors = []
-    for name, expected in required.items():
-        if values.get(name) != expected:
-            errors.append(f"public billable quota drift: {name}")
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and node.id in removed_caps:
+            errors.append(f"owner-removed billable cap reintroduced: {node.id}")
     function_defs = sum(
         1 for node in ast.walk(tree)
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
@@ -1349,8 +1342,8 @@ def validate_public_billable_quota(server_source):
         and node.func.id == "register_billable_job"
     )
     if function_defs != 1 or guarded_calls != 4:
-        errors.append("not all public billable routes are quota guarded")
-    for marker in ("_billable_quota_lock", "Retry-After", "billable_quota_recorded"):
+        errors.append("not all public billable routes register tasks")
+    for marker in ("_billable_quota_lock", "idempotency_decision", "_submit_locks", "billable_quota_recorded"):
         if marker not in server_source:
             errors.append(f"missing public billable quota control: {marker}")
     return errors
@@ -1372,13 +1365,52 @@ def only_public_error_changed(before, after):
         return False
 
 
+def only_error_and_admission_changed(before, after):
+    """Limit the owner-approved cap removal to admission and error rendering."""
+    functions = {"public_job_error", "billable_quota_status", "register_billable_job"}
+    constants = {"BILLABLE_GLOBAL_HOURLY_LIMIT", "BILLABLE_GLOBAL_DAILY_LIMIT",
+                 "BILLABLE_SESSION_HOURLY_LIMIT"}
+    def remainder(source):
+        tree = ast.parse(source)
+        kept = []
+        for node in tree.body:
+            if isinstance(node, ast.FunctionDef) and node.name in functions:
+                if node.decorator_list:
+                    raise ValueError("decorated admission function")
+                continue
+            if (isinstance(node, ast.Assign) and len(node.targets) == 1
+                    and isinstance(node.targets[0], ast.Name) and node.targets[0].id in constants):
+                continue
+            if isinstance(node, ast.ClassDef) and node.name == "Handler":
+                methods = []
+                for method in node.body:
+                    if isinstance(method, ast.FunctionDef) and method.name == "_billable_quota_rejection":
+                        if method.decorator_list:
+                            raise ValueError("decorated admission method")
+                        continue
+                    methods.append(method)
+                node.body = methods
+            kept.append(node)
+        tree.body = kept
+        return ast.dump(tree, include_attributes=False)
+    try:
+        return before != after and remainder(before) == remainder(after)
+    except (SyntaxError, ValueError):
+        return False
+
+
+REVIEWED_UNCAPPED_RUNTIME_SHA256 = "9f2c9fdf6cb0a2b2d23cddc5dd7ac7fffae80a5ebd9b769d1de65cca678a5fd4"
+
+
 def reviewed_error_presentation_patch(tested_commit, current_commit, current_digest):
-    """One reviewed localization-only patch; no new generation is claimed.
+    """Reviewed localization and owner-requested cap removal; no new image claim.
 
     Pin the complete resulting runtime AND prove every change is confined to
-    public_job_error. Any future request/UI/transport change needs fresh evidence.
+    error rendering/admission. Request/UI/transport changes need fresh evidence.
     """
-    if current_digest != "b9f32822ff5ceed60e6e18b3e244a91643b2856bfda81f97733a453e3c034e05":
+    presentation_only = current_digest == "b9f32822ff5ceed60e6e18b3e244a91643b2856bfda81f97733a453e3c034e05"
+    uncapped = current_digest == REVIEWED_UNCAPPED_RUNTIME_SHA256
+    if not (presentation_only or uncapped):
         return False
     if tested_commit != "ff87b67c983b1bdf1bbd24bb82c8d1b70b72a83c":
         return False
@@ -1386,7 +1418,8 @@ def reviewed_error_presentation_patch(tested_commit, current_commit, current_dig
         before = subprocess.check_output(["git", "show", f"{tested_commit}:{path}"], cwd=BASE)
         after = subprocess.check_output(["git", "show", f"{current_commit}:{path}"], cwd=BASE)
         if path == "server.py":
-            if not only_public_error_changed(before.decode("utf-8"), after.decode("utf-8")):
+            comparison = only_error_and_admission_changed if uncapped else only_public_error_changed
+            if not comparison(before.decode("utf-8"), after.decode("utf-8")):
                 return False
         elif before != after:
             return False
