@@ -2,6 +2,8 @@
 
 ## GitHub 同步快照（2026-09-18）
 
+最新 API 直连优化详见 [`docs/dreamapi-direct-transport.md`](docs/dreamapi-direct-transport.md)。默认服务器直连原 DreamAPI，保留 Image 2/2.5 与尺寸、质量选择；字符串错误原因丢失已修复，支持 URL 与 Base64 图片。最终运行代码 `dcbbb5e` 的 Image 2 单张真实验证成功（73.3 秒），证据见 `audit/dreamapi_direct_final_20260918/verification.json`。下方旧快照中“尚未修复”的错误解析问题已由本更新解决；不宣称所有上游断连或限流都已消失。
+
 - 私有仓库：<https://github.com/gonewiththesakura-creator/jt-creative-studio>。
 - 当前开发分支：`feat/four-realism-workflows-cold-style`。
 - 最近已部署代码：`40bf6f1bf54dd4f359cc16070e4eaf7e7e6da820`；部署核验见 `audit/dreamapi_native_20260918/error-localization-deployment.json`。
