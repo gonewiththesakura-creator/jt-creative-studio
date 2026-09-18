@@ -132,9 +132,6 @@ UPLOAD_SESSION_HOURLY_LIMIT = 20
 UPLOAD_GLOBAL_HOURLY_LIMIT = 100
 UPLOAD_SESSION_HOURLY_BYTES = 500 * 1024 * 1024
 UPLOAD_GLOBAL_HOURLY_BYTES = 2 * 1024 * 1024 * 1024
-BILLABLE_GLOBAL_HOURLY_LIMIT = 10
-BILLABLE_GLOBAL_DAILY_LIMIT = 30
-BILLABLE_SESSION_HOURLY_LIMIT = 4
 # V2 query exposes only real task states, not a stable percentage. Keep these
 # conservative and fixed; never manufacture progress from elapsed/poll count.
 RH_STAGE_PROGRESS = {"QUEUED": 0.02, "RUNNING": 0.10}
@@ -1111,6 +1108,7 @@ def archive_local_originals(job):
         save_jobs()
 
 def billable_quota_status(session_id, now=None, backend=None):
+    """Observe historic paid-job counts without imposing website usage caps."""
     now = time.time() if now is None else float(now)
     hour_start, day_start = now - 3600, now - 86400
     session_digest = _session_hash(session_id)
@@ -1126,33 +1124,18 @@ def billable_quota_status(session_id, now=None, backend=None):
                                and (backend is None or job.get("generation_backend") == backend)
                                and secrets.compare_digest(str(job.get("quota_session_hash") or ""), session_digest))
     global_hour, global_day, session_hour = len(hour_times), len(day_times), len(session_times)
-    # Wait until every exhausted sliding window has room, including ledgers
-    # that contain more entries than the current limit. Retain uncertain/error
-    # jobs: an unsuccessful result is not proof that the provider did not bill.
-    blocked_windows = []
-    for scope, timestamps, limit, window in (
-            ("global_hour", hour_times, BILLABLE_GLOBAL_HOURLY_LIMIT, 3600),
-            ("global_day", day_times, BILLABLE_GLOBAL_DAILY_LIMIT, 86400),
-            ("backend_session_hour", session_times, BILLABLE_SESSION_HOURLY_LIMIT, 3600)):
-        if len(timestamps) >= limit:
-            retry = max(1, math.ceil(timestamps[len(timestamps) - limit] + window - now))
-            blocked_windows.append((scope, retry))
-    scope, retry_after = max(blocked_windows, key=lambda item: item[1], default=(None, 0))
     return {
         "global_hour": global_hour, "global_day": global_day,
         "session_hour": session_hour,
-        "blocked": bool(blocked_windows),
-        "scope": scope, "backend": backend,
-        "retry_after": retry_after,
+        "blocked": False,
+        "scope": None, "backend": backend,
+        "retry_after": 0,
     }
 
 
 def register_billable_job(job, session_id):
-    """Atomically enforce public spend limits and persist one accepted paid job."""
+    """Atomically persist an accepted paid job and its legacy ledger metadata."""
     with _billable_quota_lock:
-        status = billable_quota_status(session_id, backend=job.get("generation_backend"))
-        if status["blocked"]:
-            return status
         job["quota_session_hash"] = _session_hash(session_id)
         job["billable_quota_recorded"] = True
         with _lock_jobs:
@@ -3049,25 +3032,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         return True
 
     def _billable_quota_rejection(self, status):
-        if not status:
-            return False
-        backend_label = "API" if status.get("backend") == "api" else "云端"
-        scope_label = {
-            "global_hour": "全站最近一小时的付费任务",
-            "global_day": "全站最近24小时的付费任务",
-            "backend_session_hour": f"当前会话的{backend_label}最近一小时付费任务",
-        }[status["scope"]]
-        minutes = max(1, math.ceil(status["retry_after"] / 60))
-        payload = {
-            "error": f"{scope_label}已达上限，请约{minutes}分钟后重试。",
-            "error_code": "billable_quota_exceeded",
-            "scope": status["scope"], "backend": status["backend"],
-            "retry_after": status["retry_after"],
-            "quota": {key: status[key] for key in ("global_hour", "global_day", "session_hour")},
-        }
-        self._send(429, json.dumps(payload).encode(),
-                   headers={"Retry-After": str(status["retry_after"])})
-        return True
+        """Keep the route admission interface; website count caps are disabled."""
+        return False
 
     def _start_absolute_deadline(self, seconds):
         state = {"expired": False, "armed": True, "lock": threading.Lock()}
