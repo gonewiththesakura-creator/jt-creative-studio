@@ -60,9 +60,6 @@ def panel(tmp_path, monkeypatch):
     monkeypatch.setattr(PANEL, "_favorites", {})
     monkeypatch.setattr(PANEL, "_upload_capabilities", {})
     monkeypatch.setattr(PANEL, "_upload_usage", [])
-    monkeypatch.setattr(PANEL, "BILLABLE_GLOBAL_HOURLY_LIMIT", 1000)
-    monkeypatch.setattr(PANEL, "BILLABLE_GLOBAL_DAILY_LIMIT", 1000)
-    monkeypatch.setattr(PANEL, "BILLABLE_SESSION_HOURLY_LIMIT", 1000)
     monkeypatch.setattr(PANEL, "run_job", lambda _job: None)
     if hasattr(PANEL, "PANEL_RELEASE_TOKEN"):
         monkeypatch.setattr(PANEL, "PANEL_RELEASE_TOKEN", RELEASE_TOKEN)
