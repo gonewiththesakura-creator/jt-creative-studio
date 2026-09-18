@@ -1,0 +1,46 @@
+{
+  "status": "PASS",
+  "release_commit": "40bf6f1bf54dd4f359cc16070e4eaf7e7e6da820",
+  "deployment_transaction": "20260918T063011Z-20f643d82075490d86f700c44f2dd74c",
+  "publisher_result": "REALISM_RELEASE_DEPLOY_OK",
+  "verification_scripts_passed": 55,
+  "pytest_tests_passed": 506,
+  "new_billable_calls": 0,
+  "owner_requested_count_cap_removal": true,
+  "retained_protections": [
+    "duplicate submission prevention",
+    "concurrent task protection",
+    "task ownership and recovery",
+    "provider limits unchanged"
+  ],
+  "verification_method": "Read-only pinned SSH inspection of deployed source and deployment transaction; evaluated deployed error renderer and quota status against an in-memory snapshot of actual historical ledger. Queried running service health. Did not submit generation or claim an owner-authenticated browser task GET.",
+  "verification": {
+    "phase": "committed",
+    "completed": true,
+    "public_error": "未通过上游内容安全审核（上游判定涉及色情或性内容）。请检查提示词及素材是否符合内容要求，再提交。面板任务号 3feb9a6f8901",
+    "count_caps_in_runtime": [],
+    "historical_session_counts": {
+      "global_hour": 4,
+      "global_day": 10,
+      "session_hour": 3,
+      "blocked": false,
+      "scope": null,
+      "backend": "api",
+      "retry_after": 0
+    },
+    "health": {
+      "ok": true,
+      "comfy": true,
+      "local_comfy_ok": true,
+      "dreamapi_configured": true,
+      "dreamapi_workstation_egress": true,
+      "dreamapi_contract_match": true,
+      "dreamapi_contract_sha256": "d2e692e229a0525590fbbc5ffc4f466faebe70675278d263a44bfd0dffc6f0fa",
+      "dreamapi_uncertainty_fence": false,
+      "draining": false,
+      "cloud_busy": false,
+      "local_busy": false,
+      "api_busy": false
+    }
+  }
+}
