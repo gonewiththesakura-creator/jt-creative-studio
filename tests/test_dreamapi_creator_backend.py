@@ -100,6 +100,34 @@ def test_api_5xx_public_error_is_actionable_without_leaking_upstream_detail():
     assert "private upstream detail" not in public
 
 
+@pytest.mark.parametrize('detail, expected', [
+    ('DreamAPI HTTP 400: Your request was rejected by the safety system. safety_violations=[sexual].', '色情或性内容'),
+    ('DreamAPI HTTP 400: content_policy_violation', '内容安全审核'),
+    ('DreamAPI HTTP 403: Image generation is not enabled for this group', '分组未开启生图权限'),
+    ('DreamAPI HTTP 401: invalid key', '密钥无效或已失效'),
+    ('DreamAPI HTTP 403: forbidden', '没有权限'),
+    ('DreamAPI HTTP 429: insufficient_quota', '额度不足'),
+    ('DreamAPI HTTP 429: rate limit exceeded', '请求过于频繁'),
+    ('DreamAPI HTTP 404: model not found', '模型或接口不存在'),
+    ('DreamAPI HTTP 400: invalid size', '参数未被接口接受'),
+    ('DreamAPI HTTP 502: DreamAPI workstation egress failed', '转发服务连接失败'),
+    ('DreamAPI HTTP 429: DreamAPI prior request outcome is still uncertain', '上一次请求的结果尚未确认'),
+    ('DreamAPI hard timeout after 600s', '等待超时'),
+    ('<urlopen error [WinError 10061] connection refused>', '连接失败'),
+    ('DreamAPI returned no completed image', '没有返回可用图片'),
+    ('DreamAPI returned malformed response', '返回的数据格式异常'),
+    ('DreamAPI returned invalid image data', '返回的图片数据无法读取'),
+    ('DreamAPI image data is too large', '图片超过处理上限'),
+    ('unknown internal failure', '暂时无法识别具体原因'),
+])
+def test_api_public_errors_explain_known_causes_without_echoing_secrets(detail, expected):
+    message = server.public_job_error({'id':'3feb9a6f8901','generation_backend':'api',
+                                      'error':detail+' secret=sk-private-secret request-id=private-id'})
+    assert expected in message
+    assert '3feb9a6f8901' in message
+    assert 'sk-private-secret' not in message and 'private-id' not in message
+
+
 class FakeResponse:
     def __init__(self, payload):
         self.payload = json.dumps(payload).encode("utf-8")

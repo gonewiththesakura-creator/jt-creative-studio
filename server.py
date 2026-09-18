@@ -1306,13 +1306,54 @@ def public_job_error(job):
     if backend == "local":
         return f"本地任务失败；请使用面板任务号 {job_id} 联系维护人员"
     if backend == "api":
+        detail = error.lower()
+        suffix = f"面板任务号 {job_id}"
+        # Only publish fixed translations: never echo raw provider messages,
+        # credentials, URLs, or upstream request identifiers to the browser.
+        if any(marker in detail for marker in ("safety_violations", "safety system", "content_policy_violation", "content policy")):
+            category = "（上游判定涉及色情或性内容）" if re.search(r"safety_violations\s*=\s*\[[^\]]*\bsexual\b", detail) else ""
+            return f"未通过上游内容安全审核{category}。请检查提示词及素材是否符合内容要求，再提交。{suffix}"
+        if "image generation is not enabled for this group" in detail:
+            return f"当前密钥所属分组未开启生图权限，请在中转站后台检查分组设置。{suffix}"
+        if "prior request outcome is still uncertain" in detail:
+            return f"上一次请求的结果尚未确认，已暂停新请求以避免重复计费。请先查询原任务或联系维护人员。{suffix}"
+        if "generation already in progress" in detail:
+            return f"API已有任务正在生成，请等待该任务结束。{suffix}"
+        if "workstation egress failed" in detail:
+            return f"API转发服务连接失败，结果尚未确认。请检查工作站及网络，勿连续重试。{suffix}"
+        if any(marker in detail for marker in ("insufficient_quota", "insufficient quota", "insufficient balance", "quota exceeded", "credit balance")):
+            return f"中转站或上游账户额度不足，请检查余额及套餐额度。{suffix}"
+        if "timeout" in detail or "timed out" in detail:
+            return f"等待超时，尚不能确认上游是否已生成。请先检查原任务或中转站记录，勿连续重试。{suffix}"
+        if any(marker in detail for marker in ("connection refused", "connection reset", "remote end closed", "urlopen error", "network is unreachable")):
+            return f"API网络连接失败或中断，结果尚未确认。请检查转发服务及网络，勿连续重试。{suffix}"
+        if "no completed image" in detail:
+            return f"上游已响应，但没有返回可用图片；仅凭此错误无法判断具体原因，请联系维护人员核查。{suffix}"
+        if "malformed response" in detail:
+            return f"上游返回的数据格式异常，无法解析结果。请联系维护人员检查接口兼容性。{suffix}"
+        if any(marker in detail for marker in ("invalid image data", "undecodable image data", "unsupported image format")):
+            return f"上游返回的图片数据无法读取或格式不受支持，请联系维护人员核查。{suffix}"
+        if "too large" in detail:
+            return f"上游返回的数据或图片超过处理上限，请联系维护人员检查输出大小。{suffix}"
+        if "dreamapi_key is not configured" in detail:
+            return f"服务器尚未配置生图密钥，请联系维护人员配置。{suffix}"
+        code = re.match(r"^DreamAPI HTTP (\d{3}):", error)
+        if code and code.group(1) in {"400", "401", "403", "404", "429"}:
+            reason = {
+                "400": "生图参数未被接口接受，请检查模型、尺寸、质量和提示词；若仍失败请联系维护人员。",
+                "401": "生图密钥无效或已失效，请检查中转站密钥。",
+                "403": "当前账号没有权限使用此次生图请求，请检查分组权限及模型授权。",
+                "404": "请求的模型或接口不存在，请检查中转站支持的模型及接口配置。",
+                "429": "上游请求过于频繁或并发已满，请稍后再试，勿连续点击。",
+            }[code.group(1)]
+            return reason + suffix
         match = re.match(r"^DreamAPI HTTP (5\d\d):", error)
         if match:
             return (
                 f"图像API上游暂时失败（HTTP {match.group(1)}），可手动重新生成；"
                 f"请勿连续提交。面板任务号 {job_id}"
             )
-        return f"API任务失败；请使用面板任务号 {job_id} 联系维护人员"
+        return f"API任务失败，暂时无法识别具体原因，请联系维护人员查看服务端记录。{suffix}"
     return f"云端任务失败；请使用面板任务号 {job_id} 联系维护人员"
 
 
