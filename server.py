@@ -1110,7 +1110,7 @@ def archive_local_originals(job):
     with _lock_jobs:
         save_jobs()
 
-def billable_quota_status(session_id, now=None):
+def billable_quota_status(session_id, now=None, backend=None):
     now = time.time() if now is None else float(now)
     hour_start, day_start = now - 3600, now - 86400
     session_digest = _session_hash(session_id)
@@ -1119,18 +1119,30 @@ def billable_quota_status(session_id, now=None):
                     if job.get("billable_quota_recorded") is True
                     and job.get("generation_backend") in ("cloud", "api")
                     and isinstance(job.get("created"), (int, float))]
-        global_hour = sum(1 for job in billable if job["created"] >= hour_start)
-        global_day = sum(1 for job in billable if job["created"] >= day_start)
-        session_hour = sum(1 for job in billable
-                           if job["created"] >= hour_start
-                           and secrets.compare_digest(str(job.get("quota_session_hash") or ""), session_digest))
-    retry_after = max(1, int(3600 - (now % 3600)))
+        hour_times = sorted(job["created"] for job in billable if job["created"] > hour_start)
+        day_times = sorted(job["created"] for job in billable if job["created"] > day_start)
+        session_times = sorted(job["created"] for job in billable
+                               if job["created"] > hour_start
+                               and (backend is None or job.get("generation_backend") == backend)
+                               and secrets.compare_digest(str(job.get("quota_session_hash") or ""), session_digest))
+    global_hour, global_day, session_hour = len(hour_times), len(day_times), len(session_times)
+    # Wait until every exhausted sliding window has room, including ledgers
+    # that contain more entries than the current limit. Retain uncertain/error
+    # jobs: an unsuccessful result is not proof that the provider did not bill.
+    blocked_windows = []
+    for scope, timestamps, limit, window in (
+            ("global_hour", hour_times, BILLABLE_GLOBAL_HOURLY_LIMIT, 3600),
+            ("global_day", day_times, BILLABLE_GLOBAL_DAILY_LIMIT, 86400),
+            ("backend_session_hour", session_times, BILLABLE_SESSION_HOURLY_LIMIT, 3600)):
+        if len(timestamps) >= limit:
+            retry = max(1, math.ceil(timestamps[len(timestamps) - limit] + window - now))
+            blocked_windows.append((scope, retry))
+    scope, retry_after = max(blocked_windows, key=lambda item: item[1], default=(None, 0))
     return {
         "global_hour": global_hour, "global_day": global_day,
         "session_hour": session_hour,
-        "blocked": (global_hour >= BILLABLE_GLOBAL_HOURLY_LIMIT
-                    or global_day >= BILLABLE_GLOBAL_DAILY_LIMIT
-                    or session_hour >= BILLABLE_SESSION_HOURLY_LIMIT),
+        "blocked": bool(blocked_windows),
+        "scope": scope, "backend": backend,
         "retry_after": retry_after,
     }
 
@@ -1138,7 +1150,7 @@ def billable_quota_status(session_id, now=None):
 def register_billable_job(job, session_id):
     """Atomically enforce public spend limits and persist one accepted paid job."""
     with _billable_quota_lock:
-        status = billable_quota_status(session_id)
+        status = billable_quota_status(session_id, backend=job.get("generation_backend"))
         if status["blocked"]:
             return status
         job["quota_session_hash"] = _session_hash(session_id)
@@ -2998,8 +3010,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def _billable_quota_rejection(self, status):
         if not status:
             return False
+        backend_label = "API" if status.get("backend") == "api" else "云端"
+        scope_label = {
+            "global_hour": "全站最近一小时的付费任务",
+            "global_day": "全站最近24小时的付费任务",
+            "backend_session_hour": f"当前会话的{backend_label}最近一小时付费任务",
+        }[status["scope"]]
+        minutes = max(1, math.ceil(status["retry_after"] / 60))
         payload = {
-            "error": "public billable task limit reached; please wait before submitting a new paid task",
+            "error": f"{scope_label}已达上限，请约{minutes}分钟后重试。",
+            "error_code": "billable_quota_exceeded",
+            "scope": status["scope"], "backend": status["backend"],
+            "retry_after": status["retry_after"],
             "quota": {key: status[key] for key in ("global_hour", "global_day", "session_hour")},
         }
         self._send(429, json.dumps(payload).encode(),

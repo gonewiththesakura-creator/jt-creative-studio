@@ -36,13 +36,12 @@ def test_creator_api_channel_has_only_trusted_image_options():
             'name="apiRatio"', 'value="1:1"', 'value="2:3"',
             'value="3:2"', 'value="9:16"', 'value="16:9"',
             'gpt-image-2.5-flare', 'gpt-image-2.5-sunburst', 'gpt-image-2',
-            'value="cover"', 'value="contain"', 'API每次生成1张',
+            'value="cover"', 'value="contain"', '每次生成1张',
             'api_model:apiModel.value', 'api_quality:apiQuality.value',
             'api_fit:apiFit.value', "backend==='api'?1:+genBatch.value",
             "backend==='api'?0:+genHd.value",
             "candidate.api_ratio=selectedApiRatio()",
             'API专属生图', '使用当前提示词',
-            '上游可能覆盖质量',
         ]:
             assert token in text, (path, token)
         assert 'id="apiWidth"' not in text
@@ -59,7 +58,6 @@ def test_api_model_quality_options_are_linked_and_seed_is_not_misrepresented():
     for path in FILES:
         text = path.read_text(encoding="utf8")
         assert 'updateApiQualityOptions' in text
-        assert 'API结果不受Seed控制' in text
         assert "j.seed_supported===false?'Seed：不适用'" in text
         assert "backendUi(j.generation_backend).label" in text
 
@@ -159,23 +157,17 @@ def test_creator_has_no_numeric_progress_label_markup_or_css():
         assert "liquid-percent" not in page.read_text(encoding="utf8"), page
 
 
-def test_api_generation_has_visible_stage_progress_without_fake_percentages():
-    for path in FILES:
+def test_api_generation_keeps_progress_on_action_without_fake_percentages():
+    for path in FILES[1:]:
         text = path.read_text(encoding="utf8")
         for token in (
             "function installApiProgress()",
-            'data-api-progress-stage',
-            'data-api-progress-elapsed',
-            'role="progressbar"',
+            "genApiBtn.dataset.state=state.tone",
+            "genApiBtn.textContent='API · '",
             "function describeApiProgress(job,override={})",
-            "图像模型生成中 · 阶段 2/4",
             "API_PROCESSING_RESULT",
-            "正在解析生成结果 · 阶段 3/4",
             "API_FITTING_RESULT",
-            "正在适配目标画布 · 阶段 3/4",
-            "图片已生成 · 阶段 4/4",
-            "上游不提供实时百分比",
-            "仅显示已确认阶段",
+            "已完成 · 再次生成",
             "function formatApiElapsed(startedAt)",
             "function creatorPhaseText(job)",
             "status.textContent=creatorPhaseText(next)",
@@ -194,10 +186,9 @@ def test_api_progress_covers_terminal_retry_and_refresh_recovery_states():
             "function isTerminalJob(job)",
             "function startApiProgress(job,override={})",
             "function finishApiProgress(job,override={})",
-            "function pauseApiProgress(message)",
+            "function pauseApiProgress(message",
             "生成失败",
             "任务已取消",
-            "正在确认任务状态",
             "不会重复提交",
             "刷新页面会继续恢复",
             "installApiProgress();",

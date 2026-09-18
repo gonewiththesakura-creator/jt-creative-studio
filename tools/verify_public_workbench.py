@@ -33,6 +33,8 @@ def main():
                         page.wait_for_function("!document.querySelector('.config-loading')", timeout=45000)
                         if name == 'creator':
                             page.wait_for_function('styleDataReady && stylePreview.complete && stylePreview.naturalWidth > 0', timeout=45000)
+                            assert page.locator('.creation-footer #genApiBtn').count() == 1
+                            assert page.locator('#apiDrawer #genApiBtn, [data-api-progress], #apiDrawerStatus').count() == 0
                             page.locator('#apiDrawerOpen').click()
                             page.wait_for_function("getComputedStyle(apiDrawer).opacity === '1'")
                             geometry = page.evaluate('''() => {
