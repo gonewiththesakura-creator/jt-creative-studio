@@ -1,0 +1,63 @@
+{
+  "status": "PASS",
+  "verified_at_utc": "2026-09-18T05:34:06Z",
+  "public_base": "http://8.210.125.65:8189",
+  "release_commit": "39ae7fb0b256a28855814469067c052072e098e8",
+  "transaction_id": "20260918T052938Z-9cea9f31254e40b8aba1963a4e57e824",
+  "phase": "committed",
+  "completed": true,
+  "publisher_result": "REALISM_RELEASE_DEPLOY_OK",
+  "release_file_readback": "all hashes matched",
+  "regression": {"script_checks_passed": 55, "pytest_passed": 489},
+  "quota_incident": {
+    "cause": "Four successful jobs shared one per-session hourly cap across API and cloud",
+    "job_ids": ["7a54ec501d88", "39adc05b3598", "bab8edc60384", "0fa2a50af491"],
+    "fix": "Backend-scoped session counters with unchanged aggregate limits and accurate sliding-window Retry-After",
+    "session_hour_per_backend": 4,
+    "global_hour": 10,
+    "global_day": 30,
+    "historical_ledger_deleted_or_reset": false
+  },
+  "workstation": {
+    "precheck": "8198 connection refused; no bridge process found; canary preparation stopped before billable submission",
+    "recovery": "Existing tools/start_comfy_watchdog.ps1 launched the bridge and its tunnel",
+    "new_startup_automation_created": false,
+    "computer_must_remain_online": true
+  },
+  "native_canary": {
+    "job_id": "1dcce15ef1f8",
+    "elapsed_seconds": 26.8,
+    "submit_attempts": 1,
+    "evidence": "verification.json",
+    "same_runtime_payload_as_release": true,
+    "runtime_payload_sha256": "98ec05e68ea6587f611136be49b9cb6648d756865f67aaf9b1c579bfbba1d199",
+    "additional_billable_calls_after_deploy": 0
+  },
+  "public_browser_checks": {
+    "status": "PASS",
+    "engine": "isolated headless Chromium",
+    "pages": ["/", "/video", "/realism"],
+    "viewports": [[390, 844], [1440, 900]],
+    "checks_passed": 6,
+    "http_status": 200,
+    "page_errors": [],
+    "horizontal_overflow": false,
+    "creator_preview_loaded": true,
+    "single_footer_api_generate_action": true,
+    "duplicate_stage_cards_and_inner_submit_removed": true,
+    "non_read_requests": 0,
+    "local_screenshots": "evidence/public-workbench-20260918/"
+  },
+  "public_health": {
+    "comfy": false,
+    "local_comfy_ok": false,
+    "dreamapi_configured": true,
+    "dreamapi_workstation_egress": true,
+    "dreamapi_contract_match": true,
+    "dreamapi_uncertainty_fence": false,
+    "draining": false,
+    "cloud_busy": false,
+    "local_busy": false,
+    "api_busy": false
+  }
+}
