@@ -102,6 +102,7 @@ def test_watchdog_status_and_cli_expose_only_the_public_contract_hash(monkeypatc
 
 def test_configured_workstation_egress_requires_live_matching_status(monkeypatch):
     server = load_module("dreamapi_contract_probe", ROOT / "server.py")
+    monkeypatch.setattr(server, "DREAMAPI_CONNECTION_MODE", "workstation")
     monkeypatch.setattr(
         server, "DREAMAPI_EGRESS_URL",
         "http://127.0.0.1:8198/dreamapi/images/generations",
@@ -161,6 +162,7 @@ def test_unconfigured_workstation_egress_does_not_probe_control(monkeypatch):
 ])
 def test_api_health_reports_verified_workstation_contract(monkeypatch, remote_hash, ready):
     server = load_module(f"dreamapi_contract_http_{ready}", ROOT / "server.py")
+    monkeypatch.setattr(server, "DREAMAPI_CONNECTION_MODE", "workstation")
     monkeypatch.setattr(server, "DREAMAPI_KEY", "fixture-secret-never-serialize")
     monkeypatch.setattr(
         server, "DREAMAPI_EGRESS_URL",
@@ -195,6 +197,17 @@ def test_api_health_reports_verified_workstation_contract(monkeypatch, remote_ha
     assert payload["dreamapi_contract_sha256"] == EXPECTED_CONTRACT_SHA256
     assert payload["dreamapi_uncertainty_fence"] is False
     assert b"fixture-secret-never-serialize" not in raw
+
+
+def test_release_acceptance_allows_ready_direct_transport_without_windows():
+    deploy = load_module("dreamapi_direct_deploy", ROOT / "tools" / "deploy_realism_release.py")
+    ready = {"dreamapi_configured": True, "dreamapi_connection_mode": "direct",
+             "dreamapi_transport_ready": True, "dreamapi_workstation_egress": False,
+             "dreamapi_contract_match": True, "dreamapi_contract_sha256": EXPECTED_CONTRACT_SHA256,
+             "dreamapi_uncertainty_fence": False}
+    assert deploy.require_dreamapi_release_health(ready) is ready
+    with pytest.raises(RuntimeError):
+        deploy.require_dreamapi_release_health(dict(ready, dreamapi_transport_ready=False))
 
 
 def test_release_acceptance_requires_the_reviewed_runtime_contract():

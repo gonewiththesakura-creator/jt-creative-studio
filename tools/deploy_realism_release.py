@@ -2608,12 +2608,14 @@ def fetch_json(base, path):
 
 
 def require_dreamapi_release_health(health):
-    """Fail closed unless the public panel sees the matching workstation proxy."""
+    """Require the selected direct or workstation transport to be ready."""
     if not isinstance(health, dict):
         raise RuntimeError("public DreamAPI health response is invalid")
-    required_true = (
-        "dreamapi_configured", "dreamapi_workstation_egress", "dreamapi_contract_match",
-    )
+    mode = health.get("dreamapi_connection_mode", "workstation")
+    if mode not in {"direct", "workstation"}:
+        raise RuntimeError("public DreamAPI transport mode is invalid")
+    required_true = ("dreamapi_configured", "dreamapi_contract_match",
+                     "dreamapi_transport_ready" if mode == "direct" else "dreamapi_workstation_egress")
     if any(health.get(field) is not True for field in required_true):
         raise RuntimeError("public DreamAPI workstation contract is not ready")
     if health.get("dreamapi_contract_sha256") != DREAMAPI_CONTRACT_SHA256:

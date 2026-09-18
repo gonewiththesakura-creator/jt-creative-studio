@@ -11,6 +11,112 @@ from PIL import Image
 import server
 
 
+@pytest.mark.parametrize("body, expected", [
+    ({"error": "DreamAPI generation already in progress"}, "已有任务正在生成"),
+    ({"error": "DreamAPI prior request outcome is still uncertain"}, "上一次请求的结果尚未确认"),
+    ({"error": {"message": "insufficient_quota"}}, "额度不足"),
+])
+def test_string_and_object_errors_keep_the_actual_429_cause(monkeypatch, body, expected):
+    def reject(*args):
+        raise urllib.error.HTTPError("https://example.test", 429, "Too Many Requests", {},
+                                     io.BytesIO(json.dumps(body).encode()))
+    monkeypatch.setattr(server, "_urlopen_bounded", reject)
+    with pytest.raises(RuntimeError) as caught:
+        server._dreamapi_request_json(None, b"{}", 1)
+    public = server.public_job_error({"id": "test", "generation_backend": "api", "error": str(caught.value)})
+    assert expected in public
+
+
+def test_direct_mode_ignores_legacy_workstation_route(monkeypatch):
+    monkeypatch.setattr(server, "DREAMAPI_CONNECTION_MODE", "direct", raising=False)
+    monkeypatch.setattr(server, "DREAMAPI_EGRESS_URL", "http://127.0.0.1:8198/dreamapi/responses")
+    monkeypatch.setattr(server, "DREAMAPI_BASE_URL", "https://example.test/v1")
+    assert server._dreamapi_request_endpoint() == "https://example.test/v1/images/generations"
+
+
+def test_direct_health_does_not_depend_on_workstation(monkeypatch):
+    monkeypatch.setattr(server, "DREAMAPI_CONNECTION_MODE", "direct", raising=False)
+    monkeypatch.setattr(server, "DREAMAPI_KEY", "fixture")
+    monkeypatch.setattr(server, "http_json", lambda *a, **k: pytest.fail("must not probe Windows"))
+    health = server.dreamapi_transport_status()
+    assert health["dreamapi_connection_mode"] == "direct"
+    assert health["dreamapi_transport_ready"] is True
+    assert health["dreamapi_workstation_egress"] is False
+
+
+def test_url_image_is_saved_locally_without_second_generation(tmp_path, monkeypatch):
+    calls = []
+    raw = base64.b64decode(png_b64(1024, 1024))
+    def generate(*args):
+        calls.append("POST")
+        return {"data": [{"url": "https://cdn.example.test/result.png?signature=private"}]}
+    monkeypatch.setattr(server, "DREAMAPI_KEY", "fixture")
+    monkeypatch.setattr(server, "_dreamapi_request_json", generate)
+    monkeypatch.setattr(server, "_dreamapi_download_image", lambda url: raw, raising=False)
+    job = {"id": "url-job", "prompt": "landscape", "width": 1024, "height": 1024,
+           "api_model": "gpt-image-2", "api_quality": "low"}
+    server.dreamapi_run_image(job, tmp_path)
+    assert (tmp_path / "dreamapi.png").read_bytes() == raw
+    assert calls == ["POST"]
+    assert "signature" not in json.dumps(job)
+
+
+@pytest.mark.parametrize("url", ["http://example.com/a.png", "https://127.0.0.1/a", "https://[::1]/a",
+                                  "https://user:password@example.com/a", "file:///etc/passwd"])
+def test_image_url_rejects_unsafe_destinations(url):
+    with pytest.raises(ValueError, match="image URL"):
+        server._dreamapi_download_image(url)
+
+
+def test_image_url_download_pins_dns_and_never_sends_api_key(monkeypatch):
+    requests, connections = [], []
+    class Connection:
+        def __init__(self, host, **kwargs):
+            self.host = host
+        def request(self, method, path, headers):
+            self._create_connection((self.host, 443), 5)
+            requests.append((method, path, headers))
+        def getresponse(self):
+            response = io.BytesIO(b"image-bytes")
+            response.status = 200
+            return response
+        def close(self): pass
+    monkeypatch.setattr(server.socket, "getaddrinfo", lambda *a, **k: [(2, 1, 6, "", ("93.184.216.34", 443))])
+    monkeypatch.setattr(server.socket, "create_connection", lambda address, *a: connections.append(address))
+    monkeypatch.setattr(server.http.client, "HTTPSConnection", Connection)
+    monkeypatch.setattr(server, "DREAMAPI_KEY", "never-send-to-cdn")
+    assert server._dreamapi_download_image("https://cdn.example.test/image.png?sig=x") == b"image-bytes"
+    assert connections == [("93.184.216.34", 443)]
+    assert requests == [("GET", "/image.png?sig=x", {"Accept": "image/*"})]
+
+
+def test_image_redirect_to_private_network_is_rejected_before_connect(monkeypatch):
+    requests = []
+    class Connection:
+        def __init__(self, *a, **k): pass
+        def request(self, *a, **k): requests.append(a)
+        def getresponse(self):
+            response = io.BytesIO()
+            response.status = 302
+            response.getheader = lambda name: "https://127.0.0.1/secret"
+            return response
+        def close(self): pass
+    def resolve(host, *a, **k):
+        return [(2, 1, 6, "", ("127.0.0.1" if host == "127.0.0.1" else "93.184.216.34", 443))]
+    monkeypatch.setattr(server.socket, "getaddrinfo", resolve)
+    monkeypatch.setattr(server.http.client, "HTTPSConnection", Connection)
+    with pytest.raises(ValueError, match="image URL"):
+        server._dreamapi_download_image("https://cdn.example.test/result")
+    assert len(requests) == 1
+
+
+def test_image_download_failure_does_not_invite_regeneration():
+    message = server.public_job_error({"id": "download-job", "generation_backend": "api",
+                                       "error": "DreamAPI image download HTTP 403"})
+    assert "已返回图片地址" in message
+    assert "勿重复生成" in message
+
+
 def png_b64(width=64, height=96, color=(31, 79, 127)):
     output = io.BytesIO()
     Image.new("RGB", (width, height), color).save(output, "PNG")

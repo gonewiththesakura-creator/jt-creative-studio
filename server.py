@@ -12,7 +12,7 @@ Env:
 """
 import json, os, re, sys, time, uuid, threading, urllib.request, urllib.parse, urllib.error, math
 import http.server, http.cookies, socketserver, pathlib, secrets, hashlib, hmac
-import socket, base64, struct, subprocess, io, gzip, ipaddress, tempfile
+import socket, base64, struct, subprocess, io, gzip, ipaddress, tempfile, ssl, http.client
 
 BASE = pathlib.Path(__file__).resolve().parent
 COMFY_URL = os.environ.get("COMFY_URL", "http://127.0.0.1:8188").rstrip("/")
@@ -42,6 +42,7 @@ RH_KEY = os.environ.get("RUNNINGHUB_API_KEY", "")
 DREAMAPI_KEY = os.environ.get("DREAMAPI_KEY", "")
 DREAMAPI_BASE_URL = os.environ.get("DREAMAPI_BASE_URL", "https://dreamapi.club").rstrip("/")
 DREAMAPI_EGRESS_URL = os.environ.get("DREAMAPI_EGRESS_URL", "").strip()
+DREAMAPI_CONNECTION_MODE = os.environ.get("DREAMAPI_CONNECTION_MODE", "direct").strip()
 DREAMAPI_TIMEOUT = 600
 DREAMAPI_MAX_RESPONSE_BYTES = 96 * 1024 * 1024
 DREAMAPI_MAX_IMAGE_BYTES = 32 * 1024 * 1024
@@ -973,6 +974,26 @@ def dreamapi_workstation_egress_status():
         fence_active = True
     return contract_match and not fence_active, contract_match, fence_active
 
+
+def dreamapi_transport_status():
+    """Report configured transport readiness, not a live provider generation probe."""
+    if DREAMAPI_CONNECTION_MODE == "workstation":
+        ready, matched, fence = dreamapi_workstation_egress_status()
+    else:
+        ready, matched, fence = False, False, False
+        try:
+            _dreamapi_request_endpoint()
+            ready = matched = bool(DREAMAPI_KEY)
+        except ValueError:
+            pass
+    return {
+        "dreamapi_connection_mode": DREAMAPI_CONNECTION_MODE,
+        "dreamapi_transport_ready": ready,
+        "dreamapi_workstation_egress": ready if DREAMAPI_CONNECTION_MODE == "workstation" else False,
+        "dreamapi_contract_match": matched,
+        "dreamapi_uncertainty_fence": fence,
+    }
+
 def start_comfy_remote():
     """Trigger local ComfyUI startup via the local watchdog control port, then wait."""
     try:
@@ -1291,6 +1312,8 @@ def public_job_error(job):
     if backend == "api":
         detail = error.lower()
         suffix = f"面板任务号 {job_id}"
+        if "image download" in detail or "image url" in detail:
+            return f"上游已返回图片地址，但下载保存失败。请联系维护人员恢复原结果，勿重复生成。{suffix}"
         # Only publish fixed translations: never echo raw provider messages,
         # credentials, URLs, or upstream request identifiers to the browser.
         if any(marker in detail for marker in ("safety_violations", "safety system", "content_policy_violation", "content policy")):
@@ -2273,8 +2296,16 @@ def _dreamapi_redact_error(detail):
 
 
 def _dreamapi_request_endpoint():
+    if DREAMAPI_CONNECTION_MODE not in {"direct", "workstation"}:
+        raise ValueError("invalid DreamAPI connection mode")
+    if DREAMAPI_CONNECTION_MODE == "direct":
+        parsed = urllib.parse.urlparse(DREAMAPI_BASE_URL)
+        if (parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password
+                or parsed.query or parsed.fragment or parsed.path not in {"", "/v1"}):
+            raise ValueError("DreamAPI direct base must be an HTTPS origin or /v1 base")
+        return DREAMAPI_BASE_URL.removesuffix("/v1") + "/v1/images/generations"
     if not DREAMAPI_EGRESS_URL:
-        return DREAMAPI_BASE_URL + "/v1/images/generations"
+        raise ValueError("DreamAPI workstation endpoint is not configured")
     parsed = urllib.parse.urlparse(DREAMAPI_EGRESS_URL)
     if (parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "::1", "localhost"}
             or parsed.username or parsed.password
@@ -2383,7 +2414,9 @@ def _dreamapi_request_json(request, data, timeout):
             raw = error.read(8192)
             try:
                 body = json.loads(raw.decode("utf-8", "replace"))
-                detail = str((body.get("error") or {}).get("message") or body.get("message") or error.reason)
+                value = body.get("error") if isinstance(body, dict) else None
+                detail = (value.get("message") if isinstance(value, dict) else value if isinstance(value, str) else None)
+                detail = str(detail or (body.get("message") if isinstance(body, dict) else None) or error.reason)
             except Exception:
                 detail = str(error.reason or "upstream error")
             box["error"] = RuntimeError(
@@ -2404,6 +2437,63 @@ def _dreamapi_request_json(request, data, timeout):
     return box["result"]
 
 
+def _dreamapi_download_image(url):
+    """Fetch an upstream image without credentials, pinning each public HTTPS hop."""
+    box = {}
+
+    def worker():
+        try:
+            target = url
+            deadline = time.monotonic() + 60
+            for _ in range(4):
+                parsed = urllib.parse.urlsplit(target)
+                if (parsed.scheme != "https" or not parsed.hostname or parsed.username
+                        or parsed.password or parsed.fragment or parsed.port not in {None, 443}):
+                    raise ValueError("unsafe DreamAPI image URL")
+                addresses = socket.getaddrinfo(parsed.hostname, 443, type=socket.SOCK_STREAM)
+                ips = [row[4][0] for row in addresses]
+                if not ips or any(not ipaddress.ip_address(ip).is_global for ip in ips):
+                    raise ValueError("unsafe DreamAPI image URL destination")
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError("DreamAPI image download timeout")
+                # Preserve TLS hostname verification/SNI, but connect to the already
+                # validated IP instead of resolving the hostname a second time.
+                connection = http.client.HTTPSConnection(parsed.hostname, timeout=remaining,
+                                                          context=ssl.create_default_context())
+                pinned_ip = ips[0]
+                connection._create_connection = lambda address, timeout, source_address=None: socket.create_connection(
+                    (pinned_ip, 443), timeout, source_address)
+                try:
+                    connection.request("GET", urllib.parse.urlunsplit(("", "", parsed.path or "/", parsed.query, "")),
+                                       headers={"Accept": "image/*"})
+                    response = connection.getresponse()
+                    if response.status in {301, 302, 303, 307, 308}:
+                        location = response.getheader("Location")
+                        if not location:
+                            raise ValueError("invalid DreamAPI image URL redirect")
+                        target = urllib.parse.urljoin(target, location)
+                        continue
+                    if response.status != 200:
+                        raise RuntimeError(f"DreamAPI image download HTTP {response.status}")
+                    box["result"] = _response_bytes_limited(response, DREAMAPI_MAX_IMAGE_BYTES)
+                    return
+                finally:
+                    connection.close()
+            raise ValueError("too many DreamAPI image URL redirects")
+        except Exception as error:
+            box["error"] = error
+
+    thread = threading.Thread(target=worker, daemon=True)
+    thread.start()
+    thread.join(60)
+    if thread.is_alive():
+        raise TimeoutError("DreamAPI image download timeout; generation must not be resubmitted")
+    if "error" in box:
+        raise box["error"]
+    return box["result"]
+
+
 def dreamapi_run_image(job, jobdir):
     """Generate one image with DreamAPI Images and archive an exact-size PNG."""
     if not DREAMAPI_KEY:
@@ -2421,6 +2511,7 @@ def dreamapi_run_image(job, jobdir):
     job["api_dispatch_profile"] = "native_images"
     job["dreamapi_contract_sha256"] = DREAMAPI_CONTRACT_SHA256
     job["api_action_mode"] = "direct"
+    job["api_connection_mode"] = DREAMAPI_CONNECTION_MODE
     output_size = _dreamapi_size(job["width"], job["height"])
     provider_size = _dreamapi_provider_size(job)
     orientation = "square" if job["width"] == job["height"] else (
@@ -2465,18 +2556,27 @@ def dreamapi_run_image(job, jobdir):
     image_item = next((item for item in result["data"]
                        if isinstance(item.get("b64_json"), str)
                        and item.get("b64_json")), None)
-    if not image_item:
+    url_item = next((item for item in result["data"]
+                     if isinstance(item.get("url"), str) and item.get("url")), None)
+    if not image_item and not url_item:
         suffix = f" (response_id={response_id or 'none'}, keys={response_shape or 'none'})"
         raise RuntimeError("DreamAPI returned no completed image" + suffix)
     job["provider_status"] = "API_PROCESSING_RESULT"
     job["progress_pct"] = 75
-    encoded = image_item["b64_json"]
-    if len(encoded) > ((DREAMAPI_MAX_IMAGE_BYTES + 2) // 3) * 4 + 4:
-        raise RuntimeError("DreamAPI image data is too large")
-    try:
-        source = base64.b64decode(encoded, validate=True)
-    except Exception as error:
-        raise RuntimeError("DreamAPI returned invalid image data") from error
+    if image_item:
+        encoded = image_item["b64_json"]
+        if len(encoded) > ((DREAMAPI_MAX_IMAGE_BYTES + 2) // 3) * 4 + 4:
+            raise RuntimeError("DreamAPI image data is too large")
+        try:
+            source = base64.b64decode(encoded, validate=True)
+        except Exception as error:
+            raise RuntimeError("DreamAPI returned invalid image data") from error
+    else:
+        try:
+            source = _dreamapi_download_image(url_item["url"])
+        except Exception as error:
+            raise RuntimeError("DreamAPI image download failed: " + type(error).__name__) from error
+        image_item = url_item
     if len(source) > DREAMAPI_MAX_IMAGE_BYTES:
         raise RuntimeError("DreamAPI image data is too large")
     job["provider_status"] = "API_VALIDATING_RESULT"
@@ -3315,15 +3415,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._send(200, json.dumps(payload, separators=(",", ":")).encode())
         elif path == "/api/health":
             ok, msg = comfy_ok()
-            dreamapi_egress, dreamapi_contract_match, dreamapi_fence = (
-                dreamapi_workstation_egress_status()
-            )
+            dreamapi_status = dreamapi_transport_status()
             self._send(200, json.dumps({"ok": ok, "comfy": bool(ok), "local_comfy_ok": ok,
                                         "dreamapi_configured": bool(DREAMAPI_KEY),
-                                        "dreamapi_workstation_egress": dreamapi_egress,
-                                        "dreamapi_contract_match": dreamapi_contract_match,
+                                        **dreamapi_status,
                                         "dreamapi_contract_sha256": DREAMAPI_CONTRACT_SHA256,
-                                        "dreamapi_uncertainty_fence": dreamapi_fence,
                                         "draining": bool(_release_draining),
                                         "cloud_busy": self._running_job_id("cloud") is not None,
                                         "local_busy": self._running_job_id("local") is not None,

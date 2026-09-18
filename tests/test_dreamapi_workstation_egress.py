@@ -489,6 +489,7 @@ def test_server_egress_endpoint_is_optional_and_loopback_only(monkeypatch):
     monkeypatch.setattr(server, "DREAMAPI_BASE_URL", "https://dreamapi.club")
     monkeypatch.setattr(server, "DREAMAPI_EGRESS_URL", "")
     assert server._dreamapi_request_endpoint() == "https://dreamapi.club/v1/images/generations"
+    monkeypatch.setattr(server, "DREAMAPI_CONNECTION_MODE", "workstation")
 
     monkeypatch.setattr(
         server, "DREAMAPI_EGRESS_URL", "http://127.0.0.1:8198/dreamapi/images/generations",

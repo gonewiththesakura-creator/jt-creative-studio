@@ -111,7 +111,9 @@ def _head_and_payloads():
     return head, files, release.release_payloads_from_head(files, head)
 
 
-def candidate_launch_command(root, unit, candidate_key=False):
+def candidate_launch_command(root, unit, candidate_key=False, connection_mode="workstation"):
+    if connection_mode not in {"direct", "workstation"}:
+        raise ValueError("invalid canary connection mode")
     return [
         "sudo", "systemd-run", "--unit=" + unit, "--collect",
         "--property=User=admin", "--property=WorkingDirectory=" + root,
@@ -122,6 +124,7 @@ def candidate_launch_command(root, unit, candidate_key=False):
         "/usr/bin/env", "PANEL_BIND=127.0.0.1", f"PANEL_PORT={CANARY_PORT}",
         "PANEL_DIR=" + root + "/data", "PANEL_RELEASE_DRAIN_ON_START=0",
         "DREAMAPI_EGRESS_URL=http://127.0.0.1:8198/dreamapi/images/generations",
+        "DREAMAPI_CONNECTION_MODE=" + connection_mode,
         "/usr/bin/python3", root + "/server.py",
     ]
 
@@ -182,7 +185,8 @@ def prepare(args):
             if not re.fullmatch(r"sk-[A-Za-z0-9_-]{16,256}", key):
                 raise RuntimeError("invalid candidate key format")
             _upload(sftp, root + "/dreamapi-canary.env", ("DREAMAPI_KEY=" + key + "\n").encode(), 0o600)
-        command = candidate_launch_command(root, unit, candidate_key)
+        connection_mode = getattr(args, "connection_mode", "workstation")
+        command = candidate_launch_command(root, unit, candidate_key, connection_mode)
         release.command(client, " ".join(shlex.quote(item) for item in command))
         deadline = time.time() + 30
         health = None
@@ -201,19 +205,21 @@ def prepare(args):
             raise RuntimeError("candidate health did not become available")
         required = {
             "dreamapi_configured": True,
-            "dreamapi_workstation_egress": True,
+            "dreamapi_transport_ready": True,
+            "dreamapi_connection_mode": connection_mode,
             "dreamapi_contract_match": True,
             "dreamapi_uncertainty_fence": False,
             "draining": False,
             "api_busy": False,
         }
-        if any(health.get(key) is not value for key, value in required.items()):
+        if any(health.get(key) != value for key, value in required.items()):
             raise RuntimeError("candidate DreamAPI health is not ready")
         state = {
             "phase": "prepared", "candidate_commit": head,
             "runtime_payload_sha256": release.git_runtime_payload_sha256(head, files=release.NATIVE_RUNTIME_PAYLOAD_FILES),
             "remote_root": root, "unit": unit, "port": CANARY_PORT,
             "contract_sha256": health.get("dreamapi_contract_sha256"),
+            "connection_mode": connection_mode,
             "prepared_at": time.time(),
         }
         _atomic_json(state_path, state)
@@ -332,6 +338,7 @@ def main(argv=None):
     parser.add_argument("--state", default=str(DEFAULT_STATE))
     parser.add_argument("--output", default=str(DEFAULT_OUTPUT))
     parser.add_argument("--dreamapi-key-file", help="private local key file, used only by the isolated candidate")
+    parser.add_argument("--connection-mode", choices=("direct", "workstation"), default="workstation")
     args = parser.parse_args(argv)
     if args.mode == "prepare":
         prepare(args)
