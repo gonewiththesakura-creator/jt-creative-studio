@@ -20,6 +20,7 @@ reports/
 !audit/dreamapi_migration_20260914/verification.json
 !audit/dreamapi_native_20260917/flare-low-9x16.png
 !audit/dreamapi_native_20260918/flare-low-9x16.png
+!audit/dreamapi_direct_final_20260918/image2-low-9x16.png
 *.jpg
 *.jpeg
 *.webp

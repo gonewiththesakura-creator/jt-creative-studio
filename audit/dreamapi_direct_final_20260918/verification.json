@@ -1,0 +1,19 @@
+{
+  "verification": "PASS",
+  "scope": "production-loopback direct Image 2 low 9:16 canary",
+  "connection_mode": "direct",
+  "tested_release_commit": "dcbbb5e8ff0425228c785dbbec8819b3f9003660",
+  "runtime_payload": {
+    "format": "framed-v1",
+    "files": ["comfy_watchdog.py", "server.py", "static/index.html", "static/promptgen.html", "tools/start_comfy_watchdog.ps1", "config.json", "static/video.html", "static/realism.html", "static/style-configs.1701e5988310.json"],
+    "sha256": "d6d295207aca9ec7248fa913f32462dc3350cc8f81b37b1329c5c2d0a882e1cb"
+  },
+  "request_contract": {"method": "POST", "path": "/v1/images/generations", "model": "gpt-image-2", "quality": "low", "size": "864x1536", "n": 1, "output_format": "png"},
+  "job": {
+    "id": "5e56744107b1", "status": "done", "provider_status": "API_DONE", "elapsed": 73.3,
+    "width": 864, "height": 1536, "generation_backend": "api", "api_model": "gpt-image-2", "api_quality": "low", "api_ratio": "9:16", "api_fit": "contain", "api_transport": "images", "api_action_mode": "direct", "api_provider_size": "864x1536", "dreamapi_contract_sha256": "d2e692e229a0525590fbbc5ffc4f466faebe70675278d263a44bfd0dffc6f0fa"
+  },
+  "submit_attempts": 1,
+  "artifact": {"file": "image2-low-9x16.png", "bytes": 1594581, "sha256": "4c63c4795b37d3c938988352a6fff9a90f794e3b7cb9e24db8c476393869abde"},
+  "visual_review": {"status": "PASS", "not_blank_or_corrupt": true, "complete_subject": true}
+}

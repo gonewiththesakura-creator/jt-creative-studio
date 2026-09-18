@@ -111,7 +111,9 @@ MIN_PYTEST_FILES = 40
 RELEASE_TEST_INVENTORY_SHA256 = "c6b4f35cc3114a4090a53852b31ff60ac6f536828e30202dfbaa7dad72719a24"
 DREAMAPI_CONTRACT_SHA256 = "d2e692e229a0525590fbbc5ffc4f466faebe70675278d263a44bfd0dffc6f0fa"
 HISTORICAL_DREAMAPI_CONTRACT_SHA256 = "665d283bd420f76f031d9530f1d757f022d6cc16a5c9e9bc315e4966da797959"
-DREAMAPI_NATIVE_MANIFEST = BASE / "audit" / "dreamapi_native_20260918" / "verification.json"
+DREAMAPI_NATIVE_MANIFEST = BASE / "audit" / "dreamapi_direct_final_20260918" / "verification.json"
+DREAMAPI_NATIVE_MODEL = "gpt-image-2"
+DREAMAPI_NATIVE_ARTIFACT = "image2-low-9x16.png"
 # Set only after the single authorized native canary is collected and reviewed.
 DREAMAPI_NATIVE_EVIDENCE_SHA256 = "f211e5f1c022b8b5d3374c1a1fc5013706529dabb993dbf9c7d3388b4c84a0e7"
 DREAMAPI_TESTED_RELEASE_COMMIT = "f7c179871747355d11cb5f2789f561a256f671d5"
@@ -1438,7 +1440,9 @@ def validate_native_dreamapi_evidence():
     errors = []
     if find_dreamapi_private_evidence(record):
         errors.append("native DreamAPI evidence contains private data")
-    if record.get("verification") != "PASS" or record.get("scope") != "production-loopback native Flare low 9:16 canary":
+    if (record.get("verification") != "PASS"
+            or record.get("scope") != "production-loopback direct Image 2 low 9:16 canary"
+            or record.get("connection_mode") != "direct"):
         errors.append("native DreamAPI verification identity invalid")
     try:
         commit = record["tested_release_commit"]
@@ -1456,11 +1460,11 @@ def validate_native_dreamapi_evidence():
     except Exception:
         errors.append("native DreamAPI runtime identity invalid")
     expected_request = {"method": "POST", "path": "/v1/images/generations",
-                        "model": "gpt-image-2.5-flare", "quality": "low", "size": "864x1536", "n": 1, "output_format": "png"}
+                        "model": DREAMAPI_NATIVE_MODEL, "quality": "low", "size": "864x1536", "n": 1, "output_format": "png"}
     if record.get("request_contract") != expected_request:
         errors.append("native DreamAPI request contract invalid")
     job = record.get("job") or {}
-    required = {"status": "done", "provider_status": "API_DONE", "api_model": "gpt-image-2.5-flare",
+    required = {"status": "done", "provider_status": "API_DONE", "api_model": DREAMAPI_NATIVE_MODEL,
                 "api_quality": "low", "api_ratio": "9:16", "api_provider_size": "864x1536",
                 "api_transport": "images", "api_action_mode": "direct", "width": 864, "height": 1536,
                 "dreamapi_contract_sha256": DREAMAPI_CONTRACT_SHA256}
@@ -1469,7 +1473,7 @@ def validate_native_dreamapi_evidence():
     if record.get("submit_attempts") != 1 or not re.fullmatch(r"[a-f0-9]{12}", str(job.get("id") or "")):
         errors.append("native DreamAPI submission evidence invalid")
     artifact = record.get("artifact") or {}
-    if artifact.get("file") != "flare-low-9x16.png":
+    if artifact.get("file") != DREAMAPI_NATIVE_ARTIFACT:
         errors.append("native DreamAPI artifact path invalid")
     else:
         errors.extend(validate_png_artifact(DREAMAPI_NATIVE_MANIFEST.parent / artifact["file"],
