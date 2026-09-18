@@ -47,6 +47,16 @@ def test_native_evidence_rejects_runtime_drift(monkeypatch):
     assert 'native DreamAPI runtime payload drift' in module.validate_native_dreamapi_evidence()
 
 
+def test_error_presentation_exception_rejects_other_code_changes():
+    module = load_module()
+    before = 'def public_job_error(job):\n    return "old"\n\ndef submit():\n    return 1\n'
+    after = before.replace('"old"', '"中文"')
+    assert module.only_public_error_changed(before, after)
+    assert not module.only_public_error_changed(before, after.replace('return 1', 'return 2'))
+    assert not module.only_public_error_changed(before, after + '\nimport os\n')
+    assert not module.only_public_error_changed(before, after.replace('def public_job_error', '@side_effect\ndef public_job_error'))
+
+
 def test_public_creator_verifies_external_config_bytes(monkeypatch):
     module = load_module()
     config_path = next((ROOT / "static").glob("style-configs.*.json"))

@@ -1356,6 +1356,43 @@ def validate_public_billable_quota(server_source):
     return errors
 
 
+def only_public_error_changed(before, after):
+    """Byte-identical runtime outside the existing undecorated error renderer."""
+    def remove_renderer(source):
+        nodes = [node for node in ast.parse(source).body
+                 if isinstance(node, ast.FunctionDef) and node.name == "public_job_error"]
+        if len(nodes) != 1 or nodes[0].decorator_list:
+            raise ValueError("invalid renderer")
+        node = nodes[0]
+        lines = source.splitlines(keepends=True)
+        return "".join(lines[:node.lineno - 1] + lines[node.end_lineno:])
+    try:
+        return before != after and remove_renderer(before) == remove_renderer(after)
+    except (SyntaxError, ValueError):
+        return False
+
+
+def reviewed_error_presentation_patch(tested_commit, current_commit, current_digest):
+    """One reviewed localization-only patch; no new generation is claimed.
+
+    Pin the complete resulting runtime AND prove every change is confined to
+    public_job_error. Any future request/UI/transport change needs fresh evidence.
+    """
+    if current_digest != "b9f32822ff5ceed60e6e18b3e244a91643b2856bfda81f97733a453e3c034e05":
+        return False
+    if tested_commit != "ff87b67c983b1bdf1bbd24bb82c8d1b70b72a83c":
+        return False
+    for path in NATIVE_RUNTIME_PAYLOAD_FILES:
+        before = subprocess.check_output(["git", "show", f"{tested_commit}:{path}"], cwd=BASE)
+        after = subprocess.check_output(["git", "show", f"{current_commit}:{path}"], cwd=BASE)
+        if path == "server.py":
+            if not only_public_error_changed(before.decode("utf-8"), after.decode("utf-8")):
+                return False
+        elif before != after:
+            return False
+    return True
+
+
 def validate_native_dreamapi_evidence():
     """Require reviewed native-media evidence for the exact current runtime bytes."""
     try:
@@ -1376,7 +1413,8 @@ def validate_native_dreamapi_evidence():
         expected = git_runtime_payload_sha256(commit, files=NATIVE_RUNTIME_PAYLOAD_FILES)
         current_head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=BASE, text=True).strip()
         current = git_runtime_payload_sha256(current_head, files=NATIVE_RUNTIME_PAYLOAD_FILES)
-        if payload != {"format": "framed-v1", "files": list(NATIVE_RUNTIME_PAYLOAD_FILES), "sha256": expected} or current != expected:
+        unchanged_generation = current == expected or reviewed_error_presentation_patch(commit, current_head, current)
+        if payload != {"format": "framed-v1", "files": list(NATIVE_RUNTIME_PAYLOAD_FILES), "sha256": expected} or not unchanged_generation:
             errors.append("native DreamAPI runtime payload drift")
         if subprocess.run(["git", "merge-base", "--is-ancestor", commit, current_head], cwd=BASE, capture_output=True).returncode:
             errors.append("native DreamAPI tested commit is not an ancestor")
