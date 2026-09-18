@@ -986,6 +986,9 @@ def dreamapi_transport_status():
             ready = matched = bool(DREAMAPI_KEY)
         except ValueError:
             pass
+        with _lock_jobs:
+            fence = any(_dreamapi_pending(job) for job in _jobs.values())
+        ready = ready and not fence
     return {
         "dreamapi_connection_mode": DREAMAPI_CONNECTION_MODE,
         "dreamapi_transport_ready": ready,
@@ -1312,6 +1315,8 @@ def public_job_error(job):
     if backend == "api":
         detail = error.lower()
         suffix = f"面板任务号 {job_id}"
+        if _dreamapi_pending(job):
+            return f"上一次请求的结果尚未确认，正在保留该任务的等待窗口以避免重复计费。请查询原任务或联系维护人员，勿重复提交。{suffix}"
         if "image download" in detail or "image url" in detail:
             return f"上游已返回图片地址，但下载保存失败。请联系维护人员恢复原结果，勿重复生成。{suffix}"
         # Only publish fixed translations: never echo raw provider messages,
@@ -2402,6 +2407,23 @@ def _dreamapi_read_json(response):
         raise RuntimeError("DreamAPI returned malformed response") from error
 
 
+class DreamAPIHTTPError(RuntimeError):
+    def __init__(self, status, detail):
+        self.status = status
+        super().__init__(f"DreamAPI HTTP {status}: {_dreamapi_redact_error(detail)}")
+
+
+def _dreamapi_pending(job):
+    return (job.get("generation_backend") == "api"
+            and float(job.get("api_pending_until") or 0) > time.time())
+
+
+def _dreamapi_checkpoint(job, **fields):
+    with _lock_jobs:
+        job.update(fields)
+        save_jobs()
+
+
 def _dreamapi_request_json(request, data, timeout):
     """Bound connect plus the complete response body by one wall-clock deadline."""
     box = {}
@@ -2419,9 +2441,7 @@ def _dreamapi_request_json(request, data, timeout):
                 detail = str(detail or (body.get("message") if isinstance(body, dict) else None) or error.reason)
             except Exception:
                 detail = str(error.reason or "upstream error")
-            box["error"] = RuntimeError(
-                f"DreamAPI HTTP {error.code}: {_dreamapi_redact_error(detail)}"
-            )
+            box["error"] = DreamAPIHTTPError(error.code, detail)
         except Exception as error:
             box["error"] = error
 
@@ -2542,9 +2562,17 @@ def dreamapi_run_image(job, jobdir):
     job["progress_pct"] = 15
     job["api_provider_size"] = provider_size
     job["provider_started"] = time.time()
-    result = _dreamapi_request_json(
-        request, json.dumps(payload).encode("utf-8"), DREAMAPI_TIMEOUT
-    )
+    if DREAMAPI_CONNECTION_MODE == "direct":
+        _dreamapi_checkpoint(job, api_pending_until=time.time() + DREAMAPI_TIMEOUT + 60)
+    try:
+        result = _dreamapi_request_json(
+            request, json.dumps(payload).encode("utf-8"), DREAMAPI_TIMEOUT
+        )
+    except DreamAPIHTTPError as error:
+        if 400 <= error.status < 500 and error.status != 408:
+            _dreamapi_checkpoint(job, api_pending_until=0)
+        raise
+    _dreamapi_checkpoint(job, api_pending_until=0)
     if not isinstance(result, dict) or not isinstance(result.get("data"), list):
         raise RuntimeError("DreamAPI returned malformed response")
     if any(not isinstance(item, dict) for item in result["data"]):
@@ -2572,6 +2600,8 @@ def dreamapi_run_image(job, jobdir):
         except Exception as error:
             raise RuntimeError("DreamAPI returned invalid image data") from error
     else:
+        # Private ledger only: public job serializers have explicit allowlists.
+        _dreamapi_checkpoint(job, api_result_url=url_item["url"])
         try:
             source = _dreamapi_download_image(url_item["url"])
         except Exception as error:
@@ -2640,6 +2670,7 @@ def dreamapi_run_image(job, jobdir):
             "source_size": source_size, "output_size": output_size, "archive_status": "ready",
         }],
     })
+    job.pop("api_result_url", None)
     return job["images"]
 
 
@@ -3719,7 +3750,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def _running_job_id(self, generation_backend=None):
         with _lock_jobs:
             for j in _jobs.values():
-                if j.get("status") in ("running", "recovering") and (generation_backend is None or j.get("generation_backend", "cloud") == generation_backend):
+                if (j.get("status") in ("running", "recovering") or _dreamapi_pending(j)) and (generation_backend is None or j.get("generation_backend", "cloud") == generation_backend):
                     return j["id"]
         return None
 

@@ -220,6 +220,7 @@ def prepare(args):
             "remote_root": root, "unit": unit, "port": CANARY_PORT,
             "contract_sha256": health.get("dreamapi_contract_sha256"),
             "connection_mode": connection_mode,
+            "model": getattr(args, "model", "gpt-image-2.5-flare"),
             "prepared_at": time.time(),
         }
         _atomic_json(state_path, state)
@@ -261,7 +262,8 @@ def _invoke_client(args, mode):
         _atomic_json(state_path, state)
     root = str(state["remote_root"])
     port = int(state["port"])
-    client_id = "native-images-" + str(state["candidate_commit"])[:12] + "-flare-low-9x16"
+    model = state.get("model", "gpt-image-2.5-flare")
+    client_id = "native-images-" + str(state["candidate_commit"])[:12] + "-" + model + "-low-9x16"
     remote_mode = "submit" if mode == "submit" else "collect"
     command = [
         "/usr/bin/python3", root + "/tools/dreamapi_native_canary_client.py", remote_mode,
@@ -270,6 +272,7 @@ def _invoke_client(args, mode):
         "--result", root + "/result.json",
         "--image", root + "/result.png",
         "--client-request-id", client_id,
+        "--model", model,
     ]
     client = _connect(args.credentials, args.ssh_key)
     try:
@@ -298,7 +301,7 @@ def _invoke_client(args, mode):
         sftp = client.open_sftp()
         try:
             sftp.get(root + "/result.json", str(output_dir / "raw-result.json"))
-            sftp.get(root + "/result.png", str(output_dir / "gpt-image-2_5-flare-low-9x16.png"))
+            sftp.get(root + "/result.png", str(output_dir / (model.replace(".", "_") + "-low-9x16.png")))
         finally:
             sftp.close()
         state["phase"] = "collected"
@@ -339,6 +342,7 @@ def main(argv=None):
     parser.add_argument("--output", default=str(DEFAULT_OUTPUT))
     parser.add_argument("--dreamapi-key-file", help="private local key file, used only by the isolated candidate")
     parser.add_argument("--connection-mode", choices=("direct", "workstation"), default="workstation")
+    parser.add_argument("--model", choices=("gpt-image-2", "gpt-image-2.5-flare"), default="gpt-image-2.5-flare")
     args = parser.parse_args(argv)
     if args.mode == "prepare":
         prepare(args)

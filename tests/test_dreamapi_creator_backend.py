@@ -117,6 +117,62 @@ def test_image_download_failure_does_not_invite_regeneration():
     assert "勿重复生成" in message
 
 
+def test_ambiguous_direct_failure_keeps_api_slot_but_not_cloud_slot(tmp_path, monkeypatch):
+    job = {"id": "uncertain", "generation_backend": "api", "status": "error",
+           "prompt": "landscape", "width": 1024, "height": 1024}
+    monkeypatch.setattr(server, "DREAMAPI_KEY", "fixture")
+    monkeypatch.setattr(server, "DREAMAPI_CONNECTION_MODE", "direct")
+    monkeypatch.setattr(server, "_jobs", {"uncertain": job})
+    monkeypatch.setattr(server, "save_jobs", lambda: None)
+    monkeypatch.setattr(server, "_dreamapi_request_json", lambda *a: (_ for _ in ()).throw(TimeoutError("hard timeout")))
+    with pytest.raises(TimeoutError):
+        server.dreamapi_run_image(job, tmp_path)
+    handler = object.__new__(server.Handler)
+    assert handler._running_job_id("api") == "uncertain"
+    assert handler._running_job_id("cloud") is None
+    assert server.dreamapi_transport_status()["dreamapi_uncertainty_fence"] is True
+    assert "上一次请求" in server.public_job_error(job | {"error": "hard timeout"})
+
+
+def test_url_failure_retains_private_locator_without_second_post(tmp_path, monkeypatch):
+    url = "https://cdn.example.test/result.png?sig=private-recovery"
+    monkeypatch.setattr(server, "DREAMAPI_KEY", "fixture")
+    monkeypatch.setattr(server, "save_jobs", lambda: None)
+    monkeypatch.setattr(server, "_dreamapi_request_json", lambda *a: {"data": [{"url": url}]})
+    monkeypatch.setattr(server, "_dreamapi_download_image", lambda *a: (_ for _ in ()).throw(OSError("disconnected")))
+    job = {"id": "url-failed", "prompt": "landscape", "width": 1024, "height": 1024}
+    with pytest.raises(RuntimeError, match="image download"):
+        server.dreamapi_run_image(job, tmp_path)
+    assert job["api_result_url"] == url
+    assert not job.get("api_pending_until")
+
+
+def test_explicit_429_rejection_does_not_leave_direct_slot_blocked(tmp_path, monkeypatch):
+    job = {"id": "rejected", "generation_backend": "api", "status": "error",
+           "prompt": "landscape", "width": 1024, "height": 1024}
+    monkeypatch.setattr(server, "DREAMAPI_KEY", "fixture")
+    monkeypatch.setattr(server, "_jobs", {"rejected": job})
+    monkeypatch.setattr(server, "save_jobs", lambda: None)
+    monkeypatch.setattr(server, "_dreamapi_request_json", lambda *a: (_ for _ in ()).throw(server.DreamAPIHTTPError(429, "rate limited")))
+    with pytest.raises(server.DreamAPIHTTPError):
+        server.dreamapi_run_image(job, tmp_path)
+    assert object.__new__(server.Handler)._running_job_id("api") is None
+
+
+def test_pending_direct_request_survives_restart_and_wait_window_expires(tmp_path, monkeypatch):
+    ledger = tmp_path / "jobs.json"
+    ledger.write_text(json.dumps({"pending": {"id": "pending", "generation_backend": "api",
+                                            "status": "running", "api_pending_until": time.time() + 100}}))
+    monkeypatch.setattr(server, "JOBS_FILE", ledger)
+    monkeypatch.setattr(server, "_jobs", {})
+    server.load_jobs()
+    handler = object.__new__(server.Handler)
+    assert handler._running_job_id("api") == "pending"
+    now = time.time()
+    monkeypatch.setattr(server.time, "time", lambda: now + 101)
+    assert handler._running_job_id("api") is None
+
+
 def png_b64(width=64, height=96, color=(31, 79, 127)):
     output = io.BytesIO()
     Image.new("RGB", (width, height), color).save(output, "PNG")

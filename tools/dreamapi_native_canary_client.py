@@ -21,7 +21,7 @@ PROMPT = (
 )
 
 
-def request_payload(client_request_id):
+def request_payload(client_request_id, model=MODEL):
     return {
         "workflow": "anima02",
         "generation_backend": "api",
@@ -33,7 +33,7 @@ def request_payload(client_request_id):
         "seed_mode": "random",
         "style_id": "sketch",
         "mode": "original",
-        "api_model": MODEL,
+        "api_model": model,
         "api_quality": QUALITY,
         "api_fit": "contain",
         "api_ratio": RATIO,
@@ -41,7 +41,7 @@ def request_payload(client_request_id):
         "selection_snapshot": {
             "source_page": "creator",
             "generation_backend": "api",
-            "api_model": MODEL,
+            "api_model": model,
             "api_quality": QUALITY,
             "api_fit": "contain",
             "api_ratio": RATIO,
@@ -93,7 +93,7 @@ def _find_existing_job(base, cookie, client_request_id):
     return matches[0] if matches else None
 
 
-def submit_once(base, state_path, client_request_id):
+def submit_once(base, state_path, client_request_id, model=MODEL):
     state_path = pathlib.Path(state_path)
     if state_path.exists():
         raise RuntimeError("canary state already exists; use collect, never resubmit")
@@ -108,7 +108,7 @@ def submit_once(base, state_path, client_request_id):
     _atomic_json(state_path, state)
     response = _json_request(
         base, "/api/generate", cookie=cookie, method="POST",
-        payload=request_payload(client_request_id), timeout=30,
+        payload=request_payload(client_request_id, model), timeout=30,
     )
     job_id = str(response.get("job_id") or "")
     if not job_id:
@@ -178,9 +178,10 @@ def main(argv=None):
     parser.add_argument("--result", required=True)
     parser.add_argument("--image", required=True)
     parser.add_argument("--client-request-id", required=True)
+    parser.add_argument("--model", choices=("gpt-image-2", "gpt-image-2.5-flare"), default=MODEL)
     args = parser.parse_args(argv)
     if args.mode == "submit":
-        submit_once(args.base, args.state, args.client_request_id)
+        submit_once(args.base, args.state, args.client_request_id, args.model)
     collect(args.base, args.state, args.result, args.image)
     return 0
 
