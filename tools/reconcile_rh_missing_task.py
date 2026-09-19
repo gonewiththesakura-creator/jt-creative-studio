@@ -44,6 +44,7 @@ finally:
         release.set_remote_release_drain(client, True)
         print(release.command(client, "sudo python3 -c " + shlex.quote(code), timeout=90))
     finally:
+        release.wait_for_live(release.PUBLIC_BASE, timeout=60)
         release.set_remote_release_drain(client, False)
         client.close()
 
