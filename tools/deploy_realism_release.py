@@ -1410,6 +1410,24 @@ def reviewed_error_presentation_patch(tested_commit, current_commit, current_dig
     Pin the complete resulting runtime AND prove every change is confined to
     error rendering/admission. Request/UI/transport changes need fresh evidence.
     """
+    if (tested_commit == "dcbbb5e8ff0425228c785dbbec8819b3f9003660"
+            and current_digest == "f41d1e2fd930724ffa2306efa59dc32afd4f245887411db8cb2ae70624c2bab2"):
+        # Reviewed RH terminal-state fix: no DreamAPI generation or UI changes.
+        for path in NATIVE_RUNTIME_PAYLOAD_FILES:
+            before = subprocess.check_output(["git", "show", f"{tested_commit}:{path}"], cwd=BASE)
+            after = subprocess.check_output(["git", "show", f"{current_commit}:{path}"], cwd=BASE)
+            if path != "server.py":
+                if before != after:
+                    return False
+                continue
+            trees = [ast.parse(value.decode("utf-8")) for value in (before, after)]
+            for tree in trees:
+                tree.body = [node for node in tree.body if not (
+                    isinstance(node, ast.FunctionDef) and not node.decorator_list
+                    and node.name in {"rh_query", "public_job_error"})]
+            if ast.dump(trees[0]) != ast.dump(trees[1]):
+                return False
+        return True
     presentation_only = current_digest == "b9f32822ff5ceed60e6e18b3e244a91643b2856bfda81f97733a453e3c034e05"
     uncapped = current_digest == REVIEWED_UNCAPPED_RUNTIME_SHA256
     if not (presentation_only or uncapped):
