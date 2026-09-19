@@ -14,6 +14,8 @@ ROOT = Path(__file__).resolve().parents[1]
 def built_pages(tmp_path_factory):
     root = tmp_path_factory.mktemp("glass-build")
     (root / "sources").mkdir()
+    shutil.copy2(ROOT / "workbench_theme.py", root / "workbench_theme.py")
+    shutil.copytree(ROOT / "static" / "singularity", root / "static" / "singularity")
     (root / "static" / "previews").mkdir(parents=True)
     for name in ("video_business.js", "workbench_glass.css"):
         source = ROOT / "sources" / name

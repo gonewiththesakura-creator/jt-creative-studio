@@ -96,5 +96,6 @@ document.querySelectorAll('.config-drawer-head').forEach(button=>button.onclick=
 
 html = '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>真人化工作流 · JT 灵感工作台</title><style>'+CSS+'</style></head><body>'+BODY+'<script>'+JS+'</script></body></html>'
 html = html.replace('__WORKFLOW_PREVIEWS__', json.dumps(WORKFLOW_PREVIEWS, ensure_ascii=False, separators=(',', ':'))).replace('__WORKFLOW_PREVIEW_THUMBS__', json.dumps(WORKFLOW_PREVIEW_THUMBS, ensure_ascii=False, separators=(',', ':')))
-OUT.write_text(html, encoding="utf-8")
+from workbench_theme import apply_workbench_theme
+OUT.write_text(apply_workbench_theme(html), encoding="utf-8")
 print(OUT, OUT.stat().st_size)

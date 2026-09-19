@@ -36,6 +36,22 @@ def test_native_evidence_passes_for_the_reviewed_runtime():
     assert load_module().validate_native_dreamapi_evidence() == []
 
 
+def test_singularity_exception_rejects_scene_asset_drift(monkeypatch):
+    module = load_module()
+    monkeypatch.setattr(module, 'git_runtime_payload_sha256', lambda *args, **kwargs: '0' * 64)
+    assert not module.reviewed_singularity_patch('tested', 'current', module.REVIEWED_SINGULARITY_RUNTIME_SHA256)
+    assert not module.reviewed_singularity_patch('tested', 'current', '0' * 64)
+
+
+def test_singularity_release_packages_local_scene_and_licence():
+    module = load_module()
+    required = {'static/singularity/workbench.js','static/singularity/theme.css',
+                'static/singularity/shaders.js','static/singularity/vendor/LICENSE',
+                'static/singularity/vendor/build/three.core.js',
+                'static/singularity/vendor/build/three.module.js'}
+    assert required <= set(module.RELEASE_RELATIVE_PATHS)
+
+
 def test_native_evidence_rejects_runtime_drift(monkeypatch):
     module = load_module()
     original = module.git_runtime_payload_sha256
@@ -171,6 +187,8 @@ def test_release_manifest_is_complete_and_excludes_nonproduction_files():
     style_data = ["static/" + path.name for path in (ROOT / "static").glob("style-configs.*.json")]
     assert len(style_data) == 1
     expected.update(style_data)
+    expected.update(path.relative_to(ROOT).as_posix()
+                    for path in (ROOT / 'static/singularity').rglob('*') if path.is_file())
     assert set(module.RELEASE_RELATIVE_PATHS) == expected
     assert not any(path.startswith(("tests/", "audit/")) for path in module.RELEASE_RELATIVE_PATHS)
 

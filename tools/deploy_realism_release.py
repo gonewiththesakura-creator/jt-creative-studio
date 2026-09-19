@@ -284,7 +284,12 @@ UPLOADED_WORKFLOW_ALLOWED_LIVE_DIFFERENCES = {
     },
 }
 
+SINGULARITY_ASSET_PATHS = tuple(path.relative_to(BASE).as_posix()
+                              for path in sorted((BASE / "static/singularity").rglob("*"))
+                              if path.is_file())
+
 RELEASE_RELATIVE_PATHS = (
+    *SINGULARITY_ASSET_PATHS,
     "server.py",
     "config.json",
     "static/index.html",
@@ -1446,6 +1451,43 @@ def reviewed_error_presentation_patch(tested_commit, current_commit, current_dig
     return True
 
 
+REVIEWED_SINGULARITY_RUNTIME_SHA256 = "56982106c40f830536731341e2c661648af10668e261993f5bd54d0f30e2bc7a"
+REVIEWED_SINGULARITY_ASSETS_SHA256 = "136d7eecd3bdb2160252a69ce37b497d1fe0ca5e6783fa8f9cd257a2f27c40e0"
+
+
+def reviewed_singularity_patch(tested_commit, current_commit, current_digest):
+    """Reuse generation evidence only for this exact reviewed visual-only release.
+
+    Strip the pinned skin attachment and prove the complete pre-skin runtime is
+    unchanged. Pin scene assets separately; never treat arbitrary UI changes as
+    covered by historical image-generation evidence.
+    """
+    baseline = "294bf689662fec2583a439bcf9f5a841cb8eff07"
+    if current_digest != REVIEWED_SINGULARITY_RUNTIME_SHA256 or not SINGULARITY_ASSET_PATHS:
+        return False
+    try:
+        assets = git_runtime_payload_sha256(current_commit, files=SINGULARITY_ASSET_PATHS)
+        if assets != REVIEWED_SINGULARITY_ASSETS_SHA256:
+            return False
+        if subprocess.run(["git", "diff", "--quiet", "HEAD", "--", *SINGULARITY_ASSET_PATHS],
+                          cwd=BASE, capture_output=True).returncode:
+            return False
+        baseline_digest = git_runtime_payload_sha256(baseline, files=NATIVE_RUNTIME_PAYLOAD_FILES)
+        if not reviewed_error_presentation_patch(tested_commit, baseline, baseline_digest):
+            return False
+        for path in NATIVE_RUNTIME_PAYLOAD_FILES:
+            before = subprocess.check_output(["git", "show", f"{baseline}:{path}"], cwd=BASE)
+            after = subprocess.check_output(["git", "show", f"{current_commit}:{path}"], cwd=BASE)
+            if path in {"static/index.html", "static/promptgen.html", "static/realism.html", "static/video.html"}:
+                after = re.sub(rb"<!-- singularity:start -->.*?<!-- singularity:end -->", b"", after, flags=re.S)
+                after = after.replace(b'<body class="singularity">', b'<body>')
+            if before != after:
+                return False
+        return True
+    except (RuntimeError, subprocess.CalledProcessError):
+        return False
+
+
 def validate_native_dreamapi_evidence():
     """Require reviewed native-media evidence for the exact current runtime bytes."""
     try:
@@ -1468,7 +1510,8 @@ def validate_native_dreamapi_evidence():
         expected = git_runtime_payload_sha256(commit, files=NATIVE_RUNTIME_PAYLOAD_FILES)
         current_head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=BASE, text=True).strip()
         current = git_runtime_payload_sha256(current_head, files=NATIVE_RUNTIME_PAYLOAD_FILES)
-        unchanged_generation = current == expected or reviewed_error_presentation_patch(commit, current_head, current)
+        unchanged_generation = (current == expected or reviewed_error_presentation_patch(commit, current_head, current)
+                                or reviewed_singularity_patch(commit, current_head, current))
         if payload != {"format": "framed-v1", "files": list(NATIVE_RUNTIME_PAYLOAD_FILES), "sha256": expected} or not unchanged_generation:
             errors.append("native DreamAPI runtime payload drift")
         if subprocess.run(["git", "merge-base", "--is-ancestor", commit, current_head], cwd=BASE, capture_output=True).returncode:

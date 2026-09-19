@@ -544,5 +544,7 @@ for stale in STATIC.glob("style-configs.*.json"):
     if stale.name!=STYLE_DATA_NAME:
         stale.unlink()
 (STATIC/STYLE_DATA_NAME).write_bytes(STYLE_DATA_BYTES)
+from workbench_theme import apply_workbench_theme
+html = apply_workbench_theme(html)
 for p in (STATIC/"promptgen.html",STATIC/"index.html"): p.write_text(html,encoding="utf-8")
 print(json.dumps({k:{"pools":len(v["pools"]),"trigger":v["trigger"],"lora1":v["lora1"],"lora2":v["lora2"]} for k,v in profiles.items()},ensure_ascii=False,indent=2))
