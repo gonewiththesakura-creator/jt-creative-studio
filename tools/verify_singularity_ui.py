@@ -79,6 +79,7 @@ def main():
                 page.locator('input[type=number][data-appearance=glassBlur]').fill('7')
                 page.locator('input[type=number][data-appearance=glassOpacity]').fill('0.32')
                 page.locator('input[type=number][data-appearance=exposure]').fill('0.8')
+                page.locator('input[type=number][data-appearance=tilt]').fill('30')
                 page.locator('input[type=number][data-appearance=fieldOpacity]').fill('0.25')
                 assert page.locator('.creation-pane').evaluate('(el)=>getComputedStyle(el).backdropFilter') == 'blur(7px)'
                 assert '0.32' in page.locator('.creation-pane').evaluate('(el)=>getComputedStyle(el).backgroundColor')
@@ -91,6 +92,7 @@ def main():
                 page.locator('#appearanceOpen').click()
                 expect(page.locator('input[type=number][data-appearance=glassBlur]')).to_have_value('7')
                 expect(page.locator('input[type=number][data-appearance=exposure]')).to_have_value('0.8')
+                expect(page.locator('input[type=number][data-appearance=tilt]')).to_have_value('30')
                 page.keyboard.press('Escape')
                 expect(page.locator('#appearancePanel')).to_be_hidden()
                 assert not errors, errors

@@ -112,6 +112,7 @@ async function startScene() {
       uniforms.cameraPositionBH.value.set(Math.sin(a)*Math.cos(b)*radius,Math.sin(b)*radius,Math.cos(a)*Math.cos(b)*radius);
       uniforms.cameraForward.value.copy(uniforms.cameraPositionBH.value).normalize().negate();
       uniforms.cameraRight.value.crossVectors(uniforms.cameraForward.value,up).normalize();
+      uniforms.cameraRight.value.applyAxisAngle(uniforms.cameraForward.value,settings.tilt*Math.PI/180);
       uniforms.cameraUp.value.crossVectors(uniforms.cameraRight.value,uniforms.cameraForward.value).normalize();
       const before=performance.now();
       try { composer.render(); } catch(error) { fallback(error); return; }

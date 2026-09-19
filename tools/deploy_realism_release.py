@@ -1451,8 +1451,8 @@ def reviewed_error_presentation_patch(tested_commit, current_commit, current_dig
     return True
 
 
-REVIEWED_SINGULARITY_RUNTIME_SHA256 = "f034601896a0929a84a7a2b57e422ce2513f3971d16ce1f1ce3253b0fd95cb95"
-REVIEWED_SINGULARITY_ASSETS_SHA256 = "c2b0f906beec3d3a734ee34b1647d91bc3afe8239108e1cdb0998c16829a1a37"
+REVIEWED_SINGULARITY_RUNTIME_SHA256 = "eacdfee232c2dcdd5072aa0ccc32dbf63e4572730ab36bd57abca38c5220fd22"
+REVIEWED_SINGULARITY_ASSETS_SHA256 = "d762e7387034d37d10b8d484416d30f3b64f67ca541ca9fc7b9acf063c5384a9"
 
 
 def reviewed_singularity_patch(tested_commit, current_commit, current_digest):
