@@ -57,6 +57,13 @@ def main():
                     expect(page.locator('.control-title').first).to_be_visible()
                     assert page.locator('.control-title').first.evaluate('(el)=>getComputedStyle(el).color') == 'rgb(209, 199, 189)'
                 if route_name == 'index':
+                    assert page.locator('.singularity-hero').count() == 0
+                    active_style = page.locator('[data-style].active').get_attribute('data-style')
+                    page.locator('[data-style=graphic]').hover()
+                    expect(page.locator('#stylePreviewPopover')).to_be_visible()
+                    assert page.locator('[data-style].active').get_attribute('data-style') == active_style
+                    assert page.locator('#stylePreviewPopover img').get_attribute('src')
+                    page.keyboard.press('Escape')
                     page.locator('#apiDrawerOpen').click()
                     expect(page.locator('#apiModel')).to_be_visible()
                     page.locator('#apiModel').select_option('gpt-image-2')
@@ -67,6 +74,25 @@ def main():
                     page.locator('input[name=promptModeRadio][value=manual]').check()
                     page.locator('#manualPositive').fill('测试提示词，不提交任务')
                     expect(page.locator('#manualPositive')).to_have_value('测试提示词，不提交任务')
+                page.locator('#appearanceOpen').click()
+                expect(page.locator('#appearancePanel')).to_be_visible()
+                page.locator('input[type=number][data-appearance=glassBlur]').fill('7')
+                page.locator('input[type=number][data-appearance=glassOpacity]').fill('0.32')
+                page.locator('input[type=number][data-appearance=exposure]').fill('0.8')
+                page.locator('input[type=number][data-appearance=fieldOpacity]').fill('0.25')
+                assert page.locator('.creation-pane').evaluate('(el)=>getComputedStyle(el).backdropFilter') == 'blur(7px)'
+                assert '0.32' in page.locator('.creation-pane').evaluate('(el)=>getComputedStyle(el).backgroundColor')
+                assert '0.25' in page.locator('.creation-footer').evaluate('(el)=>getComputedStyle(el).backgroundColor')
+                page.locator('[data-setting-action=save]').click()
+                expect(page.locator('#appearancePanel [role=status]')).to_contain_text('已保存')
+                page.screenshot(path=str(OUT/f'appearance-{route_name}-{width}.png'))
+                page.reload()
+                page.wait_for_function("document.body.dataset.singularity === 'ready'", timeout=90000)
+                page.locator('#appearanceOpen').click()
+                expect(page.locator('input[type=number][data-appearance=glassBlur]')).to_have_value('7')
+                expect(page.locator('input[type=number][data-appearance=exposure]')).to_have_value('0.8')
+                page.keyboard.press('Escape')
+                expect(page.locator('#appearancePanel')).to_be_hidden()
                 assert not errors, errors
                 assert not posts, posts
                 report.append({'page':route_name,'width':width,'renderer':'ready','errors':errors,'paid_requests':0})

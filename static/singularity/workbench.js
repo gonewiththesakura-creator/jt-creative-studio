@@ -44,13 +44,10 @@ exit.onclick = () => setImmersive(false);
 addEventListener('keydown', e => { if (e.key === 'Escape' && immersive) setImmersive(false); });
 reduced.addEventListener('change', e => { paused = e.matches; updateMotion(); draw(); });
 updateMotion();
-const empty = document.querySelector('#previewEmpty');
-if (empty) {
-  const hero = document.createElement('div');
-  hero.className = 'singularity-hero';
-  hero.innerHTML = '<small>SINGULARITY / 灵感的引力</small><h2>让想象，<br><em>越过视界。</em></h2><p>从一个念头，到一个新世界。<br>选择画风，开始你的创作。</p>';
-  empty.parentElement.prepend(hero);
-}
+let appearance, applySceneSettings = () => {};
+const {installAppearance,installPreview} = await import('./appearance.js?v='+new URL(import.meta.url).searchParams.get('v'));
+appearance=installAppearance(controls,values=>applySceneSettings(values));
+installPreview();
 function fallback(error) {
   console.warn('Black-hole visual unavailable; workbench remains usable.', error?.message || 'WebGL context lost');
   available = false;
@@ -87,10 +84,12 @@ async function startScene() {
     const target = new THREE.WebGLRenderTarget(1,1,{type:THREE.HalfFloatType,samples:2});
     const composer = new EffectComposer(renderer,target);
     composer.addPass(new RenderPass(scene,camera));
-    composer.addPass(new UnrealBloomPass(new THREE.Vector2(1,1),.075,.4,1.15));
+    const bloom=new UnrealBloomPass(new THREE.Vector2(1,1),.075,.4,1.15);
+    composer.addPass(bloom);
     composer.addPass(new OutputPass());
     let azimuth=0, elevation=12, radius=20, width=1, height=1, frameId=0, last=0, sim=0, pointer=null;
-    let budget = innerWidth <= 820 ? 550000 : 1400000, slowFrames=0;
+    let settings=appearance.get();
+    let budget = (innerWidth <= 820 ? 550000 : 1400000)*settings.quality, slowFrames=0;
     const up = new THREE.Vector3(0,1,0);
     function resize() {
       width=innerWidth; height=innerHeight;
@@ -98,7 +97,7 @@ async function startScene() {
       renderer.setPixelRatio(ratio);renderer.setSize(width,height,false);
       composer.setPixelRatio(ratio);composer.setSize(width,height);
       uniforms.resolution.value.set(width,height);uniforms.mobile.value=width<=820?1:0;
-      uniforms.focal.value=width<=820?.67:1.35;
+      uniforms.focal.value=(width<=820?.67:1.35)*settings.zoom;
       draw();
     }
     function render(now) {
@@ -106,9 +105,9 @@ async function startScene() {
       if (!available || document.hidden) return;
       if (last && now-last < (width<=820?50:33)) { frameId=requestAnimationFrame(render); return; }
       const dt=Math.min((now-(last||now))/1000,.08);last=now;
-      if (!paused && !businessBusy) sim+=dt;
+      if (!paused && !businessBusy) sim+=dt*settings.speed;
       uniforms.time.value=sim;
-      uniforms.centerOffset.value.set(immersive?0:width<=820?0:.19,immersive?.01:.015);
+      uniforms.centerOffset.value.set(immersive?0:width<=820?settings.mobileX:settings.offsetX,immersive?.01:width<=820?settings.mobileY:settings.offsetY);
       const a=azimuth*Math.PI/180,b=elevation*Math.PI/180;
       uniforms.cameraPositionBH.value.set(Math.sin(a)*Math.cos(b)*radius,Math.sin(b)*radius,Math.cos(a)*Math.cos(b)*radius);
       uniforms.cameraForward.value.copy(uniforms.cameraPositionBH.value).normalize().negate();
@@ -123,6 +122,14 @@ async function startScene() {
       if (!paused && !businessBusy && !frameId) frameId=requestAnimationFrame(render);
     }
     draw = () => { if (available && !document.hidden && !frameId) frameId=requestAnimationFrame(render); };
+    applySceneSettings = values => {
+      const qualityChanged=settings.quality!==values.quality;
+      settings=values;azimuth=settings.azimuth;elevation=settings.elevation;radius=settings.radius;
+      for(const key of ['mass','flow','temperature','lensing'])uniforms[key].value=settings[key];
+      renderer.toneMappingExposure=settings.exposure;bloom.strength=settings.bloom;
+      if(qualityChanged)budget=(innerWidth<=820?550000:1400000)*settings.quality;
+      resize();
+    };
     canvas.addEventListener('webglcontextlost', e => { e.preventDefault();cancelAnimationFrame(frameId);fallback(); });
     addEventListener('visibilitychange', () => {
       cancelAnimationFrame(frameId);frameId=0;last=0;
@@ -130,11 +137,11 @@ async function startScene() {
     });
     canvas.addEventListener('pointerdown',e=>{pointer={x:e.clientX,y:e.clientY};canvas.setPointerCapture(e.pointerId);});
     canvas.addEventListener('pointermove',e=>{if(!pointer)return;azimuth-=(e.clientX-pointer.x)*.25;elevation=THREE.MathUtils.clamp(elevation+(e.clientY-pointer.y)*.18,4,65);pointer={x:e.clientX,y:e.clientY};draw();});
-    canvas.addEventListener('pointerup',()=>pointer=null);
+    canvas.addEventListener('pointerup',()=>{pointer=null;azimuth=((azimuth+180)%360+360)%360-180;appearance.update({azimuth,elevation});});
     canvas.addEventListener('pointercancel',()=>pointer=null);
-    canvas.addEventListener('wheel',e=>{if(!immersive)return;e.preventDefault();radius=THREE.MathUtils.clamp(radius+e.deltaY*.012,13,30);draw();},{passive:false});
+    canvas.addEventListener('wheel',e=>{if(!immersive)return;e.preventDefault();radius=THREE.MathUtils.clamp(radius+e.deltaY*.012,13,40);appearance.update({radius});},{passive:false});
     addEventListener('resize',resize);
-    available=true;resize();draw();
+    available=true;applySceneSettings(settings);draw();
   } catch(error) { fallback(error); }
 }
 if ('requestIdleCallback' in window) requestIdleCallback(startScene,{timeout:1600});
