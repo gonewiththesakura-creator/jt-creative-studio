@@ -360,6 +360,23 @@ def test_consume_coins_is_task_level_and_never_summed_per_output():
     assert server.normalize_rh_coins({"usage": {"consumeCoins": None}}, []) is None
 
 
+@pytest.mark.parametrize("response, expected", [
+    ({"status": "", "errorCode": "1004", "errorMessage": "Task not found"}, "RH_TASK_UNAVAILABLE"),
+    ({"status": "CANCELLED"}, "RH_TASK_STOPPED"),
+    ({"status": "CANCELED"}, "RH_TASK_STOPPED"),
+    ({"status": "STOPPED"}, "RH_TASK_STOPPED"),
+])
+def test_rh_terminal_stop_does_not_keep_polling(monkeypatch, response, expected):
+    monkeypatch.setattr(server, "_provider_json_request", lambda *a, **k: response)
+    monkeypatch.setattr(server.time, "sleep", lambda *a: pytest.fail("terminal task must not sleep"))
+    job = {"id": "stopped", "generation_backend": "cloud"}
+    with pytest.raises(server.ProviderTaskFailed, match=expected):
+        server._rh_wait_task(job, "known-task", server.time.time() + 60)
+    assert job["provider_status"] in {"STOPPED", "UNAVAILABLE"}
+    public = server.public_job_error(job | {"error": expected})
+    assert ("停止" if expected == "RH_TASK_STOPPED" else "不存在或已过期") in public
+
+
 def test_rh_query_persists_v2_usage_on_job(monkeypatch):
     class Response:
         def __enter__(self): return self

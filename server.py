@@ -1310,6 +1310,10 @@ def public_job_error(job):
         return None
     job_id = str((job or {}).get("id") or "unknown")[:64]
     backend = str((job or {}).get("generation_backend") or "cloud")
+    if backend == "cloud" and "RH_TASK_STOPPED" in error:
+        return f"任务已在 RunningHub 停止或取消。面板任务号 {job_id}"
+    if backend == "cloud" and "RH_TASK_UNAVAILABLE" in error:
+        return f"RunningHub 返回任务不存在或已过期，已结束等待。请在 RH 后台核对记录。面板任务号 {job_id}"
     if backend == "local":
         return f"本地任务失败；请使用面板任务号 {job_id} 联系维护人员"
     if backend == "api":
@@ -1709,7 +1713,14 @@ def rh_query(task_id, job=None):
         r = _provider_json_request(req, timeout=RH_TIMEOUT_QUERY)
     except Exception as e:
         raise RuntimeError(f"RH query failed: {e}")
-    status = r.get("status", "")
+    status = str(r.get("status") or "").strip().upper()
+    unavailable = str(r.get("errorCode") or "") == "1004"
+    stopped = status in {"CANCELLED", "CANCELED", "STOPPED", "CANCEL", "STOP", "ABORTED"}
+    if unavailable or stopped:
+        if job is not None:
+            job["provider_status"] = "UNAVAILABLE" if unavailable else "STOPPED"
+            job["provider_finished"] = time.time()
+        raise ProviderTaskFailed("RH_TASK_UNAVAILABLE" if unavailable else "RH_TASK_STOPPED")
     results = r.get("results") or []
     coins = normalize_rh_coins(r, results)
     if coins is None and status == "SUCCESS":
