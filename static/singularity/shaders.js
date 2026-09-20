@@ -8,6 +8,7 @@ varying vec2 vUv;
 uniform vec2 resolution;
 uniform vec3 cameraPositionBH, cameraRight, cameraUp, cameraForward;
 uniform float time, mass, flow, temperature, lensing, flashEnergy, focal, mobile;
+uniform float starMotion;
 uniform vec2 centerOffset;
 #define PI 3.14159265359
 float hash31(vec3 p){p=fract(p*.1031);p+=dot(p,p.yzx+33.33);return fract((p.x+p.y)*p.z);}
@@ -27,6 +28,9 @@ vec3 blackbody(float t){
 vec3 sky(vec3 rd){
  // Stars live on a celestial sphere, therefore warp along deflected rays.
  vec2 uv=vec2(atan(rd.z,rd.x)/(2.*PI),asin(clamp(rd.y,-1.,1.))/PI);
+ // Slow celestial drift and independent twinkle; zero freezes both effects.
+ float starTime=time*starMotion;
+ uv.x+=starTime*.00065;
  vec3 col=vec3(.0007,.001,.002);
  vec3 n=rd*3.7;float neb=turbulence(n+vec3(2,3,1));
  col+=vec3(.002,.003,.005)*pow(neb,3.);
@@ -39,20 +43,21 @@ vec3 sky(vec3 rd){
   float star=1.-smoothstep(width,width+aa,length(delta));
   float present=step(j==0?.987:.995,rnd);
   vec3 tint=mix(vec3(.46,.64,1.),vec3(1.,.75,.48),hash21(cell+7.));
-  col+=tint*star*present*(j==0?.7:.35);
+  float twinkle=.8+.2*sin(starTime*(.7+rnd)+rnd*63.);
+  col+=tint*star*present*(j==0?.7:.35)*twinkle;
  }
  return col;
 }
-vec3 disk(vec3 p,vec3 direction,float order){
+vec3 diskLayer(vec3 p,vec3 direction,float order,float age){
  float r=length(p.xz)/mass;
  if(r<2.9||r>9.4)return vec3(0.);
  float a=atan(p.z,p.x);
  // Differential rotation: inner gas moves faster than outer gas.
  float angular=1.5*flow/pow(max(r,2.9),1.5);
- float phase=a-time*angular;
+ float phase=a-age*angular;
  vec3 coord=vec3(cos(phase),sin(phase),r*.72);
- float detail=turbulence(coord*vec3(3.,3.,4.)+vec3(0.,0.,time*.018));
- float ringPhase=r*44.+detail*9.-time*.12;
+ float detail=turbulence(coord*vec3(3.,3.,4.)+vec3(0.,0.,age*.018));
+ float ringPhase=r*44.+detail*9.-age*.12;
  float rings=sin(ringPhase)*.5*(1.-smoothstep(1.,3.,fwidth(ringPhase)))+.5;
  float finePhase=r*103.-detail*8.;
  float fine=sin(finePhase)*.5*(1.-smoothstep(1.,3.,fwidth(finePhase)))+.5;
@@ -67,6 +72,14 @@ vec3 disk(vec3 p,vec3 direction,float order){
  float redshift=sqrt(max(.1,1.-1./r));
  float emissive=thermal*filament*inner*outer*beaming*redshift;
  return blackbody(temp)*emissive*(1.5+flashEnergy*.35)*pow(.78,order);
+}
+vec3 disk(vec3 p,vec3 direction,float order){
+ // Crossfade two advected gas layers. Each resets only when its weight is zero,
+ // bounding differential shear instead of winding the texture forever.
+ float cycle=fract(time/32.);
+ float weight=.5-.5*cos(cycle*2.*PI);
+ return mix(diskLayer(p,direction,order,fract(cycle+.5)*32.),
+            diskLayer(p,direction,order,cycle*32.),weight);
 }
 vec3 accel(vec3 p,float L2){
  float r2=max(dot(p,p),.02);

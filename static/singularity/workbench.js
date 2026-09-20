@@ -64,7 +64,7 @@ async function startScene() {
     const [THREE, {EffectComposer}, {RenderPass}, {UnrealBloomPass}, {OutputPass}, shaders] = await Promise.all([
       import('three'), import('three/addons/postprocessing/EffectComposer.js'),
       import('three/addons/postprocessing/RenderPass.js'), import('three/addons/postprocessing/UnrealBloomPass.js'),
-      import('three/addons/postprocessing/OutputPass.js'), import('./shaders.js')
+      import('three/addons/postprocessing/OutputPass.js'), import('./shaders.js?v='+new URL(import.meta.url).searchParams.get('v'))
     ]);
     const renderer = new THREE.WebGLRenderer({canvas, antialias:true, powerPreference:'low-power'});
     renderer.debug.onShaderError = () => fallback(new Error('Black-hole shader could not compile'));
@@ -75,7 +75,7 @@ async function startScene() {
       resolution:{value:new THREE.Vector2()}, cameraPositionBH:{value:new THREE.Vector3()},
       cameraRight:{value:new THREE.Vector3()}, cameraUp:{value:new THREE.Vector3()}, cameraForward:{value:new THREE.Vector3()},
       time:{value:0}, mass:{value:1}, flow:{value:1}, temperature:{value:.95}, lensing:{value:1},
-      flashEnergy:{value:0}, focal:{value:1.35}, mobile:{value:0}, centerOffset:{value:new THREE.Vector2(.19,.075)}
+      flashEnergy:{value:0}, starMotion:{value:1}, focal:{value:1.35}, mobile:{value:0}, centerOffset:{value:new THREE.Vector2(.19,.075)}
     };
     const quad = new THREE.Mesh(new THREE.PlaneGeometry(2,2), new THREE.ShaderMaterial({
       uniforms, vertexShader:shaders.vertexShader, fragmentShader:shaders.fragmentShader, depthTest:false, depthWrite:false
@@ -104,7 +104,7 @@ async function startScene() {
       frameId=0;
       if (!available || document.hidden) return;
       if (last && now-last < (width<=820?50:33)) { frameId=requestAnimationFrame(render); return; }
-      const dt=Math.min((now-(last||now))/1000,.08);last=now;
+      const dt=Math.max(0,(now-(last||now))/1000);last=now;
       if (!paused && !businessBusy) sim+=dt*settings.speed;
       uniforms.time.value=sim;
       uniforms.centerOffset.value.set(immersive?0:width<=820?settings.mobileX:settings.offsetX,immersive?.01:width<=820?settings.mobileY:settings.offsetY);
@@ -122,11 +122,11 @@ async function startScene() {
       document.body.dataset.singularity='ready';
       if (!paused && !businessBusy && !frameId) frameId=requestAnimationFrame(render);
     }
-    draw = () => { if (available && !document.hidden && !frameId) frameId=requestAnimationFrame(render); };
+    draw = () => { if (available && !document.hidden && !frameId) {last=0;frameId=requestAnimationFrame(render);} };
     applySceneSettings = values => {
       const qualityChanged=settings.quality!==values.quality;
       settings=values;azimuth=settings.azimuth;elevation=settings.elevation;radius=settings.radius;
-      for(const key of ['mass','flow','temperature','lensing'])uniforms[key].value=settings[key];
+      for(const key of ['mass','flow','temperature','lensing','starMotion'])uniforms[key].value=settings[key];
       renderer.toneMappingExposure=settings.exposure;bloom.strength=settings.bloom;
       if(qualityChanged)budget=(innerWidth<=820?550000:1400000)*settings.quality;
       resize();
