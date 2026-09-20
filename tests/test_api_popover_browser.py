@@ -13,7 +13,10 @@ ROOT = Path(__file__).resolve().parents[1]
 @pytest.fixture(scope='module')
 def browser():
     with sync_playwright() as driver:
-        browser = driver.chromium.launch(headless=True)
+        # These tests cover business-state timing and popover geometry, not GPU
+        # throughput. The scene fallback retains the real appearance adapter;
+        # full WebGL/motion coverage lives in verify_singularity_{ui,shader}.py.
+        browser = driver.chromium.launch(headless=True, args=['--disable-webgl'])
         try:
             yield browser
         finally:
