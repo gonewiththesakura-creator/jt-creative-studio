@@ -1,7 +1,8 @@
 # App Shell 渐进优化交付（2026-09-21）
 
 基线：`403503028928f80195a5a3c7cfd3795bccc630a0`，目标分支 `feat/singularity-workbench`。
-本次仅本地验证与 GitHub 提交，不部署生产，不调用真实付费接口。
+初始优化阶段仅本地验证与 GitHub 提交。用户随后明确授权上线及真实生图/视频测试；
+2026-09-21 正式发布 `962ece1`，上线补充见文末。
 
 ## 原架构与新架构
 
@@ -110,8 +111,9 @@ MSAA，bloom 强度乘 0.8。像素预算仍为手机 550k / 桌面 1.4M（乘�
 - 后端业务 AST 与基线一致，`config.json` 字节一致；不修改 workflow ID、请求参数、幂等、fence、jobs 格式。
 - 完整测试发现上传临时文件 finally 清理与断言的时序竞争；测试客户端现在最多等待 2 秒
   观察文件清除，原有无临时残留断言保留，实际泄漏仍失败。未改上传流程。
-- 旧付费 E2E 只认证历史运行版本。新 Shell **尚未满足生产付费证据门**，校验应拒绝本版本；
-  没有改证据哈希冒充新验证。对应测试同时覆盖历史正例和新版本拒绝。
+- 初始旧付费 E2E 只认证历史运行版本，新 Shell 当时被正确拒绝。追加授权后，隔离实例
+  完成真实 Image 2 测试并记录新证据；现在同时绑定后端及 Shell/全部 hash 资源摘要，
+  测试覆盖历史正例、当前正例和后端/前端资源变更时拒绝。
 
 ## 构建、回滚与下一阶段
 
@@ -135,3 +137,26 @@ python -c "from tools.deploy_realism_release import run_release_tests; run_relea
 正式页面模块、逐步减少隐式 DOM 适配、公共 Gallery/Upload/TaskCard、统一任务 Store。
 Keep Alive 会增加多页同时挂载后的内存占用，当前最多三页；保留上传 File/Blob 是刻意行为。
 Vue/Vite 可在这些边界稳定后评估，本阶段未引入运行框架。
+
+## 上线补充（2026-09-21）
+
+- 发布代码 `962ece1`，目标分支不变；未合并或修改默认分支。
+- `tools/prepare_dreamapi_native_canary.py` 现在暂存完整发布资源，避免候选实例缺少 Shell。
+- `tools/deploy_realism_release.py` 验证新三路由、manifest、全部延迟资源的精确字节，
+  保留旧页面配置/画风合同检查。未更改生成 API 合同或付费重试。
+- Image 2 任务 `b8be196da80c`，单次提交，109 秒，864×1536 PNG，视觉检查通过。
+  证据：`audit/app_shell_canary_20260921/verification.json`。隔离候选实例已停止清理，产物保留。
+- 完整发布门：55 个脚本合同检查（保留已锁定的历史预期失败）、41 个 pytest 文件/545 项测试。
+  发布前验证与正式发布器内验证均通过。
+- 首次 SSH 上传在暂存阶段连接被重置，确认线上未切换、备份为空及维护状态未开启后，
+  仅解除归属明确的失败暂存事务锁。第二次正式事务成功，备份保存在服务器
+  `.release-transactions/20260921T123907Z-6db735183040403394462a10e06e529e/backup`。
+- 正式发布器返回 `REALISM_RELEASE_DEPLOY_OK`，维护模式已解除，ComfyUI 和 DreamAPI 健康检查通过。
+- 浏览器公网实测：Creator → Realism → Video → Creator、Back/Forward，document=1、Renderer=1、scene=ready。
+- 发现一次首屏样式加载失败，后续诊断请求均 200，浏览器复测通过；尚未定位瞬时网络失败根因。
+  不把这次上线等同于解决所有上游限流/网络断连。
+- `tools/verify_app_shell_live.py` 默认只读，真实短视频必须明确传入 `--paid-video`。
+  提交前落盘状态，已有状态禁止重提；可用于以后人工授权后的上线冒烟测试。
+- 真实视频任务 `2f785dfe4263`：MiniMax H3 文生/图生视频，512×512、请求 4 秒，单次提交，
+  139.5 秒完成；切去 Creator 后继续执行，返回 Video 正常预览。另行验证媒体解码与播放：
+  实际 512×512、4.458333 秒，播放时间前进、无媒体错误。状态查询曾返回一次 502，随后原任务查询成功。
