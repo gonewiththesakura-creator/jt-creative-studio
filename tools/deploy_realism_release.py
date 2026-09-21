@@ -108,7 +108,7 @@ IDLE_STABILITY_CHECKS = 3
 IDLE_STABILITY_INTERVAL = 1.0
 MIN_SCRIPT_CONTRACTS = 55
 MIN_PYTEST_FILES = 40
-RELEASE_TEST_INVENTORY_SHA256 = "c6b4f35cc3114a4090a53852b31ff60ac6f536828e30202dfbaa7dad72719a24"
+RELEASE_TEST_INVENTORY_SHA256 = "f995bc093ed5add2eacbd870eeca22f62b7f14fe755c90d9c5c6fa4843bdb144"
 DREAMAPI_CONTRACT_SHA256 = "d2e692e229a0525590fbbc5ffc4f466faebe70675278d263a44bfd0dffc6f0fa"
 HISTORICAL_DREAMAPI_CONTRACT_SHA256 = "665d283bd420f76f031d9530f1d757f022d6cc16a5c9e9bc315e4966da797959"
 DREAMAPI_NATIVE_MANIFEST = BASE / "audit" / "dreamapi_direct_final_20260918" / "verification.json"
@@ -290,6 +290,9 @@ SINGULARITY_ASSET_PATHS = tuple(path.relative_to(BASE).as_posix()
 
 RELEASE_RELATIVE_PATHS = (
     *SINGULARITY_ASSET_PATHS,
+    "static/app.html",
+    "static/app-manifest.json",
+    *(path.relative_to(BASE).as_posix() for path in sorted((BASE / "static/assets").glob("*")) if path.is_file()),
     "server.py",
     "config.json",
     "static/index.html",

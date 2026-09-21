@@ -2,3 +2,8 @@
 audit/dreamapi_native_20260917/verification.json text eol=lf
 audit/dreamapi_native_20260918/verification.json text eol=lf
 static/singularity/** text eol=lf
+# Content-addressed build outputs must keep identical bytes after checkout.
+static/assets/** -text -whitespace
+static/app.html text eol=lf
+static/app-manifest.json text eol=lf
+frontend/** text eol=lf

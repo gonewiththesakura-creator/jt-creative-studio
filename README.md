@@ -1,5 +1,13 @@
 # JT 灵感工作台
 
+## App Shell 优化（2026-09-21，未部署）
+
+当前开发分支为 `feat/singularity-workbench`。统一 Shell、客户端路由、页面 Keep Alive、
+黑洞常驻、画风拆包及静态资源缓存说明见 [性能交付文档](docs/app-shell-performance.md)。
+新增构建的最后一步为 `python tools/build_frontend.py`；旧 Builder 仍是业务权威源。
+本次仅提交 GitHub，不部署、不执行付费 E2E；生产证据门继续拒绝未经验证的新运行版本。
+下方旧分支和部署信息是历史快照。
+
 ## GitHub 同步快照（2026-09-18）
 
 最新 API 直连优化详见 [`docs/dreamapi-direct-transport.md`](docs/dreamapi-direct-transport.md)。默认服务器直连原 DreamAPI，保留 Image 2/2.5 与尺寸、质量选择；字符串错误原因丢失已修复，支持 URL 与 Base64 图片。最终运行代码 `dcbbb5e` 的 Image 2 单张真实验证成功（73.3 秒），证据见 `audit/dreamapi_direct_final_20260918/verification.json`。下方旧快照中“尚未修复”的错误解析问题已由本更新解决；不宣称所有上游断连或限流都已消失。

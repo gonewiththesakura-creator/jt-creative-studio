@@ -1,0 +1,167 @@
+{
+  "conditions": "Offline local assets; Chromium; GPU metrics use SwiftShader, not physical phone/GPU. No paid calls.",
+  "loading": [
+    {
+      "legacy": true,
+      "width": 390,
+      "initial_bytes": {
+        "html": 440808,
+        "js": 0,
+        "css": 14564,
+        "style": 1168164,
+        "images": 164736
+      },
+      "dcl_ms": 153.4,
+      "router_events": [],
+      "controls_ready_ms": 195,
+      "switch_ms": [
+        82.9,
+        60.9,
+        107.2
+      ],
+      "document_requests": 4
+    },
+    {
+      "legacy": false,
+      "width": 390,
+      "initial_bytes": {
+        "html": 10118,
+        "js": 52209,
+        "css": 62548,
+        "style": 104145,
+        "images": 203600
+      },
+      "dcl_ms": 42.1,
+      "router_events": [
+        {
+          "path": "/realism",
+          "duration": 37.20000001788139
+        },
+        {
+          "path": "/video",
+          "duration": 20.30000001192093
+        },
+        {
+          "path": "/",
+          "duration": 2.300000011920929
+        },
+        {
+          "path": "/realism",
+          "duration": 1.699999988079071
+        },
+        {
+          "path": "/video",
+          "duration": 1.0999999940395355
+        },
+        {
+          "path": "/",
+          "duration": 1.9000000059604645
+        }
+      ],
+      "controls_ready_ms": 160.2,
+      "switch_ms": [
+        64.8,
+        60.8,
+        40.8
+      ],
+      "document_requests": 1
+    },
+    {
+      "legacy": true,
+      "width": 1440,
+      "initial_bytes": {
+        "html": 440808,
+        "js": 0,
+        "css": 14564,
+        "style": 1168164,
+        "images": 164736
+      },
+      "dcl_ms": 103.4,
+      "router_events": [],
+      "controls_ready_ms": 143.9,
+      "switch_ms": [
+        78.8,
+        63.3,
+        101.1
+      ],
+      "document_requests": 4
+    },
+    {
+      "legacy": false,
+      "width": 1440,
+      "initial_bytes": {
+        "html": 10118,
+        "js": 52209,
+        "css": 62548,
+        "style": 104145,
+        "images": 203600
+      },
+      "dcl_ms": 48.6,
+      "router_events": [
+        {
+          "path": "/realism",
+          "duration": 36.5
+        },
+        {
+          "path": "/video",
+          "duration": 20.899999976158142
+        },
+        {
+          "path": "/",
+          "duration": 2.0999999940395355
+        },
+        {
+          "path": "/realism",
+          "duration": 1.5999999940395355
+        },
+        {
+          "path": "/video",
+          "duration": 1.199999988079071
+        },
+        {
+          "path": "/",
+          "duration": 2.5
+        }
+      ],
+      "controls_ready_ms": 160.3,
+      "switch_ms": [
+        63.8,
+        59.0,
+        43.8
+      ],
+      "document_requests": 1
+    }
+  ],
+  "graphics": [
+    {
+      "width": 390,
+      "ui_ready_ms": 176.59999999403954,
+      "contexts": 1,
+      "compiles": 20,
+      "renderers": 1,
+      "firstFrame": 518.7000000178814,
+      "businessBusy": false,
+      "importStarted": 288.30000001192093,
+      "initialized": 398.5,
+      "frames": 24,
+      "sim": 1.4833000000000003,
+      "pixelBudget": 550000,
+      "software_renderer_fps": 7.86
+    },
+    {
+      "width": 1000,
+      "ui_ready_ms": 171.19999998807907,
+      "contexts": 1,
+      "compiles": 20,
+      "renderers": 1,
+      "firstFrame": 460.7999999821186,
+      "businessBusy": false,
+      "importStarted": 206.09999999403954,
+      "initialized": 333.09999999403954,
+      "frames": 35,
+      "sim": 2.7833,
+      "pixelBudget": 1400000,
+      "software_renderer_fps": 9.97
+    }
+  ]
+}

@@ -3354,6 +3354,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if (fp.suffix == ".json"
                 and re.fullmatch(r"style-configs\.[0-9a-f]{12}\.json", fp.name)):
             cache = "public, max-age=31536000, immutable"
+        if (request.path.startswith("/static/assets/")
+                and re.fullmatch(r"[\w-]+\.[0-9a-f]{12}\.[\w]+", fp.name)):
+            cache = "public, max-age=31536000, immutable"
         if self.headers.get("If-None-Match") == etag:
             self.send_response(http.HTTPStatus.NOT_MODIFIED)
             self.send_header("ETag", etag)
@@ -3740,6 +3743,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 # serve shell so user can enter token; API calls still guarded
                 pass
             root = BASE / "static"
+            if path in ("/", "/realism", "/video"):
+                return self._send_static(root / "app.html", "text/html; charset=utf-8")
             clean_pages = {"/promptgen": "promptgen.html", "/realism": "realism.html"}
             if path in clean_pages:
                 rel = clean_pages[path]

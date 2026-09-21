@@ -17,10 +17,19 @@ const motion = controls.querySelector('#singularityMotion');
 const focus = controls.querySelector('#singularityFocus');
 const reduced = matchMedia('(prefers-reduced-motion: reduce)');
 let paused = reduced.matches, immersive = false, draw = () => {}, available = false, businessBusy = false;
-new MutationObserver(() => {
-  const busy = !!shell.querySelector('.primary.is-loading, .primary[aria-busy="true"], .task-spin:not(.done):not(.err)');
+const pageRoots = new Set([shell]);
+const busySelector='.primary.is-loading, .primary[aria-busy="true"], .task-spin:not(.done):not(.err)';
+function checkBusy() {
+  const busy = [...pageRoots].some(root=>root.querySelector(busySelector));
+  if(window.jtApp)window.jtApp.metrics.businessBusy=!!busy;
   if (busy !== businessBusy) { businessBusy = busy; draw(); }
-}).observe(shell, {subtree:true, childList:true, attributes:true, attributeFilter:['class','aria-busy']});
+}
+function observePage(root) {
+  pageRoots.add(root);
+  new MutationObserver(checkBusy).observe(root, {subtree:true, childList:true, attributes:true, attributeFilter:['class','aria-busy']});
+  checkBusy();
+}
+observePage(shell);
 try { paused ||= localStorage.getItem('jt-singularity-paused') === 'true'; } catch {}
 function updateMotion() {
   motion.textContent = paused ? '继续光场' : '暂停光场';
@@ -48,6 +57,9 @@ let appearance, applySceneSettings = () => {};
 const {installAppearance,installPreview} = await import('./appearance.js?v='+new URL(import.meta.url).searchParams.get('v'));
 appearance=installAppearance(controls,values=>applySceneSettings(values));
 installPreview();
+function attachPage(root,scope) { observePage(root);installPreview(scope.document,scope.page?.styleBoot); }
+addEventListener('jt:page-mounted',event=>attachPage(event.detail.root,event.detail.scope));
+if(window.jtApp)for(const page of window.jtApp.router.pages.values())attachPage(page.shadow,page.scope);
 function fallback(error) {
   console.warn('Black-hole visual unavailable; workbench remains usable.', error?.message || 'WebGL context lost');
   available = false;
@@ -61,12 +73,14 @@ function fallback(error) {
 async function startScene() {
   // Defer GPU setup until the business interface has painted. No blocking overlay.
   try {
+    if(window.jtApp)window.jtApp.metrics.importStarted=performance.now();
     const [THREE, {EffectComposer}, {RenderPass}, {UnrealBloomPass}, {OutputPass}, shaders] = await Promise.all([
       import('three'), import('three/addons/postprocessing/EffectComposer.js'),
       import('three/addons/postprocessing/RenderPass.js'), import('three/addons/postprocessing/UnrealBloomPass.js'),
       import('three/addons/postprocessing/OutputPass.js'), import('./shaders.js?v='+new URL(import.meta.url).searchParams.get('v'))
     ]);
-    const renderer = new THREE.WebGLRenderer({canvas, antialias:true, powerPreference:'low-power'});
+    const renderer = new THREE.WebGLRenderer({canvas, antialias:innerWidth>820, powerPreference:'low-power'});
+    if(window.jtApp){window.jtApp.metrics.renderers++;window.jtApp.metrics.initialized=performance.now();}
     renderer.debug.onShaderError = () => fallback(new Error('Black-hole shader could not compile'));
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = .95;
@@ -81,7 +95,7 @@ async function startScene() {
       uniforms, vertexShader:shaders.vertexShader, fragmentShader:shaders.fragmentShader, depthTest:false, depthWrite:false
     }));
     quad.frustumCulled = false; scene.add(quad);
-    const target = new THREE.WebGLRenderTarget(1,1,{type:THREE.HalfFloatType,samples:2});
+    const target = new THREE.WebGLRenderTarget(1,1,{type:THREE.HalfFloatType,samples:innerWidth>820?2:0});
     const composer = new EffectComposer(renderer,target);
     composer.addPass(new RenderPass(scene,camera));
     const bloom=new UnrealBloomPass(new THREE.Vector2(1,1),.075,.4,1.15);
@@ -93,7 +107,7 @@ async function startScene() {
     const up = new THREE.Vector3(0,1,0);
     function resize() {
       width=innerWidth; height=innerHeight;
-      const ratio=Math.min(devicePixelRatio,1.25,Math.sqrt(budget/(width*height)));
+      const ratio=Math.min(devicePixelRatio,width<=820?1:1.25,Math.sqrt(budget/(width*height)));
       renderer.setPixelRatio(ratio);renderer.setSize(width,height,false);
       composer.setPixelRatio(ratio);composer.setSize(width,height);
       uniforms.resolution.value.set(width,height);uniforms.mobile.value=width<=820?1:0;
@@ -117,9 +131,13 @@ async function startScene() {
       const before=performance.now();
       try { composer.render(); } catch(error) { fallback(error); return; }
       if (!available) return;
-      if (performance.now()-before>60) slowFrames++; else slowFrames=Math.max(0,slowFrames-1);
+      if(window.jtApp){window.jtApp.metrics.frames=(window.jtApp.metrics.frames||0)+1;window.jtApp.metrics.sim=sim;window.jtApp.metrics.pixelBudget=budget;}
+      // GPU commands are asynchronous: CPU submission time alone misses a slow
+      // compositor. Also observe consecutive active frame intervals.
+      if (performance.now()-before>60 || (!paused&&!businessBusy&&dt>.1)) slowFrames++; else slowFrames=Math.max(0,slowFrames-1);
       if (slowFrames>8 && budget>300000) { budget=Math.max(300000,budget*.6);slowFrames=0;resize(); }
       document.body.dataset.singularity='ready';
+      if(window.jtApp&&!window.jtApp.metrics.firstFrame)window.jtApp.metrics.firstFrame=performance.now();
       if (!paused && !businessBusy && !frameId) frameId=requestAnimationFrame(render);
     }
     draw = () => { if (available && !document.hidden && !frameId) {last=0;frameId=requestAnimationFrame(render);} };
@@ -127,7 +145,7 @@ async function startScene() {
       const qualityChanged=settings.quality!==values.quality;
       settings=values;azimuth=settings.azimuth;elevation=settings.elevation;radius=settings.radius;
       for(const key of ['mass','flow','temperature','lensing','starMotion'])uniforms[key].value=settings[key];
-      renderer.toneMappingExposure=settings.exposure;bloom.strength=settings.bloom;
+      renderer.toneMappingExposure=settings.exposure;bloom.strength=settings.bloom*(innerWidth<=820?.8:1);
       if(qualityChanged)budget=(innerWidth<=820?550000:1400000)*settings.quality;
       resize();
     };

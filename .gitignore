@@ -62,3 +62,7 @@ audit/private_realism_workflows/local_vlm_results.json
 Thumbs.db
 .vscode/
 .idea/
+node_modules/
+!static/assets/preview.*.webp
+!static/assets/preview.*.png
+!static/assets/preview.*.jpg

@@ -32,8 +32,30 @@ def test_native_release_requires_reviewed_evidence_bytes(tmp_path, monkeypatch):
     assert 'native DreamAPI artifact path invalid' in errors
 
 
-def test_native_evidence_passes_for_the_reviewed_runtime():
-    assert load_module().validate_native_dreamapi_evidence() == []
+def test_native_evidence_passes_for_the_reviewed_runtime(monkeypatch):
+    # The reviewed runtime is a fixed historical commit, not this unreviewed
+    # frontend rewrite. Preserve positive evidence coverage without bypassing
+    # the production gate for the new shell.
+    import subprocess
+    from types import SimpleNamespace
+    module = load_module()
+    baseline = '403503028928f80195a5a3c7cfd3795bccc630a0'
+    def check_output(args, **kwargs):
+        if args == ['git', 'rev-parse', 'HEAD']:
+            return baseline + '\n'
+        return subprocess.check_output(args, **kwargs)
+    def run(args, **kwargs):
+        if args[:4] == ['git', 'diff', '--quiet', 'HEAD']:
+            return subprocess.CompletedProcess(args, 0)
+        return subprocess.run(args, **kwargs)
+    monkeypatch.setattr(module, 'subprocess', SimpleNamespace(**{**vars(subprocess), 'check_output':check_output, 'run':run}))
+    assert module.validate_native_dreamapi_evidence() == []
+
+
+def test_app_shell_has_no_automatic_paid_evidence_exception():
+    errors = load_module().validate_native_dreamapi_evidence()
+    assert errors
+    assert set(errors) <= {'native DreamAPI runtime payload drift', 'native DreamAPI workspace runtime drift'}
 
 
 def test_singularity_exception_rejects_scene_asset_drift(monkeypatch):
@@ -187,6 +209,8 @@ def test_release_manifest_is_complete_and_excludes_nonproduction_files():
     style_data = ["static/" + path.name for path in (ROOT / "static").glob("style-configs.*.json")]
     assert len(style_data) == 1
     expected.update(style_data)
+    expected.update({'static/app.html','static/app-manifest.json'})
+    expected.update(path.lstrip('/') for path in json.loads((ROOT/'static/app-manifest.json').read_text(encoding='utf8'))['assets'])
     expected.update(path.relative_to(ROOT).as_posix()
                     for path in (ROOT / 'static/singularity').rglob('*') if path.is_file())
     assert set(module.RELEASE_RELATIVE_PATHS) == expected

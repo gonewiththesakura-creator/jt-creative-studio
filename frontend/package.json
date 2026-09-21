@@ -1,0 +1,8 @@
+{
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "acorn": "8.15.0",
+    "eslint-scope": "8.4.0"
+  }
+}

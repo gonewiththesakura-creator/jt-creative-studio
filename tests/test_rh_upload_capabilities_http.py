@@ -5,6 +5,7 @@ import io
 import json
 import tempfile
 import threading
+import time
 import urllib.parse
 from pathlib import Path
 
@@ -121,6 +122,12 @@ def upload_raw_video(workflow, input_key, filename, data, cookie=None):
     set_cookie = response.getheader("Set-Cookie")
     status = response.status
     connection.close()
+    # The response is sent before the handler's finally cleanup. Wait for that
+    # observable condition rather than race the server thread; a real leak still
+    # fails the existing no-.part assertions after this bounded interval.
+    deadline = time.monotonic() + 2
+    while list((TMP / 'upload_tmp').glob('*.part')) and time.monotonic() < deadline:
+        time.sleep(.01)
     return status, payload, set_cookie
 
 
