@@ -40,6 +40,8 @@ def test_native_evidence_passes_for_the_reviewed_runtime(monkeypatch):
     from types import SimpleNamespace
     module = load_module()
     baseline = '403503028928f80195a5a3c7cfd3795bccc630a0'
+    monkeypatch.setattr(module, 'DREAMAPI_NATIVE_MANIFEST', ROOT / 'audit/dreamapi_direct_final_20260918/verification.json')
+    monkeypatch.setattr(module, 'DREAMAPI_NATIVE_EVIDENCE_SHA256', '72880ce8a757800862966df4ea334006596643699c57399cdf7db4842c15a760')
     def check_output(args, **kwargs):
         if args == ['git', 'rev-parse', 'HEAD']:
             return baseline + '\n'
@@ -52,10 +54,42 @@ def test_native_evidence_passes_for_the_reviewed_runtime(monkeypatch):
     assert module.validate_native_dreamapi_evidence() == []
 
 
-def test_app_shell_has_no_automatic_paid_evidence_exception():
-    errors = load_module().validate_native_dreamapi_evidence()
-    assert errors
-    assert set(errors) <= {'native DreamAPI runtime payload drift', 'native DreamAPI workspace runtime drift'}
+def test_app_shell_has_reviewed_paid_evidence():
+    assert load_module().validate_native_dreamapi_evidence() == []
+
+
+def test_app_shell_rejects_frontend_drift(monkeypatch):
+    module = load_module()
+    original = module.git_runtime_payload_sha256
+    calls = []
+    def digest(*args, **kwargs):
+        if 'static/app.html' in kwargs.get('files', ()):
+            calls.append(True)
+            if len(calls) > 1:
+                return '0' * 64
+        return original(*args, **kwargs)
+    monkeypatch.setattr(module, 'git_runtime_payload_sha256', digest)
+    assert 'native DreamAPI frontend payload drift' in module.validate_native_dreamapi_evidence()
+
+
+def test_public_app_shell_verifies_all_lazy_assets(monkeypatch):
+    module = load_module()
+    paths = [p for p in module.RELEASE_RELATIVE_PATHS if p.startswith('static/assets/')
+             or p in ('static/app.html', 'static/app-manifest.json')]
+    payloads = {ROOT / p: (ROOT / p).read_bytes() for p in paths}
+    seen = []
+    def fetch(base, route, **kwargs):
+        seen.append(route)
+        path = 'static/app.html' if route in ('/', '/realism', '/video') else route.lstrip('/')
+        return payloads[ROOT / path]
+    monkeypatch.setattr(module, 'fetch_bytes_resilient', fetch)
+    realism, shell, creator = module.verify_public_app_shell('http://example.test', payloads)
+    assert b'/api/workflow-generate' in realism
+    assert b'genApiBtn' in creator
+    assert set(json.loads(payloads[ROOT / 'static/app-manifest.json'])['assets']) <= set(seen)
+    monkeypatch.setattr(module, 'fetch_bytes_resilient', lambda *a, **k: b'wrong')
+    with pytest.raises(RuntimeError, match='app shell mismatch'):
+        module.verify_public_app_shell('http://example.test', payloads)
 
 
 def test_singularity_exception_rejects_scene_asset_drift(monkeypatch):

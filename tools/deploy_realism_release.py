@@ -111,11 +111,11 @@ MIN_PYTEST_FILES = 40
 RELEASE_TEST_INVENTORY_SHA256 = "f995bc093ed5add2eacbd870eeca22f62b7f14fe755c90d9c5c6fa4843bdb144"
 DREAMAPI_CONTRACT_SHA256 = "d2e692e229a0525590fbbc5ffc4f466faebe70675278d263a44bfd0dffc6f0fa"
 HISTORICAL_DREAMAPI_CONTRACT_SHA256 = "665d283bd420f76f031d9530f1d757f022d6cc16a5c9e9bc315e4966da797959"
-DREAMAPI_NATIVE_MANIFEST = BASE / "audit" / "dreamapi_direct_final_20260918" / "verification.json"
+DREAMAPI_NATIVE_MANIFEST = BASE / "audit" / "app_shell_canary_20260921" / "verification.json"
 DREAMAPI_NATIVE_MODEL = "gpt-image-2"
 DREAMAPI_NATIVE_ARTIFACT = "image2-low-9x16.png"
 # Set only after the single authorized native canary is collected and reviewed.
-DREAMAPI_NATIVE_EVIDENCE_SHA256 = "72880ce8a757800862966df4ea334006596643699c57399cdf7db4842c15a760"
+DREAMAPI_NATIVE_EVIDENCE_SHA256 = "db67f4e4ab788f96a01d0fb2431f93afa9a28e82608c545e5df2e82b1a41a19b"
 DREAMAPI_TESTED_RELEASE_COMMIT = "f7c179871747355d11cb5f2789f561a256f671d5"
 DREAMAPI_RUNTIME_PAYLOAD_FORMAT = "framed-v1"
 DREAMAPI_RUNTIME_PAYLOAD_FILES = (
@@ -1521,6 +1521,19 @@ def validate_native_dreamapi_evidence():
             errors.append("native DreamAPI tested commit is not an ancestor")
         if subprocess.run(["git", "diff", "--quiet", "HEAD", "--", *NATIVE_RUNTIME_PAYLOAD_FILES], cwd=BASE, capture_output=True).returncode:
             errors.append("native DreamAPI workspace runtime drift")
+        frontend_files = tuple(path for path in RELEASE_RELATIVE_PATHS
+                               if path.startswith("static/assets/") or path in
+                               ("static/app.html", "static/app-manifest.json"))
+        frontend = record.get("frontend_payload")
+        if frontend:
+            tested_frontend = git_runtime_payload_sha256(commit, files=frontend_files)
+            if (frontend != {"format": "framed-v1", "sha256": tested_frontend}
+                    or git_runtime_payload_sha256(current_head, files=frontend_files) != tested_frontend
+                    or subprocess.run(["git", "diff", "--quiet", "HEAD", "--", *frontend_files],
+                                      cwd=BASE, capture_output=True).returncode):
+                errors.append("native DreamAPI frontend payload drift")
+        elif frontend_files and current == expected:
+            errors.append("native DreamAPI frontend evidence missing")
     except Exception:
         errors.append("native DreamAPI runtime identity invalid")
     expected_request = {"method": "POST", "path": "/v1/images/generations",
@@ -2882,6 +2895,27 @@ def verify_public_large_responses(base, expected_creator, expected_preview,
     return expected_creator, expected_preview
 
 
+def verify_public_app_shell(base, payloads):
+    """Verify all entry routes and every lazy asset against committed bytes."""
+    shell = payloads[BASE / "static/app.html"]
+    for route in ("/", "/realism", "/video"):
+        if fetch_bytes_resilient(base, route, max_bytes=len(shell)) != shell:
+            raise RuntimeError("public app shell mismatch: " + route)
+    manifest_bytes = payloads[BASE / "static/app-manifest.json"]
+    if fetch_bytes_resilient(base, "/static/app-manifest.json", max_bytes=len(manifest_bytes)) != manifest_bytes:
+        raise RuntimeError("public app manifest mismatch")
+    manifest = json.loads(manifest_bytes)
+    for route in manifest["assets"]:
+        expected = payloads[BASE / route.lstrip("/")]
+        if fetch_bytes_resilient(base, route, max_bytes=len(expected)) != expected:
+            raise RuntimeError("public lazy asset mismatch: " + route)
+    pages = manifest["pages"]
+    def page_bytes(route):
+        return b"\n".join(payloads[BASE / pages[route][key].lstrip("/")]
+                          for key in ("module", "markup"))
+    return page_bytes("/realism"), shell, page_bytes("/")
+
+
 def verify_public_creator_config(base, creator, payloads):
     """Verify the lazy-loaded config referenced by the exact released HTML."""
     match = re.search(rb'const STYLE_CONFIG_URL="(/static/style-configs\.[0-9a-f]{12}\.json)"', creator)
@@ -3432,9 +3466,11 @@ def deploy(files, payloads, public_base=PUBLIC_BASE,
                 BASE / "static" / "previews" / "style-retro-manga-luxury.webp"
             ]
             realism, home, creator, creator_preview = verify_public_large_responses(
-                public_base, expected_creator, expected_preview,
-                expected_realism=expected_realism,
+                public_base, payloads.get(BASE / "static/app.html", expected_creator), expected_preview,
+                expected_realism=payloads.get(BASE / "static/app.html", expected_realism),
             )
+            if BASE / "static/app.html" in payloads:
+                realism, home, creator = verify_public_app_shell(public_base, payloads)
             workflows = fetch_json(public_base, "/api/workflows")
             names = {str(item.get("name") or "") for item in workflows if isinstance(item, dict)}
             if b"/api/workflow-generate" not in realism or b"/realism" not in home:
@@ -3445,7 +3481,7 @@ def deploy(files, payloads, public_base=PUBLIC_BASE,
                 b"style221", b"style222",
             )):
                 raise RuntimeError("public creator style/API markers missing")
-            verify_public_creator_config(public_base, creator, payloads)
+            verify_public_creator_config(public_base, expected_creator, payloads)
             if creator_preview != expected_preview:
                 raise RuntimeError("public creator preview mismatch")
             if not set(TARGET_WORKFLOW_NAMES).issubset(names):

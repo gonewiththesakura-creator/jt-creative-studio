@@ -63,6 +63,7 @@ Thumbs.db
 .vscode/
 .idea/
 node_modules/
+audit/app_shell_canary_20260921/raw-result.json
 !static/assets/preview.*.webp
 !static/assets/preview.*.png
 !static/assets/preview.*.jpg

@@ -100,6 +100,7 @@ def _head_and_payloads():
         raise RuntimeError("release runtime differs from HEAD")
     relative_paths = tuple(dict.fromkeys((
         "config.json", "static/index.html", *release.NATIVE_RUNTIME_PAYLOAD_FILES,
+        *release.RELEASE_RELATIVE_PATHS,
     )))
     files = {
         BASE / relative: release.REMOTE_ROOT + "/" + relative

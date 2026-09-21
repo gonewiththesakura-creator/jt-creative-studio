@@ -7,3 +7,4 @@ static/assets/** -text -whitespace
 static/app.html text eol=lf
 static/app-manifest.json text eol=lf
 frontend/** text eol=lf
+audit/app_shell_canary_20260921/verification.json text eol=lf
