@@ -72,6 +72,46 @@ def current(page):
     return page.locator('.page-host:not([hidden])')
 
 
+def test_shadow_hosts_reveal_persistent_canvas():
+    """Real WebGL, offline routes: page hosts must not mask the global scene."""
+    with sync_playwright() as p:
+        browser=p.chromium.launch(headless=True,args=['--use-angle=swiftshader','--enable-unsafe-swiftshader'])
+        page=browser.new_page(viewport={'width':1440,'height':900})
+        requests=serve_page(page)
+        try:
+            page.goto('http://fixture.test/')
+            page.wait_for_function("document.body.dataset.singularity === 'ready'",timeout=60000)
+            page.locator('#singularityMotion').click()
+            for route in ('/','/realism','/video','/'):
+                page.locator(f'body > .app-shell > .topbar a[href="{route}"]').click()
+                page.wait_for_function('document.body.dataset.page === '+json.dumps(route))
+                backgrounds=current(page).evaluate('''host => [host,
+                  host.shadowRoot.querySelector('.jt-page-body'),
+                  host.shadowRoot.querySelector('.app-shell')].map(el=>getComputedStyle(el).backgroundColor)''')
+                assert backgrounds==['rgba(0, 0, 0, 0)']*3, (route,backgrounds)
+                assert page.evaluate('jtApp.metrics.renderers')==1
+            preview=current(page).locator('.preview-stage')
+            assert preview.evaluate("(el)=>Number(getComputedStyle(el).backgroundColor.match(/[\\d.]+/g)[3]??1)") < .2
+            # Paint an unmistakable backdrop at the actual canvas layer. Pixel
+            # comparison detects opaque ancestors, not just the host declaration.
+            page.locator('#singularityCanvas').evaluate("el=>{el.style.background='rgb(255,0,255)';el.querySelectorAll('canvas').forEach(c=>c.style.visibility='hidden')}")
+            page.wait_for_timeout(1100)
+            visible=preview.screenshot(animations='disabled')
+            page.locator('#singularityCanvas').evaluate("el=>el.style.visibility='hidden'")
+            hidden=preview.screenshot(animations='disabled')
+            from PIL import Image, ImageChops
+            import io
+            diff=ImageChops.difference(Image.open(io.BytesIO(visible)).convert('RGB'),Image.open(io.BytesIO(hidden)).convert('RGB'))
+            assert diff.getbbox(), 'Empty preview masks the global canvas layer'
+            preview.evaluate("el=>el.classList.add('has-results')")
+            result=preview.evaluate('(el)=>({color:getComputedStyle(el).backgroundColor,image:getComputedStyle(el).backgroundImage})')
+            assert result['color']!='rgba(0, 0, 0, 0)' or result['image']!='none'
+            assert page.evaluate('document.body.dataset.singularity')=='ready'
+            assert not [r for r in requests if r[0]!='GET']
+        finally:
+            browser.close()
+
+
 @pytest.mark.parametrize('width',[390,1440])
 def test_keep_alive_navigation_and_back_forward(browser,width):
     page=browser.new_page(viewport={'width':width,'height':900})

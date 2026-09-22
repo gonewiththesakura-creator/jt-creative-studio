@@ -140,6 +140,16 @@ Vue/Vite 可在这些边界稳定后评估，本阶段未引入运行框架。
 
 ## 上线补充（2026-09-21）
 
+### 2026-09-22 CSS 回归修复（仅 GitHub，未部署）
+
+旧 html 背景经 scoped_css 转换后落到 Shadow host，遮挡全局 Canvas。
+权威源 `frontend/styles/page.css` 为 `:host` 添加 `background:transparent!important`；
+内层 body/app-shell 保持透明，空预览原有 7% 半透明底及 has-results 玻璃背景不变。
+四步 Builder 已重新运行，三个页面 CSS hash 和 Shell/manifest 引用随构建更新。
+新增离线真实 WebGL 浏览器回归，覆盖三页计算背景、单 Renderer、scene ready、
+空预览 Canvas 层像素可见性及结果背景。未修改场景、Shader、外观参数或生成业务。
+本修复不更新历史付费证据、不执行付费测试、不部署；既有生产证据绑定仍保留。
+
 - 发布代码 `962ece1`，目标分支不变；未合并或修改默认分支。
 - `tools/prepare_dreamapi_native_canary.py` 现在暂存完整发布资源，避免候选实例缺少 Shell。
 - `tools/deploy_realism_release.py` 验证新三路由、manifest、全部延迟资源的精确字节，

@@ -3,19 +3,19 @@
     "/": {
       "module": "/static/assets/index.a1de4071ed3a.js",
       "markup": "/static/assets/index.12d80087d3c2.html",
-      "css": "/static/assets/index.c1aa58c2c436.css",
+      "css": "/static/assets/index.7b469ed18259.css",
       "title": "JT 灵感工作台"
     },
     "/realism": {
       "module": "/static/assets/realism.c1d4cb032b68.js",
       "markup": "/static/assets/realism.86a9e1b9285b.html",
-      "css": "/static/assets/realism.18aef1992bbf.css",
+      "css": "/static/assets/realism.436d28acb3d2.css",
       "title": "真人化工作流 · JT 灵感工作台"
     },
     "/video": {
       "module": "/static/assets/video.fc04d92f19c1.js",
       "markup": "/static/assets/video.114d2dcb7439.html",
-      "css": "/static/assets/video.219ad537f4d0.css",
+      "css": "/static/assets/video.8765a5b21bb6.css",
       "title": "JT 视频工作台"
     }
   },
@@ -36,8 +36,8 @@
     "/static/assets/app.78053914471a.css",
     "/static/assets/appearance.effeec028e01.js",
     "/static/assets/index.12d80087d3c2.html",
+    "/static/assets/index.7b469ed18259.css",
     "/static/assets/index.a1de4071ed3a.js",
-    "/static/assets/index.c1aa58c2c436.css",
     "/static/assets/main.8ced96b830d2.js",
     "/static/assets/page-scope.02362d635b7a.js",
     "/static/assets/preview.42d1afbc0d5d.webp",
@@ -54,7 +54,7 @@
     "/static/assets/preview.b501ee909520.webp",
     "/static/assets/preview.ed7e8d525912.webp",
     "/static/assets/preview.f3423c1c4545.webp",
-    "/static/assets/realism.18aef1992bbf.css",
+    "/static/assets/realism.436d28acb3d2.css",
     "/static/assets/realism.86a9e1b9285b.html",
     "/static/assets/realism.c1d4cb032b68.js",
     "/static/assets/router.c2c2e271b875.js",
@@ -73,7 +73,7 @@
     "/static/assets/three-core.9edde002b066.js",
     "/static/assets/three-module.71e909ad3fc6.js",
     "/static/assets/video.114d2dcb7439.html",
-    "/static/assets/video.219ad537f4d0.css",
+    "/static/assets/video.8765a5b21bb6.css",
     "/static/assets/video.fc04d92f19c1.js",
     "/static/assets/workbench.a11ea545e441.js"
   ]
