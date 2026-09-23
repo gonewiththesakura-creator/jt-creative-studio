@@ -1491,6 +1491,46 @@ def reviewed_singularity_patch(tested_commit, current_commit, current_digest):
         return False
 
 
+def reviewed_transparent_host_patch(tested_commit, current_head, current_digest):
+    """Only the reviewed host background and its content-addressed references."""
+    if current_digest != "8d08ae62641ac0ee4e7a7612b6c36bce2f9c2871fc0a97ed6799405a9e43b3bb":
+        return False
+    def blob(commit, path):
+        return subprocess.check_output(['git', 'show', commit + ':' + path], cwd=BASE)
+    try:
+        before = json.loads(blob(tested_commit, 'static/app-manifest.json'))
+        after = json.loads(blob(current_head, 'static/app-manifest.json'))
+        replacements = {}
+        for route in ('/', '/realism', '/video'):
+            old, new = before['pages'][route]['css'], after['pages'][route]['css']
+            old_css = blob(tested_commit, old.lstrip('/'))
+            if old_css.count(b':host{display:block;min-width:0}') != 1:
+                return False
+            expected = old_css.replace(b':host{display:block;min-width:0}',
+                b':host{display:block;min-width:0;background:transparent!important}')
+            if blob(current_head, new.lstrip('/')) != expected:
+                return False
+            replacements[old] = new
+        for path in ('static/app.html', 'static/app-manifest.json'):
+            expected = blob(tested_commit, path)
+            for old, new in replacements.items():
+                expected = expected.replace(old.encode(), new.encode())
+            if path.endswith('.json'):
+                manifest = json.loads(expected)
+                manifest['assets'] = sorted(manifest['assets'])
+                if manifest != after:
+                    return False
+                continue
+            if blob(current_head, path) != expected:
+                return False
+        for asset in before['assets']:
+            if asset not in replacements and blob(tested_commit, asset.lstrip('/')) != blob(current_head, asset.lstrip('/')):
+                return False
+        return True
+    except Exception:
+        return False
+
+
 def validate_native_dreamapi_evidence():
     """Require reviewed native-media evidence for the exact current runtime bytes."""
     try:
@@ -1526,9 +1566,15 @@ def validate_native_dreamapi_evidence():
                                ("static/app.html", "static/app-manifest.json"))
         frontend = record.get("frontend_payload")
         if frontend:
-            tested_frontend = git_runtime_payload_sha256(commit, files=frontend_files)
+            tested_manifest = json.loads(subprocess.check_output(
+                ['git', 'show', commit + ':static/app-manifest.json'], cwd=BASE))
+            tested_files = ('static/app.html', 'static/app-manifest.json',
+                            *(url.lstrip('/') for url in tested_manifest['assets']))
+            tested_frontend = git_runtime_payload_sha256(commit, files=tested_files)
+            current_frontend = git_runtime_payload_sha256(current_head, files=frontend_files)
             if (frontend != {"format": "framed-v1", "sha256": tested_frontend}
-                    or git_runtime_payload_sha256(current_head, files=frontend_files) != tested_frontend
+                    or (current_frontend != tested_frontend and not
+                        reviewed_transparent_host_patch(commit, current_head, current_frontend))
                     or subprocess.run(["git", "diff", "--quiet", "HEAD", "--", *frontend_files],
                                       cwd=BASE, capture_output=True).returncode):
                 errors.append("native DreamAPI frontend payload drift")

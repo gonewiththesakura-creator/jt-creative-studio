@@ -58,6 +58,28 @@ def test_app_shell_has_reviewed_paid_evidence():
     assert load_module().validate_native_dreamapi_evidence() == []
 
 
+def test_transparent_host_exception_rejects_unreviewed_digest():
+    module = load_module()
+    assert not module.reviewed_transparent_host_patch('tested', 'current', '0' * 64)
+
+
+def test_transparent_host_exception_rejects_changed_css(monkeypatch):
+    module = load_module()
+    import subprocess
+    from types import SimpleNamespace
+    original = subprocess.check_output
+    def altered(args, **kwargs):
+        result = original(args, **kwargs)
+        if args[:2] == ['git', 'show'] and args[2].startswith(head + ':') and args[2].endswith('.css'):
+            result += b'body{display:none}'
+        return result
+    monkeypatch.setattr(module, 'subprocess', SimpleNamespace(**{**vars(subprocess), 'check_output': altered}))
+    record = json.loads(module.DREAMAPI_NATIVE_MANIFEST.read_text(encoding='utf8'))
+    head = original(['git', 'rev-parse', 'HEAD'],cwd=ROOT,text=True).strip()
+    assert not module.reviewed_transparent_host_patch(record['tested_release_commit'], head,
+        '8d08ae62641ac0ee4e7a7612b6c36bce2f9c2871fc0a97ed6799405a9e43b3bb')
+
+
 def test_app_shell_rejects_frontend_drift(monkeypatch):
     module = load_module()
     original = module.git_runtime_payload_sha256
