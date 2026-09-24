@@ -64,6 +64,8 @@ Thumbs.db
 .idea/
 node_modules/
 audit/app_shell_canary_20260921/raw-result.json
+audit/internal_canary_20260924/raw-result.json
+!audit/internal_canary_20260924/image2-low-9x16.png
 !static/assets/preview.*.webp
 !static/assets/preview.*.png
 !static/assets/preview.*.jpg

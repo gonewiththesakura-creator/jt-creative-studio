@@ -65,6 +65,52 @@ def test_internal_canary_uses_host_service_without_changing_credentials():
     assert not any('DREAMAPI_KEY=' in item for item in command)
 
 
+@pytest.mark.parametrize('failure', [None, 'verify', 'rollback'])
+def test_internal_switch_rolls_back_under_drain_and_keeps_lock_if_uncertain(monkeypatch, failure):
+    import sys
+    import types
+    spec = importlib.util.spec_from_file_location('internal_switch', ROOT / 'tools/switch_dreamapi_internal.py')
+    switch = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(switch)
+    calls = []
+    class Client:
+        def close(self): calls.append(('close',))
+    def command(client, text):
+        import shlex
+        if text.startswith('sudo python3 -c '):
+            text = shlex.split(text)[3]
+        calls.append(('command', text))
+        if "'/models'" in text and failure:
+            raise RuntimeError('verification failed')
+        if "action='rollback'" in text and failure == 'rollback':
+            raise RuntimeError('rollback uncertain')
+        return '{}'
+    names = ['require_public_idle', 'acquire_release_lock', 'release_release_lock',
+             'require_persistent_release_drain_contract', 'require_release_start_draining_unset',
+             'set_release_start_draining', 'enable_remote_release_drain', 'isolate_watchdog',
+             'require_loopback_idle', 'wait_for_loopback_live', 'wait_for_remote_release_drain',
+             'require_dreamapi_release_health', 'set_remote_release_drain', 'restore_watchdog_state']
+    fake = types.SimpleNamespace(BASE=ROOT, DEPLOY_SSH_KEY_PATH='fixture', PUBLIC_BASE='fixture',
+                                 new_release_transaction=lambda: {}, capture_watchdog_state=lambda c: {},
+                                 fetch_json=lambda *a: {}, command=command)
+    for name in names:
+        setattr(fake, name, lambda *a, _name=name, **k: calls.append((_name, *a[1:])))
+    monkeypatch.setattr(switch, 'release', fake)
+    monkeypatch.setattr(switch, '_connect', lambda *a: Client())
+    monkeypatch.setattr(sys, 'argv', ['switch', '--execute'])
+    if failure:
+        with pytest.raises(RuntimeError): switch.main()
+    else:
+        switch.main()
+    commands = [row[1] for row in calls if row[0] == 'command']
+    assert any("action='install'" in c for c in commands)
+    assert any(row[0] == 'enable_remote_release_drain' for row in calls)
+    assert any("action='rollback'" in c for c in commands) == bool(failure)
+    assert any(row[0] == 'release_release_lock' for row in calls) == (failure != 'rollback')
+    if failure == 'rollback':
+        assert not any(row[:2] == ('set_remote_release_drain', False) for row in calls)
+
+
 def test_collect_archives_terminal_error_without_polling_or_resubmitting(tmp_path, monkeypatch):
     state = tmp_path / "state.json"
     state.write_text(json.dumps({"job_id": "known", "cookie": "test", "submit_attempts": 1}), encoding="utf-8")

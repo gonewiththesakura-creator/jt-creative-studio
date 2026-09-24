@@ -10,6 +10,8 @@ API 生图默认使用 `DREAMAPI_CONNECTION_MODE=direct`：浏览器创建面板
 
 上述能力需发布代码后才能切换环境配置；文档中的地址不是线上已切换的声明。切换前确认端口映射、原 Key 的只读模型查询及无在途任务，切换后核对实际进程环境与健康状态。
 
+迁移后的工作流来源检查：原始 JSON 可通过 `JT_WORKFLOW_SOURCES` 指定目录，默认查找 `audit/workflow_sources`。有原文件时继续检查实际 SHA256；原文件缺失时，要求整条工作流配置与已验收提交 `5069b11` 完全一致。这只证明本次没有改变已验收配置，不代表重新验证或恢复了原始工作流来源。变更工作流必须先补齐原文件。
+
 本地 ComfyUI 的隧道与守护程序仍保留。需要退回旧 API 转发线路时，维护者可显式设置 `DREAMAPI_CONNECTION_MODE=workstation`，并配置原 `DREAMAPI_EGRESS_URL`。仅留下旧 EGRESS 环境变量不会改变新默认线路。
 
 ## 错误与恢复

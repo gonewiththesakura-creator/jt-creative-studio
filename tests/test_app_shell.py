@@ -15,7 +15,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_packaging_preserves_business_functions_and_backend_contracts():
     subprocess.run(['node','frontend/verify-contracts.mjs'],cwd=ROOT,check=True,capture_output=True)
-    baseline=subprocess.check_output(['git','show','4035030:server.py'],cwd=ROOT).decode('utf8')
+    # Reviewed same-host transport change; keep the rest of the backend frozen.
+    baseline=subprocess.check_output(['git','show','41d2e7479bed751c457f7535f1994eae00ebae76:server.py'],cwd=ROOT).decode('utf8')
     current_source=(ROOT/'server.py').read_text(encoding='utf8')
     def business(source):
         tree=ast.parse(source)

@@ -2,6 +2,7 @@ import hashlib
 import json
 import os
 import subprocess
+import pytest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -96,7 +97,7 @@ def test_all_active_run_ids_are_unique_and_match_fingerprint_audit():
     assert all(next(iter(score.values())) == "5/5" for score in fingerprint["scores"].values())
 
 
-def test_all_active_private_workflows_have_exact_ids_and_source_hashes():
+def test_workflows_match_originals_or_unchanged_accepted_config():
     accepted = json.loads(subprocess.check_output(
         ['git', 'show', ACCEPTED_CONFIG_COMMIT + ':config.json'], cwd=ROOT))
     accepted_by_id = {item['id']: item for item in accepted['workflows']}
@@ -118,6 +119,22 @@ def test_all_active_private_workflows_have_exact_ids_and_source_hashes():
                     'Original workflow source missing; changed workflow requires '
                     'restoring originals through JT_WORKFLOW_SOURCES')
                 assert item[field] == accepted_by_id[internal_id][field]
+
+
+def test_missing_originals_do_not_allow_changed_workflow(monkeypatch, tmp_path):
+    changed = dict(BY_ID)
+    changed['realism_krea2'] = dict(BY_ID['realism_krea2'], name='changed without source')
+    monkeypatch.setitem(globals(), 'BY_ID', changed)
+    monkeypatch.setitem(globals(), 'ATTACHMENTS', tmp_path)
+    with pytest.raises(AssertionError, match='Original workflow source missing'):
+        test_workflows_match_originals_or_unchanged_accepted_config()
+
+
+def test_available_original_with_wrong_hash_is_not_replaced_by_fallback(monkeypatch, tmp_path):
+    (tmp_path / SOURCES['realism_krea2']['editor']).write_text('{}', encoding='utf-8')
+    monkeypatch.setitem(globals(), 'ATTACHMENTS', tmp_path)
+    with pytest.raises(AssertionError):
+        test_workflows_match_originals_or_unchanged_accepted_config()
 
 
 def test_multisample_uses_trusted_plus_instance_after_verified_default_vram_oom():
