@@ -1,9 +1,13 @@
 import hashlib
 import json
+import os
+import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-ATTACHMENTS = Path(r"C:/Users/JT/AppData/Local/hermes/attachments")
+ATTACHMENTS = Path(os.environ.get('JT_WORKFLOW_SOURCES', str(ROOT / 'audit' / 'workflow_sources')))
+# Missing originals cannot re-prove provenance; require unchanged accepted data.
+ACCEPTED_CONFIG_COMMIT = '5069b11a3e5213a89dea3aad4e4bd0e4480face5'
 CONFIG = json.loads((ROOT / "config.json").read_text(encoding="utf-8"))
 BY_ID = {item["id"]: item for item in CONFIG["workflows"]}
 
@@ -93,6 +97,9 @@ def test_all_active_run_ids_are_unique_and_match_fingerprint_audit():
 
 
 def test_all_active_private_workflows_have_exact_ids_and_source_hashes():
+    accepted = json.loads(subprocess.check_output(
+        ['git', 'show', ACCEPTED_CONFIG_COMMIT + ':config.json'], cwd=ROOT))
+    accepted_by_id = {item['id']: item for item in accepted['workflows']}
     assert set(SOURCES).issubset(BY_ID)
     for internal_id, source in SOURCES.items():
         item = BY_ID[internal_id]
@@ -101,8 +108,16 @@ def test_all_active_private_workflows_have_exact_ids_and_source_hashes():
         assert item["rh_workflow_id"] == source["run_id"]
         assert item["source_editor_workflow_id"] == source["editor_id"]
         assert item["rh_schema_complete"] is True
-        assert item["source_editor_json_sha256"] == sha(ATTACHMENTS / source["editor"])
-        assert item["source_api_json_sha256"] == sha(ATTACHMENTS / source["api"])
+        for kind in ('editor', 'api'):
+            original = ATTACHMENTS / source[kind]
+            field = 'source_' + kind + '_json_sha256'
+            if original.is_file():
+                assert item[field] == sha(original)
+            else:
+                assert item == accepted_by_id[internal_id], (
+                    'Original workflow source missing; changed workflow requires '
+                    'restoring originals through JT_WORKFLOW_SOURCES')
+                assert item[field] == accepted_by_id[internal_id][field]
 
 
 def test_multisample_uses_trusted_plus_instance_after_verified_default_vram_oom():

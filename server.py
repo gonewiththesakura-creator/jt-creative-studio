@@ -2316,9 +2316,12 @@ def _dreamapi_request_endpoint():
         raise ValueError("invalid DreamAPI connection mode")
     if DREAMAPI_CONNECTION_MODE == "direct":
         parsed = urllib.parse.urlparse(DREAMAPI_BASE_URL)
-        if (parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password
+        loopback_http = parsed.scheme == "http" and parsed.hostname in {"127.0.0.1", "::1"}
+        if (parsed.scheme != "https" and not loopback_http or not parsed.hostname or parsed.username or parsed.password
                 or parsed.query or parsed.fragment or parsed.path not in {"", "/v1"}):
-            raise ValueError("DreamAPI direct base must be an HTTPS origin or /v1 base")
+            raise ValueError("DreamAPI direct base must be HTTPS or numeric loopback HTTP, with optional /v1")
+        # Validate the configured port before admitting a billable request.
+        parsed.port
         return DREAMAPI_BASE_URL.removesuffix("/v1") + "/v1/images/generations"
     if not DREAMAPI_EGRESS_URL:
         raise ValueError("DreamAPI workstation endpoint is not configured")
@@ -2441,7 +2444,18 @@ def _dreamapi_request_json(request, data, timeout):
 
     def worker():
         try:
-            with _urlopen_bounded(request, data, timeout) as response:
+            endpoint = urllib.parse.urlparse(request.full_url) if isinstance(request, urllib.request.Request) else None
+            if endpoint and endpoint.scheme == "http" and endpoint.hostname in {"127.0.0.1", "::1"}:
+                # A same-host upstream must not inherit an outbound proxy or
+                # redirect the authenticated request outside the loopback service.
+                class NoRedirect(urllib.request.HTTPRedirectHandler):
+                    def redirect_request(self, req, fp, code, msg, headers, newurl):
+                        return None
+                opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
+                response_context = opener.open(request, data, timeout=timeout)
+            else:
+                response_context = _urlopen_bounded(request, data, timeout)
+            with response_context as response:
                 box["result"] = _dreamapi_read_json(response)
         except urllib.error.HTTPError as error:
             raw = error.read(8192)

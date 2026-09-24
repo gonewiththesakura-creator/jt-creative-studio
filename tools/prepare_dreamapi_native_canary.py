@@ -112,7 +112,7 @@ def _head_and_payloads():
     return head, files, release.release_payloads_from_head(files, head)
 
 
-def candidate_launch_command(root, unit, candidate_key=False, connection_mode="workstation"):
+def candidate_launch_command(root, unit, candidate_key=False, connection_mode="workstation", internal_service=False):
     if connection_mode not in {"direct", "workstation"}:
         raise ValueError("invalid canary connection mode")
     return [
@@ -126,6 +126,7 @@ def candidate_launch_command(root, unit, candidate_key=False, connection_mode="w
         "PANEL_DIR=" + root + "/data", "PANEL_RELEASE_DRAIN_ON_START=0",
         "DREAMAPI_EGRESS_URL=http://127.0.0.1:8198/dreamapi/images/generations",
         "DREAMAPI_CONNECTION_MODE=" + connection_mode,
+        *(["DREAMAPI_BASE_URL=http://127.0.0.1:8080/v1"] if internal_service else []),
         "/usr/bin/python3", root + "/server.py",
     ]
 
@@ -187,7 +188,8 @@ def prepare(args):
                 raise RuntimeError("invalid candidate key format")
             _upload(sftp, root + "/dreamapi-canary.env", ("DREAMAPI_KEY=" + key + "\n").encode(), 0o600)
         connection_mode = getattr(args, "connection_mode", "workstation")
-        command = candidate_launch_command(root, unit, candidate_key, connection_mode)
+        command = candidate_launch_command(root, unit, candidate_key, connection_mode,
+                                           getattr(args, "internal_service", False))
         release.command(client, " ".join(shlex.quote(item) for item in command))
         deadline = time.time() + 30
         health = None
@@ -221,6 +223,7 @@ def prepare(args):
             "remote_root": root, "unit": unit, "port": CANARY_PORT,
             "contract_sha256": health.get("dreamapi_contract_sha256"),
             "connection_mode": connection_mode,
+            "internal_service": bool(getattr(args, "internal_service", False)),
             "model": getattr(args, "model", "gpt-image-2.5-flare"),
             "prepared_at": time.time(),
         }
@@ -343,6 +346,7 @@ def main(argv=None):
     parser.add_argument("--output", default=str(DEFAULT_OUTPUT))
     parser.add_argument("--dreamapi-key-file", help="private local key file, used only by the isolated candidate")
     parser.add_argument("--connection-mode", choices=("direct", "workstation"), default="workstation")
+    parser.add_argument("--internal-service", action="store_true", help="use the same-host Sub2API port 8080")
     parser.add_argument("--model", choices=("gpt-image-2", "gpt-image-2.5-flare"), default="gpt-image-2.5-flare")
     args = parser.parse_args(argv)
     if args.mode == "prepare":

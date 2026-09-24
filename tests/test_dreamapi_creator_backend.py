@@ -34,6 +34,69 @@ def test_direct_mode_ignores_legacy_workstation_route(monkeypatch):
     assert server._dreamapi_request_endpoint() == "https://example.test/v1/images/generations"
 
 
+@pytest.mark.parametrize("base", ["http://127.0.0.1:8080", "http://[::1]:8080/v1"])
+def test_direct_mode_accepts_numeric_loopback(monkeypatch, base):
+    monkeypatch.setattr(server, "DREAMAPI_CONNECTION_MODE", "direct")
+    monkeypatch.setattr(server, "DREAMAPI_BASE_URL", base)
+    assert server._dreamapi_request_endpoint() == base.removesuffix('/v1') + '/v1/images/generations'
+
+
+@pytest.mark.parametrize("base", [
+    "http://example.test", "http://localhost:8080", "http://10.0.0.1:8080",
+    "http://127.0.0.1.example.test:8080", "http://user@127.0.0.1:8080",
+    "http://127.0.0.1:8080/other", "http://127.0.0.1:8080?x=1",
+    "http://127.0.0.1:8080#fragment", "http://127.0.0.1:99999",
+])
+def test_direct_mode_rejects_non_loopback_http_and_invalid_bases(monkeypatch, base):
+    monkeypatch.setattr(server, "DREAMAPI_CONNECTION_MODE", "direct")
+    monkeypatch.setattr(server, "DREAMAPI_BASE_URL", base)
+    with pytest.raises(ValueError):
+        server._dreamapi_request_endpoint()
+
+
+@pytest.mark.parametrize("status", [200, 302, 307])
+def test_loopback_transport_bypasses_proxy_and_never_follows_redirects(monkeypatch, status):
+    import http.server
+    import threading
+    import urllib.request
+    calls = []
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):
+            calls.append((self.path, self.headers.get('Authorization'),
+                          self.rfile.read(int(self.headers['Content-Length']))))
+            self.send_response(status)
+            self.send_header('Location', '/must-not-follow')
+            self.end_headers()
+            self.wfile.write(b'{"data": []}')
+        def do_GET(self):
+            calls.append(('unexpected-redirect',))
+            self.send_response(500)
+            self.end_headers()
+        def log_message(self, *args):
+            pass
+    stub = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+    thread = threading.Thread(target=stub.serve_forever, daemon=True)
+    thread.start()
+    monkeypatch.setenv('http_proxy', 'http://127.0.0.1:1')
+    monkeypatch.setenv('no_proxy', '')
+    monkeypatch.setattr(server, '_urlopen_bounded', lambda *a: pytest.fail('must use isolated loopback opener'))
+    request = urllib.request.Request(
+        f'http://127.0.0.1:{stub.server_port}/v1/images/generations',
+        headers={'Authorization': 'Bearer local-fixture'}, method='POST')
+    try:
+        if status == 200:
+            assert server._dreamapi_request_json(request, b'{}', 3) == {'data': []}
+        else:
+            with pytest.raises(server.DreamAPIHTTPError) as error:
+                server._dreamapi_request_json(request, b'{}', 3)
+            assert error.value.status == status
+        assert calls == [('/v1/images/generations', 'Bearer local-fixture', b'{}')]
+    finally:
+        stub.shutdown()
+        stub.server_close()
+        thread.join(3)
+
+
 def test_direct_health_does_not_depend_on_workstation(monkeypatch):
     monkeypatch.setattr(server, "DREAMAPI_CONNECTION_MODE", "direct", raising=False)
     monkeypatch.setattr(server, "DREAMAPI_KEY", "fixture")

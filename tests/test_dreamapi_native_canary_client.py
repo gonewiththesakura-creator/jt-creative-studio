@@ -57,6 +57,14 @@ def test_candidate_key_is_loaded_from_private_env_file_never_command_line():
     assert not any('DREAMAPI_KEY=' in item for item in command)
 
 
+def test_internal_canary_uses_host_service_without_changing_credentials():
+    command = PREPARE.candidate_launch_command('/tmp/candidate', 'fixture',
+                                              connection_mode='direct', internal_service=True)
+    assert 'DREAMAPI_BASE_URL=http://127.0.0.1:8080/v1' in command
+    assert 'DREAMAPI_CONNECTION_MODE=direct' in command
+    assert not any('DREAMAPI_KEY=' in item for item in command)
+
+
 def test_collect_archives_terminal_error_without_polling_or_resubmitting(tmp_path, monkeypatch):
     state = tmp_path / "state.json"
     state.write_text(json.dumps({"job_id": "known", "cookie": "test", "submit_attempts": 1}), encoding="utf-8")

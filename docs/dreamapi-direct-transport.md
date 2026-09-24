@@ -6,6 +6,10 @@ API 生图默认使用 `DREAMAPI_CONNECTION_MODE=direct`：浏览器创建面板
 
 `DREAMAPI_BASE_URL` 支持 HTTPS 域名根路径或末尾 `/v1`，不会重复拼接版本路径。保持原 DreamAPI 账号、Key、模型选择、尺寸和质量参数。`size`、`quality` 是传给供应商的请求值；供应商若返回不同尺寸或质量，仍记录实际值，不能保证供应商严格遵循请求。最终画布按用户选择保存。
 
+同机部署 Sub2API 时，也支持显式配置 `DREAMAPI_BASE_URL=http://127.0.0.1:8080/v1`（或 IPv6 数字回环地址）。该线路直接连接服务器本机服务，不经过公网域名或 Nginx；不依赖 Windows 或 ComfyUI。只有数字回环地址允许 HTTP，其他地址仍要求 HTTPS。同机 HTTP 请求忽略环境代理、拒绝重定向，保留现有 Bearer 鉴权、600 秒总等待上限、不自动重试及账本不确定性保护。容器内服务名 `sub2api` 不适用于运行在宿主机上的面板。
+
+上述能力需发布代码后才能切换环境配置；文档中的地址不是线上已切换的声明。切换前确认端口映射、原 Key 的只读模型查询及无在途任务，切换后核对实际进程环境与健康状态。
+
 本地 ComfyUI 的隧道与守护程序仍保留。需要退回旧 API 转发线路时，维护者可显式设置 `DREAMAPI_CONNECTION_MODE=workstation`，并配置原 `DREAMAPI_EGRESS_URL`。仅留下旧 EGRESS 环境变量不会改变新默认线路。
 
 ## 错误与恢复
