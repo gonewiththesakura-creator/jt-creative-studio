@@ -1531,6 +1531,32 @@ def reviewed_transparent_host_patch(tested_commit, current_head, current_digest)
         return False
 
 
+def reviewed_video_duration_patch(tested_commit, current_head):
+    """Reuse image evidence only for this pinned, offline-tested video form change.
+
+    This is not evidence of a new paid video run. All image/backend runtime
+    files remain byte-identical to the actual image canary.
+    """
+    if tested_commit != '41d2e7479bed751c457f7535f1994eae00ebae76':
+        return False
+    try:
+        if git_runtime_payload_sha256(current_head, files=NATIVE_RUNTIME_PAYLOAD_FILES) != '0887e89005883005aeb4d4aa22ce21306af47f75efa4bafb4c26f5044f53ef67':
+            return False
+        frontend = tuple(p for p in RELEASE_RELATIVE_PATHS if p.startswith('static/assets/') or p in ('static/app.html', 'static/app-manifest.json'))
+        if git_runtime_payload_sha256(current_head, files=frontend) != '7f46f20db6cf35db1e9346cc7f3954e017eb140c45e2bead42aa220fd16fe8f5':
+            return False
+        for path in NATIVE_RUNTIME_PAYLOAD_FILES:
+            if path == 'static/video.html':
+                continue
+            before = subprocess.check_output(['git', 'show', tested_commit + ':' + path], cwd=BASE)
+            after = subprocess.check_output(['git', 'show', current_head + ':' + path], cwd=BASE)
+            if before != after:
+                return False
+        return True
+    except Exception:
+        return False
+
+
 def validate_native_dreamapi_evidence():
     """Require reviewed native-media evidence for the exact current runtime bytes."""
     try:
@@ -1554,7 +1580,8 @@ def validate_native_dreamapi_evidence():
         current_head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=BASE, text=True).strip()
         current = git_runtime_payload_sha256(current_head, files=NATIVE_RUNTIME_PAYLOAD_FILES)
         unchanged_generation = (current == expected or reviewed_error_presentation_patch(commit, current_head, current)
-                                or reviewed_singularity_patch(commit, current_head, current))
+                                or reviewed_singularity_patch(commit, current_head, current)
+                                or reviewed_video_duration_patch(commit, current_head))
         if payload != {"format": "framed-v1", "files": list(NATIVE_RUNTIME_PAYLOAD_FILES), "sha256": expected} or not unchanged_generation:
             errors.append("native DreamAPI runtime payload drift")
         if subprocess.run(["git", "merge-base", "--is-ancestor", commit, current_head], cwd=BASE, capture_output=True).returncode:
@@ -1574,7 +1601,8 @@ def validate_native_dreamapi_evidence():
             current_frontend = git_runtime_payload_sha256(current_head, files=frontend_files)
             if (frontend != {"format": "framed-v1", "sha256": tested_frontend}
                     or (current_frontend != tested_frontend and not
-                        reviewed_transparent_host_patch(commit, current_head, current_frontend))
+                        (reviewed_transparent_host_patch(commit, current_head, current_frontend)
+                         or reviewed_video_duration_patch(commit, current_head)))
                     or subprocess.run(["git", "diff", "--quiet", "HEAD", "--", *frontend_files],
                                       cwd=BASE, capture_output=True).returncode):
                 errors.append("native DreamAPI frontend payload drift")
