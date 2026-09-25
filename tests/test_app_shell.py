@@ -78,11 +78,14 @@ def test_shadow_hosts_reveal_persistent_canvas():
     with sync_playwright() as p:
         browser=p.chromium.launch(headless=True,args=['--use-angle=swiftshader','--enable-unsafe-swiftshader'])
         page=browser.new_page(viewport={'width':1440,'height':900})
+        # This checks canvas visibility, not animation throughput. Pause before
+        # the first frame so software WebGL cannot starve navigation/clicks.
+        page.add_init_script("localStorage.setItem('jt-singularity-paused','true')")
         requests=serve_page(page)
         try:
             page.goto('http://fixture.test/')
             page.wait_for_function("document.body.dataset.singularity === 'ready'",timeout=60000)
-            page.locator('#singularityMotion').click()
+            expect(page.locator('#singularityMotion')).to_have_attribute('aria-pressed','true')
             for route in ('/','/realism','/video','/'):
                 page.locator(f'body > .app-shell > .topbar a[href="{route}"]').click()
                 page.wait_for_function('document.body.dataset.page === '+json.dumps(route))
