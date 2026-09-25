@@ -9,6 +9,27 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_source_duration_rounding_limits_manual_edits_and_stale_results():
+    source = (ROOT / 'sources/video_business.js').read_text(encoding='utf8')
+    helper = source[source.index('function detectSourceDuration('):source.index('function paramDefault(')]
+    harness = r'''
+const assert=require('node:assert/strict');
+let cur={id:'h3_edit_n',rh_params:{duration:{min:4,max:15,step:1}}},renderVersion=1;
+const input={value:'5'},note={textContent:''};
+const document={getElementById:id=>id==='param_duration'?input:note};
+const setTimeout=()=>1,clearTimeout=()=>{};
+function fixture(seconds,state={files:{}}){const file={},events={};state.files.source_video=file;const media={duration:seconds,addEventListener:(name,fn)=>events[name]=fn};detectSourceDuration(media,'source_video',file,{},state);return{state,events};}
+let a=fixture(7.6);a.events.loadedmetadata();assert.equal(input.value,8);
+a=fixture(2);a.events.loadedmetadata();assert.equal(input.value,4);
+a=fixture(20);a.events.loadedmetadata();assert.equal(input.value,15);
+a=fixture(Infinity);input.value='6';a.events.loadedmetadata();assert.equal(input.value,'6');assert.match(note.textContent,/手动填写/);
+a=fixture(9);a.state.durationSelection.manual=true;input.value='12';a.events.loadedmetadata();assert.equal(input.value,'12');
+a=fixture(9);const b=fixture(6,a.state);b.events.loadedmetadata();a.events.loadedmetadata();assert.equal(input.value,6);
+a=fixture(10);renderVersion++;input.value='5';a.events.loadedmetadata();assert.equal(input.value,'5');
+'''
+    subprocess.run(['node', '-e', helper + '\n' + harness], cwd=ROOT, check=True, capture_output=True)
+
+
 def test_video_upload_client_preflights_files_and_releases_replaced_local_preview_url():
     """Catches accidental Base64-era uploads that have no local preview lifecycle."""
     source = (ROOT / "sources" / "video_business.js").read_text(encoding="utf8")
