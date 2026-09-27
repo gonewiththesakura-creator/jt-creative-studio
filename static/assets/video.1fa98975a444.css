@@ -160,9 +160,9 @@
 #taskList .task-card{display:block;min-width:0;margin:0;padding:0;border:0;background:transparent;box-shadow:none}
 .task-tile{position:relative;display:block;width:100%;aspect-ratio:16/10;padding:0;overflow:hidden;border:1px solid #ffffff24;border-radius:10px;background:#181a20;color:#c6c3be;cursor:pointer}
 .task-tile:hover,.task-tile:focus-visible{border-color:#d2b986;outline:2px solid #d2b98644;outline-offset:2px}
-.task-picture{display:grid;place-items:center;width:100%;height:100%;font-size:26px;background:linear-gradient(135deg,#24272e,#13151a)}
-.task-picture img{display:block;width:100%;height:100%;object-fit:cover}
-.task-picture small{position:absolute;top:6px;right:6px;font-size:9px;padding:2px 5px;border-radius:4px;background:#0009;color:#ddd}
+.task-picture{position:absolute;inset:0 0 28px;display:grid;place-items:center;min-height:0;font-size:26px;background:#202127}
+.task-picture img{display:block;width:100%;height:100%;min-height:0;object-fit:contain}
+.task-picture small{position:absolute;bottom:-22px;right:6px;font-size:9px;color:#aaa}
 .task-badge{position:absolute;bottom:6px;left:6px;padding:4px 7px;border-radius:5px;background:#151820e8;color:#d6d8df;font-size:11px;font-weight:600;line-height:1.3}
 .task-card[data-status=done] .task-badge{background:#163c30ed;color:#b8eed4}
 .task-card[data-status=running] .task-badge,.task-card[data-status=recovering] .task-badge{background:#263a59ed;color:#c6dfff}
@@ -173,10 +173,14 @@
 .media-gallery{display:flex;flex-direction:column;gap:10px;margin-bottom:18px}
 .gallery-viewer{position:relative;min-width:0}
 .gallery-navigation{position:absolute;inset:0;pointer-events:none;display:flex;align-items:center;justify-content:space-between;padding:0 12px}
-.gallery-navigation .gallery-nav{pointer-events:auto;width:38px;height:60px;min-height:0;display:grid;place-items:center;padding:0;border:1px solid #ffffff50;border-radius:15px;background:#c7c7d229;color:#fff;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);box-shadow:0 3px 12px #0004;font-size:32px;font-weight:300;cursor:pointer;text-shadow:0 1px 3px #0008}
-.gallery-navigation .gallery-nav:hover{background:#d6d6e055}.gallery-navigation .gallery-nav:disabled{opacity:.22;cursor:default}
+.gallery-navigation .gallery-nav{position:relative;pointer-events:auto;width:44px;height:44px;min-height:0;padding:0;border:0;border-radius:50%;background:transparent;color:#f5f1e9;box-shadow:none;font-size:0;cursor:pointer;opacity:.72;transition:opacity .15s ease}
+.gallery-navigation .gallery-nav::after{content:"";position:absolute;inset:5px;border:1px solid #ffffff26;border-radius:50%;background:#d5cfbf14;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);box-shadow:0 2px 8px #0002}
+.gallery-navigation .gallery-nav::before{content:"";position:absolute;z-index:1;top:18px;left:20px;width:7px;height:7px;border-left:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(45deg)}
+.gallery-navigation #galleryNext::before{left:17px;transform:rotate(225deg)}
+.gallery-navigation .gallery-nav:hover,.gallery-navigation .gallery-nav:focus-visible{opacity:1}.gallery-navigation .gallery-nav:hover::after{background:#d5cfbf2b}.gallery-navigation .gallery-nav:disabled{visibility:hidden;pointer-events:none}
 .gallery-main{min-height:260px}.gallery-main video,.gallery-main img{max-width:100%;max-height:52vh;min-height:0}.gallery-thumbs{min-height:0;flex-shrink:0}.gallery-thumb{height:54px;flex-basis:70px}.gallery-actions .dl{margin:0}
-@media(max-width:600px){.task-grid{grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px}.gallery-navigation{padding:0 8px}.gallery-navigation .gallery-nav{width:32px;height:52px}.task-panel-head{gap:8px;flex-wrap:wrap}}
+.gallery-thumb img{object-fit:contain;background:#202127}.gallery-thumb{background:#202127}
+@media(max-width:600px){.task-grid{grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px}.gallery-navigation{padding:0 4px}.task-panel-head{gap:8px;flex-wrap:wrap}}
 
 /* SINGULARITY — the competition black-hole scene, fitted to the real workbench. */
 :host{background:#030407;color-scheme:dark}

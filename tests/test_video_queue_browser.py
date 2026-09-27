@@ -65,6 +65,16 @@ def test_completed_results_auto_appear_without_reloading_player(browser, tmp_pat
     sample=page.evaluate('''async()=>{const c=document.createElement('canvas');c.width=320;c.height=180;const x=c.getContext('2d'),g=x.createLinearGradient(0,0,320,180);g.addColorStop(0,'#638ca2');g.addColorStop(1,'#202d46');x.fillStyle=g;x.fillRect(0,0,320,180);x.fillStyle='#e7d3aa';x.beginPath();x.arc(240,50,24,0,7);x.fill();x.fillStyle='#162a35';x.beginPath();x.moveTo(0,180);x.lineTo(125,55);x.lineTo(250,180);x.fill();const png=c.toDataURL('image/png').split(',')[1],stream=c.captureStream(10),rec=new MediaRecorder(stream,{mimeType:'video/webm'}),parts=[];rec.ondataavailable=e=>parts.push(e.data);const done=new Promise(r=>rec.onstop=r);rec.start();await new Promise(r=>setTimeout(r,350));rec.stop();await done;stream.getTracks().forEach(t=>t.stop());const bytes=new Uint8Array(await new Blob(parts).arrayBuffer());return {png,video:btoa(String.fromCharCode(...bytes))}}''')
     page.route('**/sample.mp4',lambda r:r.fulfill(body=base64.b64decode(sample['video']),content_type='video/webm'))
     page.route('**/sample.png',lambda r:r.fulfill(body=base64.b64decode(sample['png']),content_type='image/png'))
+    source_path='/api/video-thumbnail/playing/'+'a'*32+'.jpg'
+    jobs[0]['thumbnails']={'source_video':source_path}
+    # Portrait source with visible edges must remain intact after a black frame decodes.
+    import io
+    from PIL import Image, ImageDraw
+    portrait=Image.new('RGB',(90,160),'#718b9c');draw=ImageDraw.Draw(portrait)
+    draw.rectangle((0,0,89,159),outline='#f9ce80',width=5)
+    draw.ellipse((28,22,62,56),fill='#ecd4af');draw.rectangle((25,62,65,145),fill='#b7c5b5')
+    data=io.BytesIO();portrait.save(data,format='JPEG')
+    page.route('**'+source_path,lambda r:r.fulfill(body=data.getvalue(),content_type='image/jpeg'))
     def detail(route):
         key=route.request.url.rsplit('/',1)[-1];detail_requests.append(key)
         route.fulfill(json=dict(id=key,images=[dict(url='/sample.'+('mp4' if key=='playing' else 'png'),file=key,file_type='video' if key=='playing' else 'image')]))
@@ -89,6 +99,13 @@ def test_completed_results_auto_appear_without_reloading_player(browser, tmp_pat
         expect(page.locator('#galleryMain img')).to_have_js_property('naturalWidth',320)
         page.locator('#galleryPrev').click()
         expect(page.locator('#galleryMain video')).to_have_count(1)
+        page.locator('#galleryMain video').evaluate("el=>{el.dispatchEvent(new Event('loadeddata'))}")
+        source_tile=page.locator('[data-job-id=playing] .task-picture img')
+        expect(source_tile).to_have_attribute('src',source_path)
+        expect(page.locator('.gallery-thumb').first.locator('img')).to_have_attribute('src',source_path)
+        expect(source_tile).to_have_js_property('naturalWidth',90)
+        for thumbnail in [source_tile,page.locator('.gallery-thumb').first.locator('img')]:
+            assert thumbnail.evaluate("el=>getComputedStyle(el).objectFit")=='contain'
         box=page.locator('#galleryMain').bounding_box();nav=page.locator('#galleryNext').bounding_box()
         assert box['y']<nav['y']<box['y']+box['height']
         page.locator('[data-job-id=failed] .task-tile').hover()
