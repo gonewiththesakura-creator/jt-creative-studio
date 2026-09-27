@@ -1,0 +1,488 @@
+{
+  "216": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "minimax_h3_video_vae_fp16.safetensors"
+    },
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "217": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "minimax_h3_audio_vae_fp32.safetensors"
+    },
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "218": {
+    "class_type": "VAEDecodeAudio",
+    "inputs": {
+      "vae": [
+        "217",
+        0
+      ],
+      "samples": [
+        "226",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "VAE Decode Audio"
+    }
+  },
+  "219": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "vae": [
+        "216",
+        0
+      ],
+      "samples": [
+        "226",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "220": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+      "sampler_name": "euler"
+    },
+    "_meta": {
+      "title": "KSamplerSelect"
+    }
+  },
+  "221": {
+    "class_type": "BasicGuider",
+    "inputs": {
+      "conditioning": [
+        "225",
+        0
+      ],
+      "model": [
+        "285",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Basic Guider"
+    }
+  },
+  "222": {
+    "class_type": "RandomNoise",
+    "inputs": {
+      "noise_seed": 403030338371891
+    },
+    "_meta": {
+      "title": "RandomNoise"
+    }
+  },
+  "223": {
+    "class_type": "CreateVideo",
+    "inputs": {
+      "images": [
+        "272",
+        0
+      ],
+      "fps": [
+        "250",
+        0
+      ],
+      "audio": [
+        "275",
+        2
+      ],
+      "bit_depth": 8
+    },
+    "_meta": {
+      "title": "Create Video"
+    }
+  },
+  "224": {
+    "class_type": "BasicScheduler",
+    "inputs": {
+      "scheduler": "beta",
+      "denoise": 1,
+      "model": [
+        "285",
+        0
+      ],
+      "steps": 10
+    },
+    "_meta": {
+      "title": "BasicScheduler"
+    }
+  },
+  "225": {
+    "class_type": "MiniMaxH3ReferenceToVideo",
+    "inputs": {
+      "ref_images.ref_image_0": [
+        "293",
+        0
+      ],
+      "ref_videos.ref_video_1": [
+        "276",
+        0
+      ],
+      "width": [
+        "276",
+        1
+      ],
+      "length": [
+        "237",
+        1
+      ],
+      "vae": [
+        "216",
+        0
+      ],
+      "prompt": [
+        "243",
+        0
+      ],
+      "ref_image_size": "match",
+      "audio_vae": [
+        "217",
+        0
+      ],
+      "clip": [
+        "238",
+        0
+      ],
+      "height": [
+        "276",
+        2
+      ]
+    },
+    "_meta": {
+      "title": "MiniMax H3 Reference to Video"
+    }
+  },
+  "226": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+      "guider": [
+        "221",
+        0
+      ],
+      "latent_image": [
+        "225",
+        1
+      ],
+      "noise": [
+        "222",
+        0
+      ],
+      "sigmas": [
+        "224",
+        0
+      ],
+      "sampler": [
+        "220",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "SamplerCustomAdvanced"
+    }
+  },
+  "227": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "weight_dtype": "default",
+      "unet_name": "10Eros_Max_h3_TURBO-hybrid_beta3_int8_convrot_skip_edges.safetensors"
+    },
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "228": {
+    "class_type": "SaveVideo",
+    "inputs": {
+      "codec": "auto",
+      "filename_prefix": "video/MiniMax_H3",
+      "fw_video_preview": "",
+      "format": "auto",
+      "video": [
+        "223",
+        0
+      ],
+      "video-preview": ""
+    },
+    "_meta": {
+      "title": "输出=配图视频"
+    }
+  },
+  "237": {
+    "class_type": "ComfyMathExpression",
+    "inputs": {
+      "expression": "max(5, round(a * b)) + (5 - (max(5, round(a * b)) % 17)) % 17",
+      "values.b": [
+        "250",
+        0
+      ],
+      "values.a": [
+        "247",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Math Expression"
+    }
+  },
+  "238": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "qwen3vl_32b_minimax_h3_int8_convrot.safetensors",
+      "type": "minimax",
+      "device": "default"
+    },
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "243": {
+    "class_type": "easy positive",
+    "inputs": {
+      "positive": [
+        "256",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Positive"
+    }
+  },
+  "244": {
+    "class_type": "Text",
+    "inputs": {
+      "text": "保持原视频动作和构图，参考上传图片进行编辑。"
+    },
+    "_meta": {
+      "title": "输入=当前镜头-提示词2"
+    }
+  },
+  "247": {
+    "class_type": "PrimitiveFloat",
+    "inputs": {
+      "value": 12
+    },
+    "_meta": {
+      "title": "输入时长=当前镜头-镜头其它2"
+    }
+  },
+  "250": {
+    "class_type": "PrimitiveFloat",
+    "inputs": {
+      "value": 24
+    },
+    "_meta": {
+      "title": "fps"
+    }
+  },
+  "251": {
+    "class_type": "Int",
+    "inputs": {
+      "value": 436
+    },
+    "_meta": {
+      "title": "输入=自定义-自定义-图生视频最短边"
+    }
+  },
+  "256": {
+    "class_type": "MemoryCleaner",
+    "inputs": {
+      "clean_intensity": 3,
+      "unload": true,
+      "anything": [
+        "244",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "显存内存清理器"
+    }
+  },
+  "272": {
+    "class_type": "GetImageSizeAndCount",
+    "inputs": {
+      "image": [
+        "219",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Get Image Size & Count"
+    }
+  },
+  "275": {
+    "class_type": "VHS_LoadVideo",
+    "inputs": {
+      "custom_height": 0,
+      "force_rate": [
+        "281",
+        0
+      ],
+      "custom_width": 0,
+      "select_every_nth": 1,
+      "frame_load_cap": [
+        "237",
+        1
+      ],
+      "format": "AnimateDiff",
+      "video": "source.mp4",
+      "skip_first_frames": 0,
+      "force_size": "Disabled"
+    },
+    "_meta": {
+      "title": "输入=当前镜头-参考视频"
+    }
+  },
+  "276": {
+    "class_type": "GetImageSizeAndCount",
+    "inputs": {
+      "image": [
+        "282",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Get Image Size & Count"
+    }
+  },
+  "279": {
+    "class_type": "CreateVideo",
+    "inputs": {
+      "fps": [
+        "280",
+        0
+      ],
+      "audio": [
+        "275",
+        2
+      ],
+      "bit_depth": 8
+    },
+    "_meta": {
+      "title": "Create Video"
+    }
+  },
+  "280": {
+    "class_type": "VideoInfoLoaded",
+    "inputs": {
+      "video": [
+        "275",
+        3
+      ]
+    },
+    "_meta": {
+      "title": "VideoInfoLoaded"
+    }
+  },
+  "281": {
+    "class_type": "CM_FloatToInt",
+    "inputs": {
+      "a": [
+        "250",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "FloatToInt"
+    }
+  },
+  "282": {
+    "class_type": "LayerUtility: ImageScaleByAspectRatio V2",
+    "inputs": {
+      "fit": "letterbox",
+      "aspect_ratio": "original",
+      "image": [
+        "275",
+        0
+      ],
+      "method": "lanczos",
+      "background_color": "#000000",
+      "round_to_multiple": "32",
+      "scale_to_side": "shortest",
+      "proportional_height": 1,
+      "proportional_width": 1,
+      "scale_to_length": [
+        "251",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "LayerUtility: ImageScaleByAspectRatio V2"
+    }
+  },
+  "284": {
+    "class_type": "MiniMaxH3MemoryEfficientSageAttentionPatch",
+    "inputs": {
+      "model": [
+        "227",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "MiniMax H3 Memory Efficient Sage Attention Patch"
+    }
+  },
+  "285": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+      "lora_name": "MysticXXX_MMH3-V1.safetensors",
+      "strength_model": 0.4000000000000001,
+      "model": [
+        "284",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Load LoRA"
+    }
+  },
+  "287": {
+    "class_type": "PreviewAudio",
+    "inputs": {
+      "audio": [
+        "218",
+        0
+      ],
+      "audioUI": ""
+    },
+    "_meta": {
+      "title": "Preview Audio"
+    }
+  },
+  "292": {
+    "class_type": "SaveVideo",
+    "inputs": {
+      "codec": "auto",
+      "filename_prefix": "video/MiniMax_H3",
+      "fw_video_preview": "",
+      "format": "auto",
+      "video": [
+        "279",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "输出=配图视频"
+    }
+  },
+  "293": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "reference.png"
+    },
+    "_meta": {
+      "title": "Load Image"
+    }
+  }
+}

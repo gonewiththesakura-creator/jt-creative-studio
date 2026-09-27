@@ -13,6 +13,8 @@ Env:
 import json, os, re, sys, time, uuid, threading, urllib.request, urllib.parse, urllib.error, math
 import http.server, http.cookies, socketserver, pathlib, secrets, hashlib, hmac
 import socket, base64, struct, subprocess, io, gzip, ipaddress, tempfile, ssl, http.client
+from video_uploads import UploadStaging
+_video_upload_staging = UploadStaging()
 
 BASE = pathlib.Path(__file__).resolve().parent
 COMFY_URL = os.environ.get("COMFY_URL", "http://127.0.0.1:8188").rstrip("/")
@@ -2898,6 +2900,30 @@ def rh_build_video_node_info(job, w):
     return node_list
 
 
+def rh_submit_h3_multi(job, w):
+    # The graph is server-owned; never accept executable workflow JSON from a browser.
+    graph = json.loads((BASE/'video_wf/h3_edit_multi_api.json').read_text(encoding='utf8'))
+    references = graph['225']['inputs']
+    assert graph['225']['class_type'] == 'MiniMaxH3ReferenceToVideo'
+    for i in range(2,5):
+        key = 'reference_image_'+str(i)
+        if not job.get('provider_media',{}).get(key): continue
+        node = str(292+i)
+        graph[node] = {'class_type':'LoadImage','inputs':{'image':job['provider_media'][key]}}
+        references['ref_images.ref_image_'+str(i-1)] = [node,0]
+    for item in rh_build_video_node_info(job,w):
+        graph[item['nodeId']]['inputs'][item['fieldName']] = item['fieldValue']
+    body = {'apiKey':RH_KEY,'workflowId':w['rh_workflow_id'],
+            'workflow':json.dumps(graph,ensure_ascii=False),'nodeInfoList':[],
+            'addMetadata':False,'usePersonalQueue':False,'instanceType':'default'}
+    req = urllib.request.Request('https://www.runninghub.cn/task/openapi/create',
+        data=json.dumps(body).encode(),headers={'Content-Type':'application/json','Authorization':'Bearer '+RH_KEY})
+    result = _provider_json_request(req,timeout=RH_TIMEOUT_SUBMIT)
+    task_id = (result.get('data') or {}).get('taskId')
+    if result.get('code') == 0 and task_id: return str(task_id)
+    raise RuntimeError('RH multi-reference submission rejected: code='+str(result.get('code')))
+
+
 def rh_run_video(job, w):
     """RunningHub 视频工作流：上传已就绪的 media fileName 已存于 job["media"]，
     直接提交→轮询→结果 URL（mp4/png）透传保存。"""
@@ -2907,7 +2933,9 @@ def rh_run_video(job, w):
     node_list = rh_build_video_node_info(job, w)
     job["submit_started"] = time.time()
     job["provider_status"] = "SUBMITTING"
-    task_id = rh_submit(wfid, node_list)
+    multi = w.get('id') == 'h3_edit_n' and any(
+        job.get('provider_media',{}).get('reference_image_'+str(i)) for i in range(2,5))
+    task_id = rh_submit_h3_multi(job,w) if multi else rh_submit(wfid, node_list)
     persist_provider_task(job, task_id)
     job["progress_pct"] = 5
     images = []
@@ -4188,6 +4216,59 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     return
                 threading.Thread(target=run_job, args=(job,), daemon=True).start()
                 return self._send(200, json.dumps({"job_id": job["id"]}).encode())
+        if path in ('/api/upload-start', '/api/upload-chunk', '/api/upload-finish'):
+            if not self._auth(): return self._send(401)
+            if _release_draining: return self._release_in_progress()
+            session_id = self._require_session()
+            if not session_id: return
+            owner = _session_hash(session_id)
+            try:
+                if path == '/api/upload-start':
+                    body = self._read_json(4096)
+                    if not isinstance(body,dict): raise ValueError('bad json')
+                    w = WORKFLOWS.get(str(body.get('workflow', '')), {})
+                    key = str(body.get('input_key', ''))
+                    name = _safe_upload_filename(body.get('filename', ''))
+                    size = int(body.get('size', 0))
+                    if w.get('kind') != 'video' or key not in w.get('rh_media', {}):
+                        raise ValueError('无效的上传位置')
+                    quota = reserve_upload_attempt(session_id, size)
+                    if self._upload_quota_rejection(quota): return
+                    uid = _video_upload_staging.start(DATA_DIR, owner, (w['id'], key, name), size)
+                    return self._send(200, json.dumps({'upload_id':uid}).encode())
+                if path == '/api/upload-chunk':
+                    values = urllib.parse.parse_qs(request_target.query)
+                    uid = values.get('id',[''])[0]
+                    offset = int(values.get('offset',['-1'])[0])
+                    _video_upload_staging.get(uid, owner)
+                    if not 0 < content_length <= 512*1024: raise ValueError('无效的分块大小')
+                    # An idle limit plus a generous per-chunk deadline: a slow
+                    # but progressing large file no longer loses all its bytes.
+                    self.connection.settimeout(60)
+                    deadline = self._start_absolute_deadline(120)
+                    try: raw = self.rfile.read(content_length)
+                    finally:
+                        self._cancel_absolute_deadline(deadline)
+                        self.connection.settimeout(CLIENT_SOCKET_TIMEOUT)
+                    if len(raw) != content_length: raise ValueError('分块未传完')
+                    offset = _video_upload_staging.chunk(uid, owner, offset, raw)
+                    return self._send(200, json.dumps({'offset':offset}).encode())
+                body = self._read_json(4096)
+                if not isinstance(body,dict): raise ValueError('bad json')
+                def process(row):
+                    wid, key, name = row['scope']; w = WORKFLOWS[wid]
+                    name, ctype, media_type = validate_workflow_upload_file(w,key,name,row['path'])
+                    started = time.monotonic()
+                    remote_name = rh_upload_temp_file(row['path'],name,ctype)
+                    token = issue_upload_capability(remote_name,wid,key,media_type,name,session_id)
+                    print('VIDEO_UPLOAD_OK bytes='+str(row['size'])+' provider_seconds='+str(round(time.monotonic()-started,2)),flush=True)
+                    return {'uploadToken':token,'filename':name,'mediaType':ctype,'input_key':key}
+                result = _video_upload_staging.finish(str(body.get('upload_id','')),owner,process)
+                return self._send(200,json.dumps(result,ensure_ascii=False).encode())
+            except LookupError as error:
+                return self._send(404,json.dumps({'error':str(error)},ensure_ascii=False).encode())
+            except (ValueError, TypeError, OverflowError) as error:
+                return self._send(400,json.dumps({'error':str(error)},ensure_ascii=False).encode())
         if path == "/api/upload":
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
             content_type = self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()

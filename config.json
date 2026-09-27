@@ -1308,7 +1308,7 @@
    "source_editor_json_sha256": "431c5283f8bcc3b93755d2c63126d25e3a8d8b6fc2711b529e6408c49e9d76bf",
    "source_api_json_sha256": "6c8f2e61c77bd7145c6ccc0a18b6094632bccfa64900ccdf5afd0ba8ded4904f",
    "rh_schema_complete": true,
-   "desc": "参考图定义主体，参考视频提供动作和场景；按文字指令编辑并保留源视频音轨。",
+   "desc": "支持1–4张参考图共同约束同一个视频任务；参考视频提供动作和场景，保留源视频音轨。可在指令中说明各参考图的用途。",
    "rh_media": {
     "reference_image": {
      "node": "293",
@@ -1316,6 +1316,18 @@
      "type": "image",
      "label": "人物/主体参考图",
      "required": true
+    },
+    "reference_image_2": {
+     "node": "294", "field": "image", "type": "image",
+     "label": "参考图2", "required": false
+    },
+    "reference_image_3": {
+     "node": "295", "field": "image", "type": "image",
+     "label": "参考图3", "required": false
+    },
+    "reference_image_4": {
+     "node": "296", "field": "image", "type": "image",
+     "label": "参考图4", "required": false
     },
     "source_video": {
      "node": "275",
@@ -1374,7 +1386,7 @@
    },
    "params_defaults": {},
    "speed": "RunningHub云端，耗时按视频长度和队列而定",
-   "ref": "1张参考图 + 1段待编辑视频",
+   "ref": "1–4张参考图 + 1段待编辑视频",
    "section": "视频编辑"
   },
   {

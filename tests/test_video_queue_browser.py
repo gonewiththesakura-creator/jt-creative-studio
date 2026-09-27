@@ -59,7 +59,9 @@ def test_reference_drop_paste_and_real_first_frame(browser):
     def upload(route):
         uploads.append(route.request.url)
         route.fulfill(json={'uploadToken':'upl_fake'})
-    page.route('**/api/upload?*',upload)
+    page.route('**/api/upload-start',lambda r:(uploads.append(r.request.post_data_json),r.fulfill(json={'upload_id':str(len(uploads))})))
+    page.route('**/api/upload-chunk?*',lambda r:r.fulfill(json={'offset':len(r.request.post_data_buffer)}))
+    page.route('**/api/upload-finish',lambda r:r.fulfill(json={'status':'done','uploadToken':'upl_fake'}))
     try:
         page.goto('http://fixture.test/video')
         drop=page.locator('.drop')
