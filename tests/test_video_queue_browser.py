@@ -33,6 +33,7 @@ def test_queue_lightweight_editor_and_actions(browser, tmp_path):
         expect(page.locator('#taskList img')).to_have_attribute('loading','lazy')
         card = page.locator('[data-job-id="2"]')
         expect(card).to_contain_text('舞蹈素材-2.mp4')
+        card.locator('.task-tile').hover()
         card.get_by_role('button',name='编辑参数').click()
         dialog = page.locator('#queueEditor')
         expect(dialog).to_be_visible()
@@ -40,7 +41,9 @@ def test_queue_lightweight_editor_and_actions(browser, tmp_path):
         dialog.get_by_role('button',name='保存修改').click()
         expect(dialog).to_have_count(0)
         assert actions[-1]['params']['prompt'] == '新的提示词'
+        card.locator('.task-tile').hover()
         card.get_by_role('button',name='下移').click()
+        card.locator('.task-tile').hover()
         expect(card.get_by_role('button',name='取消排队')).to_be_enabled()
         card.get_by_role('button',name='取消排队').click()
         expect(card).to_contain_text('已取消排队')
@@ -48,6 +51,56 @@ def test_queue_lightweight_editor_and_actions(browser, tmp_path):
         assert not [r for r in requests if r[1].startswith('/api/job/')]
         assert [a['action'] for a in actions] == ['edit','down','cancel']
     finally: page.close()
+
+
+def test_completed_results_auto_appear_without_reloading_player(browser, tmp_path):
+    page=browser.new_page(viewport={'width':1440,'height':1000})
+    serve_page(page,block_scene=True)
+    jobs=[dict(id='playing',workflow='fixture-video',wf_name='已完成的视频',status='done',media={'source_video':'原视频.mp4'},rh_coins=99),
+          dict(id='pending',workflow='fixture-video',wf_name='等待中的视频',status='queued',position=1,editable=True,params={'prompt':'保持动作'},media={}),
+          dict(id='failed',workflow='fixture-video',wf_name='失败的视频',status='error',error='上游返回失败',media={})]
+    detail_requests=[]
+    # Locally encoded media exercises a real first frame/player without provider calls.
+    import base64
+    sample=page.evaluate('''async()=>{const c=document.createElement('canvas');c.width=320;c.height=180;const x=c.getContext('2d'),g=x.createLinearGradient(0,0,320,180);g.addColorStop(0,'#638ca2');g.addColorStop(1,'#202d46');x.fillStyle=g;x.fillRect(0,0,320,180);x.fillStyle='#e7d3aa';x.beginPath();x.arc(240,50,24,0,7);x.fill();x.fillStyle='#162a35';x.beginPath();x.moveTo(0,180);x.lineTo(125,55);x.lineTo(250,180);x.fill();const png=c.toDataURL('image/png').split(',')[1],stream=c.captureStream(10),rec=new MediaRecorder(stream,{mimeType:'video/webm'}),parts=[];rec.ondataavailable=e=>parts.push(e.data);const done=new Promise(r=>rec.onstop=r);rec.start();await new Promise(r=>setTimeout(r,350));rec.stop();await done;stream.getTracks().forEach(t=>t.stop());const bytes=new Uint8Array(await new Blob(parts).arrayBuffer());return {png,video:btoa(String.fromCharCode(...bytes))}}''')
+    page.route('**/sample.mp4',lambda r:r.fulfill(body=base64.b64decode(sample['video']),content_type='video/webm'))
+    page.route('**/sample.png',lambda r:r.fulfill(body=base64.b64decode(sample['png']),content_type='image/png'))
+    def detail(route):
+        key=route.request.url.rsplit('/',1)[-1];detail_requests.append(key)
+        route.fulfill(json=dict(id=key,images=[dict(url='/sample.'+('mp4' if key=='playing' else 'png'),file=key,file_type='video' if key=='playing' else 'image')]))
+    page.route('**/api/video-queue',lambda r:r.fulfill(json=dict(jobs=jobs,running=0,waiting=1,limit=2)))
+    page.route('**/api/job/*',detail)
+    errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
+    try:
+        page.goto('http://fixture.test/video')
+        expect(page.locator('#galleryMain video')).to_have_count(1)
+        page.wait_for_function("document.querySelector('.page-host[data-page=\"/video\"]').shadowRoot.querySelector('#galleryMain video')?.readyState>=2")
+        expect(page.locator('[data-group=done] .task-card')).to_have_count(1)
+        expect(page.locator('[data-group=active] .task-card')).to_have_count(1)
+        expect(page.locator('[data-group=other] .task-card')).to_have_count(1)
+        page.locator('#galleryMain video').evaluate("el=>el.dataset.retained='yes'")
+        jobs[1].update(status='done',editable=False)
+        expect(page.locator('.gallery-thumb')).to_have_count(2,timeout=10000)
+        expect(page.locator('#galleryMain video')).to_have_attribute('data-retained','yes')
+        expect(page.locator('#taskList video')).to_have_count(0)
+        assert detail_requests==['playing','pending']
+        page.locator('#galleryNext').click()
+        expect(page.locator('#galleryMain img')).to_have_count(1)
+        expect(page.locator('#galleryMain img')).to_have_js_property('naturalWidth',320)
+        page.locator('#galleryPrev').click()
+        expect(page.locator('#galleryMain video')).to_have_count(1)
+        box=page.locator('#galleryMain').bounding_box();nav=page.locator('#galleryNext').bounding_box()
+        assert box['y']<nav['y']<box['y']+box['height']
+        page.locator('[data-job-id=failed] .task-tile').hover()
+        expect(page.locator('[data-job-id=failed] .task-details')).to_be_visible()
+        page.screenshot(path=str(tmp_path/'task-gallery-desktop.png'),full_page=True)
+        page.set_viewport_size({'width':390,'height':844})
+        page.locator('[data-job-id=failed] .task-tile').click()
+        expect(page.locator('[data-job-id=failed] .task-details')).to_be_visible()
+        assert page.locator('.page-host[data-page="/video"]').evaluate('el=>el.scrollWidth<=innerWidth')
+        page.screenshot(path=str(tmp_path/'task-gallery-mobile.png'),full_page=True)
+        assert not errors
+    finally:page.close()
 
 
 def test_reference_drop_paste_and_real_first_frame(browser):

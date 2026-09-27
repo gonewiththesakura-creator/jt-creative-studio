@@ -152,6 +152,32 @@
 .queue-media{display:flex;align-items:center;gap:8px;margin:4px 0}.queue-thumbnail{width:80px;height:45px;object-fit:contain;border-radius:4px;background:#000;flex-shrink:0}.paste-target{display:block;margin:8px auto 0;padding:5px 9px;background:transparent;color:inherit;border:1px solid #8886;border-radius:5px;cursor:pointer}
 .task-info{min-width:0;flex:1}.queue-files{font-size:12px;overflow-wrap:anywhere;color:var(--muted);margin:5px 0}.queue-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.queue-actions button{font:inherit;font-size:12px;padding:6px 9px;border:1px solid #7776;border-radius:6px;background:transparent;color:inherit;cursor:pointer}.queue-actions button:disabled{opacity:.4;cursor:default}.task-spin.idle{animation:none;border-style:dotted}.queue-editor{width:min(540px,90vw);max-height:85vh;overflow:auto;padding:22px;background:#18191d;color:#eee;border:1px solid #777;border-radius:14px}.queue-editor::backdrop{background:#0009}.queue-editor p{font-size:13px;line-height:1.6}.queue-editor label{display:block;margin:12px 0}.queue-editor input:not([type=checkbox]),.queue-editor textarea,.queue-editor select{display:block;width:100%;box-sizing:border-box;margin-top:6px}.queue-editor textarea{min-height:72px}
 
+/* Compact task contact sheets; only the selected result owns a media player. */
+#taskList{max-height:none;overflow:visible;contain:none;padding:12px}
+.task-group h3{margin:4px 0 10px;font-size:12px;font-weight:600;color:#c0bcb7}
+.task-group+.task-group{margin-top:18px}
+.task-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px}
+#taskList .task-card{display:block;min-width:0;margin:0;padding:0;border:0;background:transparent;box-shadow:none}
+.task-tile{position:relative;display:block;width:100%;aspect-ratio:16/10;padding:0;overflow:hidden;border:1px solid #ffffff24;border-radius:10px;background:#181a20;color:#c6c3be;cursor:pointer}
+.task-tile:hover,.task-tile:focus-visible{border-color:#d2b986;outline:2px solid #d2b98644;outline-offset:2px}
+.task-picture{display:grid;place-items:center;width:100%;height:100%;font-size:26px;background:linear-gradient(135deg,#24272e,#13151a)}
+.task-picture img{display:block;width:100%;height:100%;object-fit:cover}
+.task-picture small{position:absolute;top:6px;right:6px;font-size:9px;padding:2px 5px;border-radius:4px;background:#0009;color:#ddd}
+.task-badge{position:absolute;bottom:6px;left:6px;padding:4px 7px;border-radius:5px;background:#151820e8;color:#d6d8df;font-size:11px;font-weight:600;line-height:1.3}
+.task-card[data-status=done] .task-badge{background:#163c30ed;color:#b8eed4}
+.task-card[data-status=running] .task-badge,.task-card[data-status=recovering] .task-badge{background:#263a59ed;color:#c6dfff}
+.task-card[data-status=queued] .task-badge{background:#473b22ed;color:#f2da9e}
+.task-card[data-status=error] .task-badge{background:#522929ed;color:#ffcccc}
+.task-details{position:fixed;inset:auto;margin:0;width:min(330px,calc(100vw - 16px));max-height:min(420px,75vh);overflow:auto;z-index:200;padding:15px;color:#e6e3df;background:#1b1d24f5;border:1px solid #ffffff30;border-radius:12px;box-shadow:0 12px 35px #0008;font-size:12px;line-height:1.6}
+.task-details .task-name{font-size:13px;font-weight:650}.task-details .queue-files{margin:8px 0;color:#bcbac2}.task-details .task-meta{color:#d2c4ab}.task-details .task-time{float:none;margin:4px 0;font-size:11px;font-weight:400;color:#aaa}.task-details .task-view{margin:10px 0 0;width:100%;min-height:34px}.task-details .queue-actions button{min-height:34px}.task-details::backdrop{background:transparent;pointer-events:none}
+.media-gallery{display:flex;flex-direction:column;gap:10px;margin-bottom:18px}
+.gallery-viewer{position:relative;min-width:0}
+.gallery-navigation{position:absolute;inset:0;pointer-events:none;display:flex;align-items:center;justify-content:space-between;padding:0 12px}
+.gallery-navigation .gallery-nav{pointer-events:auto;width:38px;height:60px;min-height:0;display:grid;place-items:center;padding:0;border:1px solid #ffffff50;border-radius:15px;background:#c7c7d229;color:#fff;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);box-shadow:0 3px 12px #0004;font-size:32px;font-weight:300;cursor:pointer;text-shadow:0 1px 3px #0008}
+.gallery-navigation .gallery-nav:hover{background:#d6d6e055}.gallery-navigation .gallery-nav:disabled{opacity:.22;cursor:default}
+.gallery-main{min-height:260px}.gallery-main video,.gallery-main img{max-width:100%;max-height:52vh;min-height:0}.gallery-thumbs{min-height:0;flex-shrink:0}.gallery-thumb{height:54px;flex-basis:70px}.gallery-actions .dl{margin:0}
+@media(max-width:600px){.task-grid{grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px}.gallery-navigation{padding:0 8px}.gallery-navigation .gallery-nav{width:32px;height:52px}.task-panel-head{gap:8px;flex-wrap:wrap}}
+
 /* SINGULARITY — the competition black-hole scene, fitted to the real workbench. */
 :host{background:#030407;color-scheme:dark}
 .jt-page-body.singularity{
