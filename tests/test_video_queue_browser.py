@@ -67,6 +67,7 @@ def test_reference_drop_paste_and_real_first_frame(browser):
         drop=page.locator('.drop')
         expect(drop).to_be_visible()
         for event in ['drop','paste']:
+            drop.locator('.fn').evaluate('(el)=>el.textContent=""')
             drop.evaluate('''(el,type)=>{const c=document.createElement('canvas');c.width=2;c.height=2;c.toBlob(blob=>{const dt=new DataTransfer();dt.items.add(new File([blob],'ref.png',{type:'image/png'}));(type==='drop'?el:document.body).dispatchEvent(type==='drop'?new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:dt}):new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:dt}))})}''',event)
             expect(drop.locator('.fn')).to_contain_text('已上传')
         assert len(uploads)==2
