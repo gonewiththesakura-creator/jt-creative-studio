@@ -1,9 +1,9 @@
 {
   "pages": {
     "/": {
-      "module": "/static/assets/index.a1de4071ed3a.js",
+      "module": "/static/assets/index.d993230ed940.js",
       "markup": "/static/assets/index.12d80087d3c2.html",
-      "css": "/static/assets/index.7b469ed18259.css",
+      "css": "/static/assets/index.a5da9b762738.css",
       "title": "JT 灵感工作台"
     },
     "/realism": {
@@ -36,8 +36,8 @@
     "/static/assets/app.78053914471a.css",
     "/static/assets/appearance.effeec028e01.js",
     "/static/assets/index.12d80087d3c2.html",
-    "/static/assets/index.7b469ed18259.css",
-    "/static/assets/index.a1de4071ed3a.js",
+    "/static/assets/index.a5da9b762738.css",
+    "/static/assets/index.d993230ed940.js",
     "/static/assets/main.8ced96b830d2.js",
     "/static/assets/page-scope.02362d635b7a.js",
     "/static/assets/preview.42d1afbc0d5d.webp",

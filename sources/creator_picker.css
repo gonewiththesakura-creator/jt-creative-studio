@@ -1,0 +1,8 @@
+/* Keep native multi-select keyboard behavior and a persistent gold selection. */
+#drawers .picker[multiple]{padding:5px;color-scheme:dark;accent-color:#b99a68}
+#drawers .picker[multiple] option{padding:5px 7px;margin:2px 0;border-radius:4px;line-height:1.4;color:#d6d2cc;background:#17181d}
+#drawers .picker[multiple] option:checked{color:#fff1d6;-webkit-text-fill-color:#fff1d6;background:#665235 linear-gradient(#665235,#665235);box-shadow:inset 2px 0 #dec193;font-weight:600}
+#drawers .picker[multiple]:focus option:checked{color:#fff1d6;background:#665235 linear-gradient(#665235,#665235)}
+#drawers .picker[multiple]:focus-visible{outline:2px solid #c3a374;outline-offset:2px}
+#drawers .picker[multiple] option:hover{background-color:#39332a;color:#fff1d6}
+#drawers .drawer-head:focus-visible{outline:2px solid #c3a374;outline-offset:-3px;border-radius:12px}
