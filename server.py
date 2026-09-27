@@ -281,6 +281,8 @@ _submit_locks = {
     "video": threading.Lock(),
 }
 VIDEO_MAX_CONCURRENT = 2   # live RunningHub personal API limit verified by code 421
+VIDEO_QUEUE_LIMIT = 200
+VIDEO_QUEUE_SESSION_LIMIT = 100
 _jobs = {}                        # job_id -> job dict
 _lock_jobs = threading.Lock()
 _LORA_CACHE = {"t": 0.0, "list": []}
@@ -511,6 +513,8 @@ def load_jobs():
             else:
                 j["status"] = "error"
                 j["error"] = "服务重启，任务提交状态未确认；请核对历史后再运行"
+                if j.get('video_queued') and j.get('dispatch_started'):
+                    j['queue_hold'] = True
     save_jobs()
 
 def save_jobs():
@@ -2924,6 +2928,136 @@ def rh_run_video(job, w):
     raise RuntimeError("RH video task timeout")
 
 
+def _video_waiting():
+    return sorted((j for j in _jobs.values() if j.get('video_queued') and j.get('status') == 'queued'),
+                  key=lambda j: (j.get('queue_order', j['created']), j['created'], j['id']))
+
+
+def normalize_video_thumbnail(value):
+    from PIL import Image
+    if not isinstance(value, str) or len(value) > 44000:
+        raise ValueError('thumbnail too large')
+    raw = base64.b64decode(value, validate=True)
+    if len(raw) > 32768:
+        raise ValueError('thumbnail too large')
+    with Image.open(io.BytesIO(raw)) as image:
+        if image.format != 'JPEG' or not (0 < image.width <= 160 and 0 < image.height <= 90):
+            raise ValueError('thumbnail must be a small JPEG')
+        image.load()
+        output = io.BytesIO()
+        image.convert('RGB').save(output, format='JPEG', quality=65)
+        return output.getvalue()
+
+
+def _cloud_slot_used(job):
+    return job.get('generation_backend') == 'cloud' and (
+        job.get('status') in ('running', 'recovering') or job.get('queue_hold'))
+
+
+def dispatch_video_queue():
+    """Claim under shared admission lock, persist before starting any paid work."""
+    with _admission_lock, _lock_jobs:
+        if _release_draining:
+            return
+        free = max(0, VIDEO_MAX_CONCURRENT - sum(bool(_cloud_slot_used(j)) for j in _jobs.values()))
+        for job in _video_waiting():
+            if free <= 0:
+                break
+            if time.time() >= job.get('queue_media_expires', 0):
+                job.update(status='error', error='排队素材已过期，请重新上传后提交', provider_status='QUEUE_EXPIRED')
+                save_jobs()
+                continue
+            job.update(status='running', provider_status='DISPATCHING', dispatch_started=time.time())
+            save_jobs()
+            try:
+                threading.Thread(target=run_job, args=(job,), daemon=True).start()
+            except Exception:
+                job.update(status='queued', provider_status='QUEUED', dispatch_started=None)
+                save_jobs()
+                raise
+            free -= 1
+
+
+def video_queue_loop():
+    while True:
+        try:
+            dispatch_video_queue()
+        except Exception:
+            # Persistence/launch failures must never trigger a second paid submit.
+            pass
+        time.sleep(2)
+
+
+def video_queue_snapshot(session_id):
+    with _lock_jobs:
+        waiting = _video_waiting()
+        positions = {j['id']: i + 1 for i, j in enumerate(waiting)}
+        own = [j for j in _jobs.values() if j.get('style_id') == 'video' and session_owns_record(session_id, j)]
+        active = sorted((j for j in own if j.get('status') in ('queued', 'running', 'recovering')),
+                        key=lambda j: (j.get('status') == 'queued', positions.get(j['id'], 0), j['created']))
+        recent = sorted((j for j in own if j.get('status') not in ('queued', 'running', 'recovering')),
+                        key=lambda j: j['created'], reverse=True)[:20]
+        rows = []
+        for j in active + recent:
+            row = {k: j.get(k) for k in ('id', 'workflow', 'wf_name', 'status', 'provider_status', 'progress_pct',
+                                        'created', 'elapsed', 'prompt', 'negative_prompt', 'rh_coins', 'queue_revision')}
+            row.update(media=public_job_media(j.get('media')), params=public_job_params(j),
+                       error=public_job_error(j), position=positions.get(j['id']),
+                       editable=j.get('status') == 'queued', queue_hold=bool(j.get('queue_hold')))
+            row['thumbnails'] = {key: '/api/video-thumbnail/'+j['id']+'/'+digest+'.jpg'
+                                 for key, digest in j.get('input_thumbnails', {}).items()
+                                 if key in row['media'] and re.fullmatch(r'[0-9a-f]{32}', str(digest))}
+            rows.append(row)
+        return {'jobs': rows, 'running': sum(bool(_cloud_slot_used(j)) for j in _jobs.values()),
+                'waiting': len(waiting), 'limit': VIDEO_MAX_CONCURRENT, 'draining': bool(_release_draining)}
+
+
+def edit_video_queue(session_id, body):
+    """Only the owner can edit a not-yet-dispatched job; races fail closed."""
+    with _admission_lock, _lock_jobs:
+        job = _jobs.get(str(body.get('job_id', '')))
+        if not job or not job.get('video_queued') or not session_owns_record(session_id, job):
+            raise LookupError('任务不存在')
+        if job['status'] != 'queued':
+            raise ValueError('任务已经开始或结束，不能再编辑或取消排队')
+        if body.get('revision') != job.get('queue_revision', 0):
+            raise ValueError('任务已更新，请刷新队列后重试')
+        before = {j['id']: dict(j) for j in _video_waiting()}
+        action = body.get('action')
+        if action == 'cancel':
+            job.update(status='cancelled', provider_status='CANCELLED', error=None)
+        elif action in ('top', 'up', 'down'):
+            rows = _video_waiting()
+            index = rows.index(job)
+            target = 0 if action == 'top' else max(0, index-1) if action == 'up' else min(len(rows)-1, index+1)
+            rows.insert(target, rows.pop(index))
+            for order, row in enumerate(rows):
+                row['queue_order'] = order
+                if row is not job:
+                    row['queue_revision'] = row.get('queue_revision', 0) + 1
+        elif action == 'edit':
+            w = WORKFLOWS[job['workflow']]
+            proposed = body.get('params')
+            if not isinstance(proposed, dict):
+                raise ValueError('参数必须是对象')
+            _, params = normalize_rh_workflow_inputs(w, job['media'], proposed)
+            prompt = str(params.get('prompt', body.get('prompt', job['prompt']))).strip()
+            if not prompt:
+                raise ValueError('提示词不能为空')
+            job.update(params=params, prompt=prompt, negative_prompt=str(params.get('negative', job.get('negative_prompt', ''))))
+            job['selection_snapshot'] = upload_bound_snapshot(w, job['media'], params, None, 'video')
+        else:
+            raise ValueError('未知的队列操作')
+        job['queue_revision'] = job.get('queue_revision', 0) + 1
+        try:
+            save_jobs()
+        except Exception:
+            for jid, previous in before.items():
+                _jobs[jid].clear()
+                _jobs[jid].update(previous)
+            raise
+
+
 def run_job(job):
     """Execute job: for native batch one submission; for sequential, N submissions."""
     w = WORKFLOWS[job["workflow"]]
@@ -2963,6 +3097,8 @@ def run_job(job):
     except Exception as e:
         job["status"] = "error"
         job["error"] = str(e)[:500]
+        if job.get('video_queued') and job.get('submit_started') and not job.get('rh_task_id'):
+            job['queue_hold'] = True
         if job.get("generation_backend") == "api":
             job["provider_status"] = "API_ERROR"
     job["elapsed"] = round(time.time() - t0, 1)
@@ -3469,6 +3605,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = urllib.parse.urlparse(self.path).path
+        if path.startswith('/api/video-thumbnail/'):
+            if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
+            match = re.fullmatch(r'/api/video-thumbnail/([0-9a-f]{12})/([0-9a-f]{32})\.jpg', path)
+            if not match: return self._send(404)
+            jid, digest = match.groups()
+            session_id, _ = self._upload_session(create=False)
+            with _lock_jobs:
+                job = _jobs.get(jid)
+                allowed = job and session_owns_record(session_id, job) and digest in job.get('input_thumbnails', {}).values()
+            target = JOBS_DIR / jid / ('input-thumb-'+digest+'.jpg')
+            if not allowed or not target.is_file(): return self._send(404)
+            return self._send(200, target.read_bytes(), 'image/jpeg',
+                              {'Cache-Control': 'private, max-age=3600', 'Vary': 'Cookie', 'X-Content-Type-Options': 'nosniff'})
+        if path == '/api/video-queue':
+            if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
+            session_id, _ = self._upload_session(create=False)
+            return self._send(200, json.dumps(video_queue_snapshot(session_id), ensure_ascii=False).encode())
         if path == "/api/live":
             payload = {"ok": True, "service": "comfy-panel", **self.server.liveness_snapshot()}
             self._send(200, json.dumps(payload, separators=(",", ":")).encode())
@@ -3780,7 +3933,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def _running_job_id(self, generation_backend=None):
         with _lock_jobs:
             for j in _jobs.values():
-                if (j.get("status") in ("running", "recovering") or _dreamapi_pending(j)) and (generation_backend is None or j.get("generation_backend", "cloud") == generation_backend):
+                if (j.get("status") in ("running", "recovering") or j.get('queue_hold') or _dreamapi_pending(j)) and (generation_backend is None or j.get("generation_backend", "cloud") == generation_backend):
                     return j["id"]
         return None
 
@@ -4116,6 +4269,50 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 "uploadToken": upload_token, "filename": filename,
                 "mediaType": ctype, "input_key": input_key,
             }, ensure_ascii=False).encode(), headers=headers)
+        if path == '/api/video-thumbnail':
+            if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
+            session_id = self._require_session()
+            if not session_id: return
+            try:
+                body = self._read_json(48000)
+                if not isinstance(body, dict): raise ValueError('bad json')
+                jid, key = str(body.get('job_id', '')), str(body.get('key', ''))
+                with _lock_jobs:
+                    job = _jobs.get(jid)
+                    if not job or not re.fullmatch(r'[0-9a-f]{12}', jid) or not session_owns_record(session_id, job):
+                        return self._send(404)
+                    mapping = WORKFLOWS.get(job.get('workflow'), {}).get('rh_media', {}).get(key, {})
+                    if job.get('style_id') != 'video' or key not in job.get('media', {}) or mapping.get('type') != 'video':
+                        return self._send(400, b'{"error":"invalid video slot"}')
+                    if key in job.get('input_thumbnails', {}): return self._send(200, b'{"ok":true}')
+                data = normalize_video_thumbnail(body.get('data'))
+                digest = hashlib.sha256(key.encode()+data).hexdigest()[:32]
+                with _lock_jobs:
+                    if key not in job.get('input_thumbnails', {}):
+                        folder = JOBS_DIR / jid
+                        folder.mkdir(parents=True, exist_ok=True)
+                        target = folder / ('input-thumb-'+digest+'.jpg')
+                        temporary = target.with_suffix('.tmp')
+                        temporary.write_bytes(data)
+                        temporary.replace(target)
+                        job.setdefault('input_thumbnails', {})[key] = digest
+                        save_jobs()
+                return self._send(200, b'{"ok":true}')
+            except (ValueError, TypeError, OSError):
+                return self._send(400, b'{"error":"invalid thumbnail"}')
+        if path == '/api/video-queue':
+            if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
+            session_id = self._require_session()
+            if not session_id: return
+            try:
+                body = self._read_json()
+                if not isinstance(body, dict): raise ValueError('bad json')
+                edit_video_queue(session_id, body)
+            except LookupError as error:
+                return self._send(404, json.dumps({'error': str(error)}, ensure_ascii=False).encode())
+            except (ValueError, TypeError) as error:
+                return self._send(409, json.dumps({'error': str(error)}, ensure_ascii=False).encode())
+            return self._send(200, b'{"ok":true}')
         if path == "/api/video-generate":
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
             try: body = self._read_json()
@@ -4178,13 +4375,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         "error": "client_request_id already used with different request payload",
                     }).encode())
                 with _lock_jobs:
-                    running_cloud = [j for j in _jobs.values()
-                                     if j.get("generation_backend") == "cloud"
-                                     and j.get("status") in ("running", "recovering")]
-                if len(running_cloud) >= VIDEO_MAX_CONCURRENT:
+                    waiting = _video_waiting()
+                    own_waiting = sum(session_owns_record(session_id, j) for j in waiting)
+                    next_order = max((j.get('queue_order', j['created']) for j in waiting), default=-1) + 1
+                if len(waiting) >= VIDEO_QUEUE_LIMIT or own_waiting >= VIDEO_QUEUE_SESSION_LIMIT:
                     return self._send(429, json.dumps({
-                        "error": f"RunningHub任务已达总并发上限（{VIDEO_MAX_CONCURRENT}个），请等待其中一个完成",
+                        "error": "等待队列已满，请完成或取消部分任务后再提交",
                     }, ensure_ascii=False).encode())
+                with _upload_capabilities_lock:
+                    media_expires = min((_upload_capabilities.get(
+                        _upload_token_hash(str(submitted_media[key])), {}).get('expires', 0)
+                        for key in public_media), default=time.time()+UPLOAD_CAPABILITY_TTL)
                 job = {"id": uuid.uuid4().hex[:12], "workflow": wf, "prompt": prompt,
                    "negative_prompt": negative_prompt, "prompt_mode": "manual",
                    "media": public_media, "provider_media": provider_media,
@@ -4192,7 +4393,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                    "width": 0, "height": 0, "batch": 1, "hd": 0,
                    "seed": 0, "seed_mode": "random", "loras": {}, "lora_strengths": {},
                    "trigger": None, "translate": False,
-                   "status": "running", "progress": 0, "progress_pct": 0, "images": [],
+                   "status": "queued", "provider_status": "QUEUED", "video_queued": True,
+                   "queue_order": next_order, "queue_revision": 0, "queue_media_expires": media_expires,
+                   "progress": 0, "progress_pct": 0, "images": [],
                    "prompt_ids": [], "error": None, "elapsed": None,
                    "created": time.time(), "wf_name": w["name"],
                    "submit_started": None, "provider_started": None,
@@ -4207,8 +4410,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 quota_status = register_billable_job(job, session_id)
                 if self._billable_quota_rejection(quota_status):
                     return
-                threading.Thread(target=run_job, args=(job,), daemon=True).start()
-                return self._send(200, json.dumps({"job_id": job["id"]}).encode())
+                return self._send(200, json.dumps({"job_id": job["id"], "status": "queued"}).encode())
         if path == "/api/favorites":
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
             try: body = self._read_json()
@@ -4488,6 +4690,7 @@ def main():
     load_favorites()
     load_upload_capabilities()
     load_upload_usage()
+    threading.Thread(target=video_queue_loop, daemon=True).start()
     for job in list(_jobs.values()):
         if job.get("status") == "recovering" and job.get("rh_task_id"):
             threading.Thread(target=resume_cloud_job, args=(job,), daemon=True).start()

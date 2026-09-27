@@ -43,7 +43,7 @@ class Element {
   querySelector(selector){return this.children.find(item=>item.className==='local-media-preview')||null}
 }
 const created=[], revoked=[];
-globalThis.document={createElement:tag=>new Element(tag)};
+globalThis.document={createElement:tag=>new Element(tag),addEventListener:()=>{}};
 globalThis.URL={createObjectURL:file=>{const value='blob:'+file.name;created.push(value);return value},revokeObjectURL:value=>revoked.push(value)};
 globalThis.window={addEventListener:()=>{}};
 '''
@@ -69,9 +69,11 @@ result.revoked=revoked;
 console.log(JSON.stringify(result));
 '''
     completed = subprocess.run(
-        ["node", "-e", harness + executable + assertion],
+        ["node", "-"],
+        input=harness + executable + assertion,
         cwd=ROOT,
         text=True,
+        encoding="utf-8",
         capture_output=True,
         check=True,
     )

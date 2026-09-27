@@ -480,8 +480,10 @@ def test_runninghub_images_and_videos_share_total_concurrency_limit(panel):
             cookie=session_cookie(panel),
         )
 
-    assert status == 429, result
-    assert len(panel._jobs) == 2
+    assert status == 200, result
+    assert len(panel._jobs) == 3
+    panel.dispatch_video_queue()
+    assert panel._jobs[result['job_id']]['status'] == 'queued'
 
 
 def test_management_endpoints_require_bearer_token(panel, monkeypatch):

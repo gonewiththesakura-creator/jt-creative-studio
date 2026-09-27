@@ -147,6 +147,10 @@
   .topbar,.creation-pane,.preview-stage,.library-panel,.api-popover,.api-settings-popover,.api-drawer {background:var(--surface);-webkit-backdrop-filter:none;backdrop-filter:none}
 }
 
+#taskList{max-height:460px;overflow:auto;overscroll-behavior:contain;contain:content}
+.queue-media{display:flex;align-items:center;gap:8px;margin:4px 0}.queue-thumbnail{width:80px;height:45px;object-fit:contain;border-radius:4px;background:#000;flex-shrink:0}.paste-target{display:block;margin:8px auto 0;padding:5px 9px;background:transparent;color:inherit;border:1px solid #8886;border-radius:5px;cursor:pointer}
+.task-info{min-width:0;flex:1}.queue-files{font-size:12px;overflow-wrap:anywhere;color:var(--muted);margin:5px 0}.queue-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.queue-actions button{font:inherit;font-size:12px;padding:6px 9px;border:1px solid #7776;border-radius:6px;background:transparent;color:inherit;cursor:pointer}.queue-actions button:disabled{opacity:.4;cursor:default}.task-spin.idle{animation:none;border-style:dotted}.queue-editor{width:min(540px,90vw);max-height:85vh;overflow:auto;padding:22px;background:#18191d;color:#eee;border:1px solid #777;border-radius:14px}.queue-editor::backdrop{background:#0009}.queue-editor p{font-size:13px;line-height:1.6}.queue-editor label{display:block;margin:12px 0}.queue-editor input:not([type=checkbox]),.queue-editor textarea,.queue-editor select{display:block;width:100%;box-sizing:border-box;margin-top:6px}.queue-editor textarea{min-height:72px}
+
 /* SINGULARITY — the competition black-hole scene, fitted to the real workbench. */
 :host{background:#030407;color-scheme:dark}
 .jt-page-body.singularity{
