@@ -42,10 +42,12 @@ def test_extensionless_provider_media_types_are_previewable():
 
 
 def test_video_polling_exposes_recovery_and_terminal_failure_states():
-    assert "pollFailures" in VIDEO_SOURCE
-    assert "状态连接中断，正在重试" in VIDEO_SOURCE
-    assert "暂时无法获取状态，刷新页面可恢复" in VIDEO_SOURCE
-    assert "Math.min(12000,4000+t.pollFailures*1500)" in VIDEO_SOURCE
+    assert "queueFetching" in VIDEO_SOURCE
+    assert "队列连接中断，自动重试" in VIDEO_SOURCE
+    assert "setTimeout(refreshVideoQueue" in VIDEO_SOURCE
+    assert "document.hidden?15000:4000" in VIDEO_SOURCE
+    assert "j.status==='error'" in VIDEO_SOURCE
+    assert "提交结果待核对，保留并发名额以防重复计费" in VIDEO_SOURCE
 
 
 def test_realism_upload_does_not_drift_after_workflow_switch():

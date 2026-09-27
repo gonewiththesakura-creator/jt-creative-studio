@@ -108,7 +108,7 @@ IDLE_STABILITY_CHECKS = 3
 IDLE_STABILITY_INTERVAL = 1.0
 MIN_SCRIPT_CONTRACTS = 55
 MIN_PYTEST_FILES = 40
-RELEASE_TEST_INVENTORY_SHA256 = "f995bc093ed5add2eacbd870eeca22f62b7f14fe755c90d9c5c6fa4843bdb144"
+RELEASE_TEST_INVENTORY_SHA256 = "09298aac5e4cf5ba18cbd66a53110bdd1bcd108bfa39e1b60c7d305bf4467023"
 DREAMAPI_CONTRACT_SHA256 = "d2e692e229a0525590fbbc5ffc4f466faebe70675278d263a44bfd0dffc6f0fa"
 HISTORICAL_DREAMAPI_CONTRACT_SHA256 = "665d283bd420f76f031d9530f1d757f022d6cc16a5c9e9bc315e4966da797959"
 DREAMAPI_NATIVE_MANIFEST = BASE / "audit" / "internal_canary_20260924" / "verification.json"
@@ -1557,6 +1557,33 @@ def reviewed_video_duration_patch(tested_commit, current_head):
         return False
 
 
+def reviewed_video_queue_patch(tested_commit, current_head):
+    """Pin the offline-reviewed queue release; not proof of a new paid video run.
+
+    Image provider/configuration code is unchanged. The shared admission and
+    recovery changes have offline HTTP/concurrency/restart coverage; thumbnail
+    and paste paths have real-browser coverage. Never accept arbitrary drift.
+    """
+    if tested_commit != '41d2e7479bed751c457f7535f1994eae00ebae76':
+        return False
+    try:
+        if git_runtime_payload_sha256(current_head, files=NATIVE_RUNTIME_PAYLOAD_FILES) != '4e9d5ffc728134ca6b80a459f838df3f210adcb0239c48bfbabc374235f3c05d':
+            return False
+        frontend = tuple(p for p in RELEASE_RELATIVE_PATHS if p.startswith('static/assets/') or p in ('static/app.html', 'static/app-manifest.json'))
+        if git_runtime_payload_sha256(current_head, files=frontend) != '80cf2e1be69796c7be571ead27a1963a85aa6e21464fcb8bbeb64aa380f9f9c0':
+            return False
+        for path in NATIVE_RUNTIME_PAYLOAD_FILES:
+            if path in ('server.py', 'static/video.html'):
+                continue
+            before = subprocess.check_output(['git', 'show', tested_commit + ':' + path], cwd=BASE)
+            after = subprocess.check_output(['git', 'show', current_head + ':' + path], cwd=BASE)
+            if before != after:
+                return False
+        return True
+    except Exception:
+        return False
+
+
 def validate_native_dreamapi_evidence():
     """Require reviewed native-media evidence for the exact current runtime bytes."""
     try:
@@ -1581,7 +1608,8 @@ def validate_native_dreamapi_evidence():
         current = git_runtime_payload_sha256(current_head, files=NATIVE_RUNTIME_PAYLOAD_FILES)
         unchanged_generation = (current == expected or reviewed_error_presentation_patch(commit, current_head, current)
                                 or reviewed_singularity_patch(commit, current_head, current)
-                                or reviewed_video_duration_patch(commit, current_head))
+                                or reviewed_video_duration_patch(commit, current_head)
+                                or reviewed_video_queue_patch(commit, current_head))
         if payload != {"format": "framed-v1", "files": list(NATIVE_RUNTIME_PAYLOAD_FILES), "sha256": expected} or not unchanged_generation:
             errors.append("native DreamAPI runtime payload drift")
         if subprocess.run(["git", "merge-base", "--is-ancestor", commit, current_head], cwd=BASE, capture_output=True).returncode:
@@ -1602,7 +1630,8 @@ def validate_native_dreamapi_evidence():
             if (frontend != {"format": "framed-v1", "sha256": tested_frontend}
                     or (current_frontend != tested_frontend and not
                         (reviewed_transparent_host_patch(commit, current_head, current_frontend)
-                         or reviewed_video_duration_patch(commit, current_head)))
+                         or reviewed_video_duration_patch(commit, current_head)
+                         or reviewed_video_queue_patch(commit, current_head)))
                     or subprocess.run(["git", "diff", "--quiet", "HEAD", "--", *frontend_files],
                                       cwd=BASE, capture_output=True).returncode):
                 errors.append("native DreamAPI frontend payload drift")

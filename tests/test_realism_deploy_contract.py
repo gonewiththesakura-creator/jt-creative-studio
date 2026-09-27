@@ -63,6 +63,12 @@ def test_transparent_host_exception_rejects_unreviewed_digest():
     assert not module.reviewed_transparent_host_patch('tested', 'current', '0' * 64)
 
 
+def test_video_queue_exception_rejects_unreviewed_digest(monkeypatch):
+    module = load_module()
+    monkeypatch.setattr(module, 'git_runtime_payload_sha256', lambda *a, **k: '0'*64)
+    assert not module.reviewed_video_queue_patch('41d2e7479bed751c457f7535f1994eae00ebae76', 'current')
+
+
 def test_transparent_host_exception_rejects_changed_css(monkeypatch):
     module = load_module()
     import subprocess
