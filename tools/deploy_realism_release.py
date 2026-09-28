@@ -295,6 +295,7 @@ RELEASE_RELATIVE_PATHS = (
     *(path.relative_to(BASE).as_posix() for path in sorted((BASE / "static/assets").glob("*")) if path.is_file()),
     "server.py",
     "media_library.py",
+    "direct_uploads.py",
     "video_uploads.py",
     "config.json",
     "static/index.html",

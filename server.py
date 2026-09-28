@@ -15,6 +15,7 @@ import http.server, http.cookies, socketserver, pathlib, secrets, hashlib, hmac
 import socket, base64, struct, subprocess, io, gzip, ipaddress, tempfile, ssl, http.client
 from video_uploads import UploadStaging
 from media_library import MediaLibrary
+import direct_uploads
 _video_upload_staging = UploadStaging()
 
 BASE = pathlib.Path(__file__).resolve().parent
@@ -3627,82 +3628,52 @@ class Handler(http.server.BaseHTTPRequestHandler):
         finally:
             self._cancel_absolute_deadline(deadline)
 
-    def _handle_media_library(self, action, content_length=0):
+    def _handle_direct_upload(self, action):
         if not self._auth(): return self._send(401)
-        if action != 'list' and _release_draining: return self._release_in_progress()
+        if _release_draining: return self._release_in_progress()
         session_id = self._require_session()
         if not session_id: return
-        code = self.headers.get('X-Media-Library', '')
         try:
-            if action == 'list':
-                result = _media_library.snapshot(code)
-            elif action == 'chunk':
-                values = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
-                aid = values.get('id', [''])[0]
-                offset = int(values.get('offset', ['-1'])[0])
-                if not 0 < content_length <= 512 * 1024:
-                    raise ValueError('无效的分块大小')
-                # Authenticate before reading an upload body.
-                with _media_library.lock: _media_library._asset(code, aid)
-                self.connection.settimeout(60)
-                deadline = self._start_absolute_deadline(120)
-                try: raw = self.rfile.read(content_length)
-                finally:
-                    self._cancel_absolute_deadline(deadline)
-                    self.connection.settimeout(CLIENT_SOCKET_TIMEOUT)
-                if len(raw) != content_length: raise ValueError('分块未传完')
-                result = _media_library.chunk(code, aid, offset, raw)
+            body = self._read_json(8192)
+            if not isinstance(body, dict): raise ValueError('bad json')
+            if action == 'start':
+                wid, key = str(body.get('workflow', '')), str(body.get('input_key', ''))
+                workflow = WORKFLOWS.get(wid, {})
+                mapping = workflow.get('rh_media', {}).get(key)
+                if workflow.get('kind') != 'video' or not mapping:
+                    raise ValueError('无效的上传位置')
+                name = _safe_upload_filename(body.get('filename', ''))
+                size = int(body.get('size', 0))
+                if not 0 < size <= 60*1024*1024: raise ValueError('文件必须在 60MB 以内')
+                media_type = mapping.get('type')
+                suffix = pathlib.Path(name).suffix.lower()
+                allowed = {'.mp4','.mov','.webm','.avi','.mkv'} if media_type == 'video' else {'.png','.jpg','.jpeg','.webp'}
+                if suffix not in allowed: raise ValueError('文件类型与上传位置不匹配')
+                quota = reserve_upload_attempt(session_id, size)
+                if self._upload_quota_rejection(quota): return
+                token = direct_uploads.challenge(SESSION_SECRET, _session_hash(session_id),
+                    dict(workflow=wid, input_key=key, filename=name, media_type=media_type, size=size))
+                result = {'challenge': token}
             else:
-                body = self._read_json(50000)
-                if not isinstance(body, dict): raise ValueError('bad json')
-                aid = str(body.get('id', ''))
-                if action == 'create':
-                    result = _media_library.create()
-                elif action == 'start':
-                    name = _safe_upload_filename(body.get('filename', ''))
-                    size = int(body.get('size', 0))
-                    if not 0 < size <= MediaLibrary.MAX_FILE: raise ValueError('文件必须在 60MB 以内')
-                    _media_library.snapshot(code)
-                    quota = reserve_upload_attempt(session_id, size)
-                    if self._upload_quota_rejection(quota): return
-                    result = _media_library.start(code, name, size, body.get('type'))
-                elif action == 'finish':
-                    thumbnail = body.get('thumbnail')
-                    if thumbnail:
-                        thumbnail = base64.b64encode(normalize_video_thumbnail(thumbnail)).decode('ascii')
-                    result = _media_library.finish(code, aid, thumbnail, body.get('duration'), upload_media_file_content_type)
-                elif action == 'delete':
-                    result = _media_library.delete(code, aid)
-                elif action == 'use':
-                    wid, key = str(body.get('workflow', '')), str(body.get('input_key', ''))
-                    workflow = WORKFLOWS.get(wid, {})
-                    mapping = workflow.get('rh_media', {}).get(key)
-                    assets = _media_library.snapshot(code)['assets']
-                    asset = next((a for a in assets if a['id'] == aid), None)
-                    if workflow.get('kind') != 'video' or not mapping or not asset or mapping.get('type') != asset['type']:
-                        raise ValueError('素材类型与上传位置不匹配')
-                    fingerprint = hashlib.sha256(RH_KEY.encode()).hexdigest()
-                    result = _media_library.use(code, aid, fingerprint, rh_upload_temp_file,
-                                                _video_upload_staging.provider_slots, body.get('retry') is True)
-                    if result['status'] == 'done':
-                        token = issue_upload_capability(result['provider_name'], wid, key, asset['type'],
-                                                        asset['name'], session_id, expires=result['expires'])
-                        result = {'status': 'done', 'uploadToken': token, 'filename': asset['name']}
+                if action not in ('verify','register'): return self._send(404)
+                provider_name = body.get('provider_name', '') if action == 'register' else ''
+                scope = direct_uploads.verify(SESSION_SECRET, RH_KEY, _session_hash(session_id),
+                    body.get('challenge'), body.get('proof'), provider_name)
+                if action == 'verify': result = {'ok': True}
                 else:
-                    return self._send(404)
+                    if not provider_name: raise ValueError('缺少 RunningHub 文件标识')
+                    token = issue_upload_capability(provider_name, scope['workflow'], scope['input_key'],
+                        scope['media_type'], scope['filename'], session_id)
+                    result = {'uploadToken': token, 'filename': scope['filename']}
             return self._send(200, json.dumps(result, ensure_ascii=False).encode(),
-                              headers={'Cache-Control': 'no-store', 'Vary': 'X-Media-Library, Cookie'})
-        except LookupError as error:
-            return self._send(404, json.dumps({'error': str(error)}, ensure_ascii=False).encode())
+                              headers={'Cache-Control': 'no-store'})
         except (ValueError, TypeError, OverflowError) as error:
             return self._send(400, json.dumps({'error': str(error)}, ensure_ascii=False).encode())
-        except OSError:
-            return self._send(503, json.dumps({'error': '临时素材保存失败，请稍后重试'}, ensure_ascii=False).encode())
 
     def do_GET(self):
         path = urllib.parse.urlparse(self.path).path
         if path == '/api/media-library':
-            return self._handle_media_library('list')
+            return self._send(410, json.dumps({'error': '临时素材库已取消，请刷新页面使用个人直传'}, ensure_ascii=False).encode())
         if path.startswith('/api/video-thumbnail/'):
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
             match = re.fullmatch(r'/api/video-thumbnail/([0-9a-f]{12})/([0-9a-f]{32})\.jpg', path)
@@ -4047,7 +4018,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if content_length < 0 or content_length > body_limit:
             return self._send(413, b'{"error":"request body too large"}')
         if path.startswith('/api/media-library/'):
-            return self._handle_media_library(path.rsplit('/', 1)[-1], content_length)
+            return self._send(410, json.dumps({'error': '临时素材库已取消，请刷新页面使用个人直传'}, ensure_ascii=False).encode())
+        if path.startswith('/api/upload-direct-'):
+            return self._handle_direct_upload(path.rsplit('-', 1)[-1])
         if path == "/api/admin/release-drain":
             if not self._management_auth():
                 return self._send(401, b'{"error":"management authorization required"}')

@@ -122,6 +122,7 @@ def test_completed_results_auto_appear_without_reloading_player(browser, tmp_pat
 
 def test_reference_drop_paste_and_real_first_frame(browser):
     page=browser.new_page()
+    page.add_init_script("sessionStorage.setItem('jt-personal-rh-key','offline-personal-test-key')")
     serve_page(page,block_scene=True)
     uploads=[]
     page.route('**/api/workflows',lambda r:r.fulfill(json=[dict(id='ref-video',kind='video',name='参考图测试',
@@ -129,9 +130,10 @@ def test_reference_drop_paste_and_real_first_frame(browser):
     def upload(route):
         uploads.append(route.request.url)
         route.fulfill(json={'uploadToken':'upl_fake'})
-    page.route('**/api/upload-start',lambda r:(uploads.append(r.request.post_data_json),r.fulfill(json={'upload_id':str(len(uploads))})))
-    page.route('**/api/upload-chunk?*',lambda r:r.fulfill(json={'offset':len(r.request.post_data_buffer)}))
-    page.route('**/api/upload-finish',lambda r:r.fulfill(json={'status':'done','uploadToken':'upl_fake'}))
+    page.route('**/api/upload-direct-start',lambda r:(uploads.append(r.request.post_data_json),r.fulfill(json={'challenge':'offline-challenge'})))
+    page.route('**/api/upload-direct-verify',lambda r:r.fulfill(json={'ok':True}))
+    page.route('**/api/upload-direct-register',lambda r:r.fulfill(json={'uploadToken':'upl_fake'}))
+    page.route('https://www.runninghub.ai/openapi/v2/media/upload/binary',lambda r:r.fulfill(json={'code':200,'data':{'filename':'openapi/fake.png'}},headers={'Access-Control-Allow-Origin':'*'}))
     try:
         page.goto('http://fixture.test/video')
         drop=page.locator('.drop')
