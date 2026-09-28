@@ -1308,6 +1308,15 @@
    "source_editor_json_sha256": "431c5283f8bcc3b93755d2c63126d25e3a8d8b6fc2711b529e6408c49e9d76bf",
    "source_api_json_sha256": "6c8f2e61c77bd7145c6ccc0a18b6094632bccfa64900ccdf5afd0ba8ded4904f",
    "rh_schema_complete": true,
+   "lora_revision_source_editor_workflow_id": "2104572683811061761",
+   "rh_lora_catalog": {
+    "minimax-n1": "HMMisDogV1.5.safetensors",
+    "minimax-n2": "M3_Unlocked_V2.1.safetensors",
+    "minimax-n3": "h3_base_fingering_v1.1-6000.safetensors",
+    "minimax-n4": "MysticXXX_MMH3-V4-GGG.safetensors",
+    "minimax-n5": "HMNSFW-AIO-V2.5 .safetensors",
+    "minimax-n6": "MM-H3_-_Pussy_Lora.safetensors"
+   },
    "desc": "支持1–4张参考图共同约束同一个视频任务；参考视频提供动作和场景，保留源视频音轨。可在指令中说明各参考图的用途。",
    "rh_media": {
     "reference_image": {
@@ -1382,6 +1391,33 @@
      "max": 1125899906842624,
      "step": 1,
      "group": "advanced"
+    },
+    "lora_1_model": {
+     "type": "select", "label": "LoRA 1", "group": "lora",
+     "default": "minimax-n6", "required": true,
+     "options": [{"value":"none","label":"不加载"},"minimax-n1","minimax-n2","minimax-n3","minimax-n4","minimax-n5","minimax-n6"]
+    },
+    "lora_1_strength": {
+     "type": "float", "label": "LoRA 1 强度", "group": "lora",
+     "default": 0.6, "required": true, "min": 0, "max": 2, "step": 0.01
+    },
+    "lora_2_model": {
+     "type": "select", "label": "LoRA 2", "group": "lora",
+     "default": "minimax-n5", "required": true,
+     "options": [{"value":"none","label":"不加载"},"minimax-n1","minimax-n2","minimax-n3","minimax-n4","minimax-n5","minimax-n6"]
+    },
+    "lora_2_strength": {
+     "type": "float", "label": "LoRA 2 强度", "group": "lora",
+     "default": 0.6, "required": true, "min": 0, "max": 2, "step": 0.01
+    },
+    "lora_3_model": {
+     "type": "select", "label": "LoRA 3", "group": "lora",
+     "default": "minimax-n4", "required": true,
+     "options": [{"value":"none","label":"不加载"},"minimax-n1","minimax-n2","minimax-n3","minimax-n4","minimax-n5","minimax-n6"]
+    },
+    "lora_3_strength": {
+     "type": "float", "label": "LoRA 3 强度", "group": "lora",
+     "default": 0.7, "required": true, "min": 0, "max": 2, "step": 0.01
     }
    },
    "params_defaults": {},

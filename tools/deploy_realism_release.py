@@ -297,6 +297,7 @@ RELEASE_RELATIVE_PATHS = (
     "media_library.py",
     "direct_uploads.py",
     "video_uploads.py",
+    "video_wf/h3_edit_multi_api.json",
     "config.json",
     "static/index.html",
     "static/promptgen.html",

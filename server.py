@@ -2897,7 +2897,7 @@ def rh_build_video_node_info(job, w):
     return node_list
 
 
-def rh_submit_h3_multi(job, w):
+def rh_build_h3_graph(job, w):
     # The graph is server-owned; never accept executable workflow JSON from a browser.
     graph = json.loads((BASE/'video_wf/h3_edit_multi_api.json').read_text(encoding='utf8'))
     references = graph['225']['inputs']
@@ -2910,6 +2910,38 @@ def rh_submit_h3_multi(job, w):
         references['ref_images.ref_image_'+str(i-1)] = [node,0]
     for item in rh_build_video_node_info(job,w):
         graph[item['nodeId']]['inputs'][item['fieldName']] = item['fieldValue']
+    # Preserve both model consumers (guider and scheduler). Optional reference
+    # images retain 294-296; LoRA slots use a separate range, 301-303.
+    original = graph.pop('285')
+    model = original['inputs']['model']
+    params = job.get('params') or {}
+    chain = {}
+    for slot in range(1, 4):
+        model_key = f'lora_{slot}_model'
+        strength_key = f'lora_{slot}_strength'
+        model_schema = w['rh_params'][model_key]
+        strength_schema = w['rh_params'][strength_key]
+        selected = _coerce_rh_control(params.get(model_key, model_schema['default']), model_schema)
+        strength = _coerce_rh_control(params.get(strength_key, strength_schema['default']), strength_schema)
+        if selected == 'none' or strength == 0:
+            continue
+        filename = w['rh_lora_catalog'][selected]
+        node = str(300 + slot)
+        if node in graph:
+            raise RuntimeError('LoRA node conflicts with workflow node')
+        chain[node] = {'class_type': 'LoraLoaderModelOnly', 'inputs': {
+            'lora_name': filename, 'strength_model': strength, 'model': model}}
+        model = [node, 0]
+    for node in graph.values():
+        for field, value in node['inputs'].items():
+            if value == ['285', 0]:
+                node['inputs'][field] = model
+    graph.update(chain)
+    return graph
+
+
+def rh_submit_h3_multi(job, w):
+    graph = rh_build_h3_graph(job, w)
     body = {'apiKey':RH_KEY,'workflowId':w['rh_workflow_id'],
             'workflow':json.dumps(graph,ensure_ascii=False),'nodeInfoList':[],
             'addMetadata':False,'usePersonalQueue':False,'instanceType':'default'}
@@ -2930,8 +2962,7 @@ def rh_run_video(job, w):
     node_list = rh_build_video_node_info(job, w)
     job["submit_started"] = time.time()
     job["provider_status"] = "SUBMITTING"
-    multi = w.get('id') == 'h3_edit_n' and any(
-        job.get('provider_media',{}).get('reference_image_'+str(i)) for i in range(2,5))
+    multi = w.get('id') == 'h3_edit_n'
     task_id = rh_submit_h3_multi(job,w) if multi else rh_submit(wfid, node_list)
     persist_provider_task(job, task_id)
     job["progress_pct"] = 5

@@ -1,0 +1,17 @@
+.lora-settings{margin-top:18px;border:1px solid #b18a524d;border-radius:12px;background:rgba(177,138,82,.045);overflow:hidden}
+.lora-settings summary{padding:13px 12px;cursor:pointer;color:#dfc296;font-size:13px;font-weight:600;list-style:none;display:flex;justify-content:space-between;align-items:center;gap:10px}
+.lora-settings summary::after{content:'＋';font-size:17px;font-weight:400;color:#bfa37a}
+.lora-settings[open] summary::after{content:'−'}
+.lora-settings summary::-webkit-details-marker{display:none}
+.lora-settings summary:focus-visible{outline:2px solid #c7a46a;outline-offset:-3px}
+.lora-settings p{margin:0 12px 14px;color:#a9a6a1;font-size:11px;line-height:1.7}
+.lora-setting{padding:0 12px 13px}
+.form .lora-setting label{color:#d9c3a2;margin:0 0 4px}
+.lora-model-name{font-size:10px;color:#aaa6a0;overflow-wrap:anywhere;line-height:1.5;margin-bottom:8px}
+.lora-strength-inputs{display:grid;grid-template-columns:minmax(0,1fr) 74px;align-items:center;gap:12px;margin-top:9px}
+.form .lora-setting select{color:#dfc296;background:#111214;border-color:#b18a5266}
+.form .lora-setting input:disabled{opacity:.35}
+.form .lora-strength-inputs input[type=range]{padding:0;min-height:24px;border:0;background:transparent;accent-color:#c7a46a;cursor:pointer}
+.form .lora-strength-inputs input[type=number]{padding:6px 7px;min-height:34px;text-align:center;font-variant-numeric:tabular-nums}
+.form .lora-strength-inputs input:invalid{outline:1px solid #d78b71}
+.lora-reset{margin:0 12px 13px;padding:6px 9px;color:#cdb794;background:transparent;border:1px solid #b18a524d;border-radius:6px;font-size:11px;cursor:pointer}

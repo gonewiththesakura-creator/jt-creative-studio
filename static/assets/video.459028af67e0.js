@@ -1,6 +1,68 @@
 export function mount({document,window,fetch,location}){
 const histOverlay=document.getElementById("histOverlay");
 const favOverlay=document.getElementById("favOverlay");
+function renderLoraSettings(form, params, state) {
+  const controls = params.filter(([, param]) => param.group === 'lora' && param.type === 'select');
+  if (!controls.length) return;
+  const details = document.createElement('details');
+  details.className = 'lora-settings';
+  const summary = document.createElement('summary');
+  summary.textContent = 'LoRA 详细调整';
+  const note = document.createElement('p');
+  note.textContent = '按下列顺序依次加载。强度为 0 时不产生影响；收起面板仍会使用当前设置。';
+  details.append(summary, note);
+  state.loraParams ??= {};
+  const resets = [];
+  controls.forEach(([modelKey, modelParam]) => {
+    const key = modelKey.replace(/_model$/, '_strength');
+    const param = params.find(([name]) => name === key)[1];
+    const row = document.createElement('div');
+    row.className = 'lora-setting';
+    const label = document.createElement('label');
+    label.htmlFor = 'param_' + modelKey;
+    label.textContent = modelParam.label;
+    const select = document.createElement('select');
+    select.id = 'param_' + modelKey;
+    select.dataset.paramType = 'select';
+    for (const option of modelParam.options) {
+      const item = document.createElement('option');
+      item.value = optionValue(option); item.textContent = optionLabel(option);
+      select.append(item);
+    }
+    select.value = state.loraParams[modelKey] ?? modelParam.default;
+    const inputs = document.createElement('div');
+    inputs.className = 'lora-strength-inputs';
+    const range = document.createElement('input');
+    const number = document.createElement('input');
+    range.type = 'range'; number.type = 'number';
+    range.setAttribute('aria-label', param.label + '滑块');
+    number.id = 'param_' + key;
+    number.setAttribute('aria-label', param.label);
+    number.dataset.paramType = 'float';
+    number.required = true;
+    for (const input of [range, number]) {
+      input.min = param.min; input.max = param.max; input.step = param.step;
+      input.value = state.loraParams[key] ?? param.default;
+    }
+    const remember = () => { state.loraParams[key] = number.value; };
+    range.oninput = () => { number.value = range.value; remember(); };
+    number.oninput = () => {
+      if (number.value !== '' && number.validity.valid) range.value = number.value;
+      remember();
+    };
+    const updateEnabled = () => { range.disabled = number.disabled = select.value === 'none'; };
+    select.onchange = () => { state.loraParams[modelKey] = select.value; updateEnabled(); };
+    updateEnabled();
+    resets.push(() => { select.value = modelParam.default; select.onchange(); range.value = number.value = param.default; remember(); });
+    inputs.append(range, number); row.append(label, select, inputs); details.append(row);
+  });
+  const reset = document.createElement('button');
+  reset.type = 'button'; reset.className = 'lora-reset';
+  reset.textContent = '恢复默认设置';
+  reset.onclick = () => resets.forEach(apply => apply());
+  details.append(reset); form.append(details);
+}
+
 /*
 Copyright (c) 2014-2025 Chen, Yi-Cyuan
 
@@ -148,12 +210,13 @@ function renderForm(){const f=document.getElementById('wfForm'),workflow=cur,ver
     if(state.files[key]){replaceLocalMediaPreview(key,m,state.files[key],drop,state);if(!state.tokens[key])fn.textContent=state.files[key].name+' · 尚未上传成功，请重新选择重试'}if(state.uploading[key])fn.textContent='上传中…';drop.onclick=event=>{if(event.target!==inp&&!event.target.closest('video'))inp.click()};drop.onkeydown=event=>{if(event.target===drop&&(event.key==='Enter'||event.key===' ')){event.preventDefault();inp.click()}};f.appendChild(drop)});
   const params=Object.entries(cur.rh_params||{});
   f.querySelectorAll('.drop').forEach(drop=>{if(isVideoType(workflow.rh_media[drop.dataset.mediaKey].type))return;const hint=document.createElement('button');hint.type='button';hint.className='paste-target';hint.textContent='粘贴到这里（Ctrl＋V）';hint.onclick=event=>{event.stopPropagation();drop.focus()};drop.append(hint)});
-  params.forEach(([key,p])=>{const lab=document.createElement('label');lab.textContent=p.label+(p.required?'（必填）':'');f.appendChild(lab);let inp;
+  params.filter(([,p])=>p.group!=='lora').forEach(([key,p])=>{const lab=document.createElement('label');lab.textContent=p.label+(p.required?'（必填）':'');f.appendChild(lab);let inp;
     if(p.type==='text'||p.type==='textarea'||key==='prompt'||key==='negative'){inp=document.createElement('textarea');if(cur.prompt_placeholder&&key==='prompt')inp.placeholder=cur.prompt_placeholder;if(key==='prompt'&&cur.prompt_hint){const h=document.createElement('div');h.className='note';h.style.color='#c26a4a';h.textContent=cur.prompt_hint;f.appendChild(h)}}
     else if(p.type==='boolean'){inp=document.createElement('input');inp.type='checkbox'}
     else if(p.type==='select'){inp=document.createElement('select');(p.options||[]).forEach(option=>{const item=document.createElement('option');item.value=optionValue(option);item.textContent=optionLabel(option);inp.appendChild(item)})}
     else{inp=document.createElement('input');inp.type=(p.type==='number'||p.type==='int'||p.vtype==='int'||p.vtype==='float')?'number':'text';if(p.min!==undefined)inp.min=p.min;if(p.max!==undefined)inp.max=p.max;if(p.step!==undefined)inp.step=p.step;else if(p.type==='int'||p.vtype==='int')inp.step='1'}
     inp.id='param_'+key;inp.dataset.paramType=p.vtype||p.type||'text';const d=paramDefault(key,p);if(d!==undefined){if(inp.type==='checkbox')inp.checked=d===true;else inp.value=d}f.appendChild(inp);if(workflow.id==='h3_edit_n'&&key==='duration'){const note=document.createElement('div');note.id='durationAutoNote';note.className='note';note.setAttribute('aria-live','polite');note.textContent=state.durationSelection?.note||'选择视频后自动读取时长，可手动修改（4–15 秒）';f.appendChild(note);inp.addEventListener('input',()=>{if(state.durationSelection){state.durationSelection.manual=true;state.durationSelection.value=inp.value;state.durationSelection.note='已手动设置时长';note.textContent=state.durationSelection.note}})}});
+  renderLoraSettings(f,params,state);
   (cur.fixed_features||[]).forEach(text=>{const note=document.createElement('div');note.className='note unavailable';note.textContent=text;f.appendChild(note)})}
 function sendMediaFile(url,file,onProgress){return new Promise((resolve,reject)=>{const request=new XMLHttpRequest();request.open('POST',url);request.timeout=600000;request.setRequestHeader('Content-Type','application/octet-stream');request.upload.onprogress=event=>{if(event.lengthComputable)onProgress(Math.round(event.loaded/event.total*100))};request.onload=()=>{let data={};try{data=JSON.parse(request.responseText)}catch{}if(request.status>=200&&request.status<300&&data.uploadToken)resolve(data);else reject(new Error(data.error||'上传服务返回错误（'+request.status+'）'))};request.onerror=()=>reject(new Error('网络连接中断，请重新选择文件重试'));request.ontimeout=()=>reject(new Error('上传超时，请检查网络或压缩文件后重试'));request.send(file)})}
 async function uploadMedia(key,m,file,drop,workflow,version,state){const fnEl=drop.querySelector('.fn'),error=validateSelectedMedia(file,m);if(error){fnEl.textContent='✗ '+error;return}const uploadId=(state.uploadIds[key]||0)+1;state.uploadIds[key]=uploadId;state.uploading[key]=true;drop.querySelector('.upload-retry')?.remove();delete state.tokens[key];delete state.names[key];replaceLocalMediaPreview(key,m,file,drop,state);fnEl.textContent='上传中…';drop.classList.remove('has-file');try{const query=new URLSearchParams({workflow:workflow.id,input_key:key,filename:file.name});const r=await sendResumableMediaFile('/api/upload?'+query,file,percent=>{if(state.uploadIds[key]!==uploadId)return;const activeDrop=currentMediaDrop(workflow.id,key,version,drop);if(activeDrop)activeDrop.querySelector('.fn').textContent=percent<100?'上传中 '+percent+'%':'文件已传完，RunningHub 接收中…'});if(state.uploadIds[key]!==uploadId)return;state.tokens[key]=r.uploadToken;state.names[key]=file.name;const activeDrop=currentMediaDrop(workflow.id,key,version,drop);if(activeDrop){activeDrop.classList.add('has-file');activeDrop.querySelector('.fn').textContent='✓ '+file.name+' 已上传'}}catch(e){if(state.uploadIds[key]!==uploadId)return;delete state.tokens[key];delete state.names[key];const activeDrop=currentMediaDrop(workflow.id,key,version,drop);if(activeDrop){activeDrop.classList.remove('has-file');activeDrop.querySelector('.fn').textContent='✗ 上传暂未完成：'+e.message;const retry=document.createElement('button');retry.type='button';retry.className='upload-retry';retry.textContent='继续上传';retry.onclick=event=>{event.stopPropagation();uploadMedia(key,m,file,activeDrop,workflow,renderVersion,state)};activeDrop.append(retry)}}finally{if(state.uploadIds[key]===uploadId)delete state.uploading[key]}}
@@ -162,7 +225,7 @@ async function sendResumableMediaFile(url,file,onProgress){
   return sendDirectMediaFile(url,file,onProgress);
 }
 function readParamValue(el){if(el.type==='checkbox')return el.checked;if(el.value==='')return'';if(el.dataset.paramType==='int')return Number.parseInt(el.value,10);if(el.dataset.paramType==='float'||el.dataset.paramType==='number')return Number(el.value);return el.value}
-function collectParams(){const p={};Object.keys(cur.rh_params||{}).forEach(k=>{const el=document.getElementById('param_'+k);if(el){const value=readParamValue(el);if(value!=='')p[k]=value}});return p}
+function collectParams(){const p={};Object.keys(cur.rh_params||{}).forEach(k=>{const el=document.getElementById('param_'+k);if(el){if(cur.rh_params[k].group==='lora'&&!el.disabled&&!el.checkValidity()){const drawer=el.closest('details');if(drawer)drawer.open=true;el.reportValidity();throw new Error('请检查 '+cur.rh_params[k].label)}const value=readParamValue(el);if(value!=='')p[k]=value}});return p}
 function safeMediaUrl(value){if(!value||!String(value).trim())return'';try{const u=new URL(String(value),location.origin);return ['http:','https:'].includes(u.protocol)&&!u.username&&!u.password?u.href:''}catch{return''}}
 function hasRealSeed(j){const value=j?.params?.seed??j?.seed;return typeof value==='number'&&Number.isFinite(value)}
 function seedSegment(j){const value=j?.params?.seed??j?.seed;return hasRealSeed(j)?('种子：'+value+' · '):''}
