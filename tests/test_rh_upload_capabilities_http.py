@@ -236,7 +236,12 @@ def test_raw_upload_quota_rejects_before_provider_call(monkeypatch):
 
 
 @pytest.mark.parametrize('chunk_size', [1, 7, 65536])
-def test_streamed_multipart_preserves_all_bytes_and_declared_length(monkeypatch, chunk_size):
+@pytest.mark.parametrize('filename,ctype,remote_name', [
+    ('手机视频.mp4', 'video/mp4', 'openapi/safe.mp4'),
+    ('参考图.png', 'image/png', 'openapi/safe.png'),
+])
+def test_streamed_multipart_preserves_all_bytes_and_declared_length(
+        monkeypatch, chunk_size, filename, ctype, remote_name):
     payload = bytes(range(256)) * 400
     source = io.BytesIO(payload)
     def receive(request, **kwargs):
@@ -244,12 +249,15 @@ def test_streamed_multipart_preserves_all_bytes_and_declared_length(monkeypatch,
         while block := request.data.read(chunk_size):
             chunks.append(block)
         body = b''.join(chunks)
+        assert request.full_url == panel.RH_BASE + '/media/upload/binary'
+        assert request.get_header('Authorization') == 'Bearer ' + panel.RH_KEY
         assert len(body) == int(request.get_header('Content-length'))
         assert body.count(payload) == 1
         assert b'filename="upload_' in body and body.endswith(b'--\r\n')
-        return {'code': 0, 'data': {'fileName': 'api/safe.mp4'}}
+        assert b'name="apiKey"' not in body and b'name="fileType"' not in body
+        return {'code': 200, 'data': {'filename': remote_name}}
     monkeypatch.setattr(panel, '_provider_json_request', receive)
-    assert panel._rh_upload_stream(source, len(payload), '手机视频.mp4', 'video/mp4') == 'api/safe.mp4'
+    assert panel._rh_upload_stream(source, len(payload), filename, ctype) == remote_name
     assert source.closed
 
 

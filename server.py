@@ -2819,17 +2819,10 @@ def _rh_upload_stream(source, size, filename, ctype="application/octet-stream", 
     if not re.fullmatch(r"\.[a-z0-9]{1,8}", safe_suffix):
         raise ValueError("unsafe upload extension")
     provider_filename = "upload_" + uuid.uuid4().hex + safe_suffix
-    def _field(name, val):
-        return (f"--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n"
-                f"{val}\r\n").encode()
     def _file(name, fname, ctype_):
         return (f"--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"; "
                 f"filename=\"{fname}\"\r\nContent-Type: {ctype_}\r\n\r\n").encode()
-    prefix = b"".join([
-        _field("apiKey", RH_KEY),
-        _field("fileType", "input"),
-        _file("file", provider_filename, ctype),
-    ])
+    prefix = _file("file", provider_filename, ctype)
     suffix = b"\r\n" + f"--{boundary}--\r\n".encode()
     body = _MultipartUploadStream(source, size, prefix, suffix)
     headers = {
@@ -2837,16 +2830,17 @@ def _rh_upload_stream(source, size, filename, ctype="application/octet-stream", 
         "Authorization": f"Bearer {RH_KEY}",
         "Content-Length": str(len(body)),
     }
-    req = urllib.request.Request("https://www.runninghub.cn/task/openapi/upload",
+    req = urllib.request.Request(f"{RH_BASE}/media/upload/binary",
                                  data=body, headers=headers)
     try:
         resp = _provider_json_request(req, timeout=timeout)
     finally:
         body.close()
-    if resp.get("code") != 0:
-        raise RuntimeError(f"RH upload failed: {resp.get('code')} {resp.get('msg')}")
-    fname = (resp.get("data") or {}).get("fileName")
-    if not isinstance(fname, str) or not re.fullmatch(r"api/[A-Za-z0-9._/-]{1,900}", fname):
+    if resp.get("code") not in (0, 200):
+        raise RuntimeError(f"RH upload failed: {resp.get('code')} {resp.get('message')}")
+    data = resp.get("data") or {}
+    fname = data.get("filename") or data.get("fileName")
+    if not isinstance(fname, str) or not re.fullmatch(r"(?:api|openapi)/[A-Za-z0-9._/-]{1,900}", fname):
         raise RuntimeError("RH upload returned no fileName")
     if ".." in pathlib.PurePosixPath(fname).parts:
         raise RuntimeError("RH upload returned unsafe fileName")
