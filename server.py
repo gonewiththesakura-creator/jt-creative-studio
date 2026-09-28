@@ -14,6 +14,7 @@ import json, os, re, sys, time, uuid, threading, urllib.request, urllib.parse, u
 import http.server, http.cookies, socketserver, pathlib, secrets, hashlib, hmac
 import socket, base64, struct, subprocess, io, gzip, ipaddress, tempfile, ssl, http.client
 from video_uploads import UploadStaging
+from media_library import MediaLibrary
 _video_upload_staging = UploadStaging()
 
 BASE = pathlib.Path(__file__).resolve().parent
@@ -27,6 +28,7 @@ _SESSION_SECRET_SOURCE = os.environ.get("PANEL_SESSION_SECRET") or TOKEN or secr
 SESSION_SECRET = hashlib.sha256(("jt-session-signing:" + _SESSION_SECRET_SOURCE).encode("utf-8")).digest()
 DATA_DIR = pathlib.Path(os.environ.get("PANEL_DIR", str(BASE / "panel_data")))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
+_media_library = MediaLibrary(DATA_DIR / 'media_library')
 JOBS_DIR = DATA_DIR / "jobs"; JOBS_DIR.mkdir(exist_ok=True)
 JOBS_FILE = DATA_DIR / "jobs.json"
 FAVORITES_DIR = DATA_DIR / "favorites"; FAVORITES_DIR.mkdir(exist_ok=True)
@@ -706,14 +708,14 @@ def prune_upload_capabilities(save=True):
 
 
 def issue_upload_capability(provider_name, workflow_id, input_key, media_type,
-                            original_filename, session_id):
+                            original_filename, session_id, expires=None):
     token = "upl_" + secrets.token_urlsafe(32)
     now = time.time()
     row = {
         "provider_name": str(provider_name), "workflow": str(workflow_id),
         "input_key": str(input_key), "media_type": str(media_type).lower(),
         "filename": str(original_filename), "session_hash": _session_hash(session_id),
-        "created": now, "expires": now + UPLOAD_CAPABILITY_TTL,
+        "created": now, "expires": min(now + UPLOAD_CAPABILITY_TTL, expires) if expires else now + UPLOAD_CAPABILITY_TTL,
     }
     with _upload_capabilities_lock:
         _upload_capabilities[_upload_token_hash(token)] = row
@@ -3625,8 +3627,82 @@ class Handler(http.server.BaseHTTPRequestHandler):
         finally:
             self._cancel_absolute_deadline(deadline)
 
+    def _handle_media_library(self, action, content_length=0):
+        if not self._auth(): return self._send(401)
+        if action != 'list' and _release_draining: return self._release_in_progress()
+        session_id = self._require_session()
+        if not session_id: return
+        code = self.headers.get('X-Media-Library', '')
+        try:
+            if action == 'list':
+                result = _media_library.snapshot(code)
+            elif action == 'chunk':
+                values = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                aid = values.get('id', [''])[0]
+                offset = int(values.get('offset', ['-1'])[0])
+                if not 0 < content_length <= 512 * 1024:
+                    raise ValueError('无效的分块大小')
+                # Authenticate before reading an upload body.
+                with _media_library.lock: _media_library._asset(code, aid)
+                self.connection.settimeout(60)
+                deadline = self._start_absolute_deadline(120)
+                try: raw = self.rfile.read(content_length)
+                finally:
+                    self._cancel_absolute_deadline(deadline)
+                    self.connection.settimeout(CLIENT_SOCKET_TIMEOUT)
+                if len(raw) != content_length: raise ValueError('分块未传完')
+                result = _media_library.chunk(code, aid, offset, raw)
+            else:
+                body = self._read_json(50000)
+                if not isinstance(body, dict): raise ValueError('bad json')
+                aid = str(body.get('id', ''))
+                if action == 'create':
+                    result = _media_library.create()
+                elif action == 'start':
+                    name = _safe_upload_filename(body.get('filename', ''))
+                    size = int(body.get('size', 0))
+                    if not 0 < size <= MediaLibrary.MAX_FILE: raise ValueError('文件必须在 60MB 以内')
+                    _media_library.snapshot(code)
+                    quota = reserve_upload_attempt(session_id, size)
+                    if self._upload_quota_rejection(quota): return
+                    result = _media_library.start(code, name, size, body.get('type'))
+                elif action == 'finish':
+                    thumbnail = body.get('thumbnail')
+                    if thumbnail:
+                        thumbnail = base64.b64encode(normalize_video_thumbnail(thumbnail)).decode('ascii')
+                    result = _media_library.finish(code, aid, thumbnail, body.get('duration'), upload_media_file_content_type)
+                elif action == 'delete':
+                    result = _media_library.delete(code, aid)
+                elif action == 'use':
+                    wid, key = str(body.get('workflow', '')), str(body.get('input_key', ''))
+                    workflow = WORKFLOWS.get(wid, {})
+                    mapping = workflow.get('rh_media', {}).get(key)
+                    assets = _media_library.snapshot(code)['assets']
+                    asset = next((a for a in assets if a['id'] == aid), None)
+                    if workflow.get('kind') != 'video' or not mapping or not asset or mapping.get('type') != asset['type']:
+                        raise ValueError('素材类型与上传位置不匹配')
+                    fingerprint = hashlib.sha256(RH_KEY.encode()).hexdigest()
+                    result = _media_library.use(code, aid, fingerprint, rh_upload_temp_file,
+                                                _video_upload_staging.provider_slots, body.get('retry') is True)
+                    if result['status'] == 'done':
+                        token = issue_upload_capability(result['provider_name'], wid, key, asset['type'],
+                                                        asset['name'], session_id, expires=result['expires'])
+                        result = {'status': 'done', 'uploadToken': token, 'filename': asset['name']}
+                else:
+                    return self._send(404)
+            return self._send(200, json.dumps(result, ensure_ascii=False).encode(),
+                              headers={'Cache-Control': 'no-store', 'Vary': 'X-Media-Library, Cookie'})
+        except LookupError as error:
+            return self._send(404, json.dumps({'error': str(error)}, ensure_ascii=False).encode())
+        except (ValueError, TypeError, OverflowError) as error:
+            return self._send(400, json.dumps({'error': str(error)}, ensure_ascii=False).encode())
+        except OSError:
+            return self._send(503, json.dumps({'error': '临时素材保存失败，请稍后重试'}, ensure_ascii=False).encode())
+
     def do_GET(self):
         path = urllib.parse.urlparse(self.path).path
+        if path == '/api/media-library':
+            return self._handle_media_library('list')
         if path.startswith('/api/video-thumbnail/'):
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
             match = re.fullmatch(r'/api/video-thumbnail/([0-9a-f]{12})/([0-9a-f]{32})\.jpg', path)
@@ -3970,6 +4046,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         body_limit = json_body_limit(path)
         if content_length < 0 or content_length > body_limit:
             return self._send(413, b'{"error":"request body too large"}')
+        if path.startswith('/api/media-library/'):
+            return self._handle_media_library(path.rsplit('/', 1)[-1], content_length)
         if path == "/api/admin/release-drain":
             if not self._management_auth():
                 return self._send(401, b'{"error":"management authorization required"}')
@@ -4765,6 +4843,12 @@ def main():
     load_favorites()
     load_upload_capabilities()
     load_upload_usage()
+    def clean_media_libraries():
+        while True:
+            try: _media_library.cleanup()
+            except OSError: pass
+            time.sleep(60)
+    threading.Thread(target=clean_media_libraries, daemon=True).start()
     threading.Thread(target=video_queue_loop, daemon=True).start()
     for job in list(_jobs.values()):
         if job.get("status") == "recovering" and job.get("rh_task_id"):

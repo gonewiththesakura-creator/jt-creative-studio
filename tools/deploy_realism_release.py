@@ -294,6 +294,8 @@ RELEASE_RELATIVE_PATHS = (
     "static/app-manifest.json",
     *(path.relative_to(BASE).as_posix() for path in sorted((BASE / "static/assets").glob("*")) if path.is_file()),
     "server.py",
+    "media_library.py",
+    "video_uploads.py",
     "config.json",
     "static/index.html",
     "static/promptgen.html",
