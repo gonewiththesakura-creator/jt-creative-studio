@@ -2945,12 +2945,14 @@ def rh_submit_h3_multi(job, w):
     body = {'apiKey':RH_KEY,'workflowId':w['rh_workflow_id'],
             'workflow':json.dumps(graph,ensure_ascii=False),'nodeInfoList':[],
             'addMetadata':False,'usePersonalQueue':False,'instanceType':'default'}
-    req = urllib.request.Request('https://www.runninghub.cn/task/openapi/create',
+    req = urllib.request.Request('https://www.runninghub.ai/task/openapi/create',
         data=json.dumps(body).encode(),headers={'Content-Type':'application/json','Authorization':'Bearer '+RH_KEY})
     result = _provider_json_request(req,timeout=RH_TIMEOUT_SUBMIT)
     task_id = (result.get('data') or {}).get('taskId')
     if result.get('code') == 0 and task_id: return str(task_id)
-    raise RuntimeError('RH multi-reference submission rejected: code='+str(result.get('code')))
+    if result.get('code') not in (None, 0):
+        raise ProviderTaskFailed('RH submission rejected: code='+str(result.get('code')))
+    raise ProviderStateUncertain('RH submission returned no task id')
 
 
 def rh_run_video(job, w):
@@ -3037,11 +3039,76 @@ def dispatch_video_queue():
 def video_queue_loop():
     while True:
         try:
+            reconcile_video_queue_holds()
             dispatch_video_queue()
         except Exception:
             # Persistence/launch failures must never trigger a second paid submit.
             pass
         time.sleep(2)
+
+
+_queue_hold_check_after = 0
+_queue_hold_idle_sample = None
+
+
+def reconcile_video_queue_holds():
+    """Release stale reservations only after two provider-confirmed idle samples.
+
+    Unknown submissions are never resubmitted or claimed to have failed upstream.
+    The five-minute grace also excludes a delayed submit response from recovery.
+    """
+    global _queue_hold_check_after, _queue_hold_idle_sample
+    now = time.time()
+    with _admission_lock, _lock_jobs:
+        if _release_draining or now < _queue_hold_check_after:
+            return
+        held = {j['id']: j.get('submit_started') or j.get('dispatch_started') or j.get('created', now)
+                for j in _jobs.values() if j.get('video_queued') and j.get('queue_hold')
+                and j.get('status') == 'error' and not j.get('rh_task_id')}
+        if not held or any(now-start < 300 for start in held.values()) or any(
+                j.get('generation_backend') == 'cloud' and j.get('status') in ('running', 'recovering')
+                for j in _jobs.values()):
+            _queue_hold_idle_sample = None
+            return
+        _queue_hold_check_after = now + 60
+    try:
+        req = urllib.request.Request('https://www.runninghub.ai/uc/openapi/accountStatus',
+            data=json.dumps({'apikey': RH_KEY}).encode(),
+            headers={'Content-Type': 'application/json', 'Authorization': 'Bearer '+RH_KEY})
+        response = _provider_json_request(req, timeout=RH_TIMEOUT_QUERY)
+        count = (response.get('data') or {}).get('currentTaskCounts')
+        if response.get('code') != 0 or isinstance(count, bool) or str(count) != '0':
+            _queue_hold_idle_sample = None
+            return
+    except Exception:
+        _queue_hold_idle_sample = None
+        return
+    with _admission_lock, _lock_jobs:
+        if _release_draining or any(j.get('generation_backend') == 'cloud' and
+                j.get('status') in ('running', 'recovering') for j in _jobs.values()):
+            _queue_hold_idle_sample = None
+            return
+        if _queue_hold_idle_sample != held:
+            _queue_hold_idle_sample = held
+            return
+        before = {}
+        for job_id, started in held.items():
+            job = _jobs.get(job_id)
+            if not job or job.get('status') != 'error' or not job.get('queue_hold') or job.get('rh_task_id'):
+                continue
+            before[job_id] = dict(job)
+            job.update(queue_hold=False, queue_hold_released_at=time.time(),
+                       queue_hold_release_reason='provider_idle_confirmed_twice',
+                       provider_status='SUBMIT_UNCONFIRMED_IDLE',
+                       error='提交时连接中断，未收到任务号；已确认云端空闲并释放占位，未自动重提此任务。')
+        try:
+            if before:
+                save_jobs()
+        except Exception:
+            for job_id, previous in before.items():
+                _jobs[job_id].clear(); _jobs[job_id].update(previous)
+            raise
+        _queue_hold_idle_sample = None
 
 
 def video_queue_snapshot(session_id):
@@ -3149,11 +3216,14 @@ def run_job(job):
         job["status"] = "recovering"
         job["provider_status"] = "RECOVERING"
         job["error"] = None
-        schedule_cloud_recovery(job)
+        if job.get('rh_task_id'):
+            schedule_cloud_recovery(job)
+        elif job.get('video_queued'):
+            job.update(status='error', queue_hold=True, error='提交结果未确认，正在核对云端占位')
     except Exception as e:
         job["status"] = "error"
         job["error"] = str(e)[:500]
-        if job.get('video_queued') and job.get('submit_started') and not job.get('rh_task_id'):
+        if job.get('video_queued') and job.get('submit_started') and not job.get('rh_task_id') and not isinstance(e, ProviderTaskFailed):
             job['queue_hold'] = True
         if job.get("generation_backend") == "api":
             job["provider_status"] = "API_ERROR"
