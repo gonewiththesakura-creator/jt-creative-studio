@@ -1395,7 +1395,7 @@
     "lora_1_model": {
      "type": "select", "label": "LoRA 1", "group": "lora",
      "default": "minimax-n6", "required": true,
-     "options": [{"value":"none","label":"不加载"},"minimax-n1","minimax-n2","minimax-n3","minimax-n4","minimax-n5","minimax-n6"]
+     "options": [{"value":"none","label":"不加载"},{"value":"minimax-n1","label":"dog"},{"value":"minimax-n2","label":"un"},{"value":"minimax-n3","label":"fig"},{"value":"minimax-n4","label":"v4"},{"value":"minimax-n5","label":"aio"},{"value":"minimax-n6","label":"hp"}]
     },
     "lora_1_strength": {
      "type": "float", "label": "LoRA 1 强度", "group": "lora",
@@ -1404,7 +1404,7 @@
     "lora_2_model": {
      "type": "select", "label": "LoRA 2", "group": "lora",
      "default": "minimax-n5", "required": true,
-     "options": [{"value":"none","label":"不加载"},"minimax-n1","minimax-n2","minimax-n3","minimax-n4","minimax-n5","minimax-n6"]
+     "options": [{"value":"none","label":"不加载"},{"value":"minimax-n1","label":"dog"},{"value":"minimax-n2","label":"un"},{"value":"minimax-n3","label":"fig"},{"value":"minimax-n4","label":"v4"},{"value":"minimax-n5","label":"aio"},{"value":"minimax-n6","label":"hp"}]
     },
     "lora_2_strength": {
      "type": "float", "label": "LoRA 2 强度", "group": "lora",
@@ -1413,7 +1413,7 @@
     "lora_3_model": {
      "type": "select", "label": "LoRA 3", "group": "lora",
      "default": "minimax-n4", "required": true,
-     "options": [{"value":"none","label":"不加载"},"minimax-n1","minimax-n2","minimax-n3","minimax-n4","minimax-n5","minimax-n6"]
+     "options": [{"value":"none","label":"不加载"},{"value":"minimax-n1","label":"dog"},{"value":"minimax-n2","label":"un"},{"value":"minimax-n3","label":"fig"},{"value":"minimax-n4","label":"v4"},{"value":"minimax-n5","label":"aio"},{"value":"minimax-n6","label":"hp"}]
     },
     "lora_3_strength": {
      "type": "float", "label": "LoRA 3 强度", "group": "lora",

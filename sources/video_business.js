@@ -49,7 +49,7 @@ function detectSourceDuration(media,key,file,drop,state){
 }
 function paramDefault(key,p){const selected=cur?.id==='h3_edit_n'&&key==='duration'?ensureMediaState(cur.id).durationSelection:null;return selected?.value??(Object.prototype.hasOwnProperty.call(p,'default')?p.default:(cur.params_defaults||{})[key])}
 function optionValue(option){return typeof option==='object'?String(option.value??option.name??''):String(option)}
-function optionLabel(option){return typeof option==='object'?String(option.label??option.name??option.value??''):String(option)}
+function optionLabel(option){const aliases={'minimax-n1':'dog','minimax-n2':'un','minimax-n3':'fig','minimax-n4':'v4','minimax-n5':'aio','minimax-n6':'hp'};return typeof option==='object'?String(option.label??option.name??option.value??''):(aliases[String(option)]??String(option))}
 function renderForm(){const f=document.getElementById('wfForm'),workflow=cur,version=renderVersion,state=ensureMediaState(workflow.id);f.replaceChildren();const intro=document.createElement('div'),title=document.createElement('b'),desc=document.createElement('span');intro.className='note';title.textContent=workflow.name;desc.textContent=workflow.desc;intro.append(title,document.createElement('br'),desc);f.appendChild(intro);
   const media=Object.entries(workflow.rh_media||{});
   media.forEach(([key,m])=>{const lab=document.createElement('label');lab.textContent=m.label+(m.required?'（必传）':'（可选）');f.appendChild(lab);
