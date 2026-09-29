@@ -58,6 +58,32 @@ def test_grace_period_and_failed_persistence_do_not_release(panel, monkeypatch):
     assert held['queue_hold']
 
 
+@pytest.mark.parametrize('provider_status,released', [('RUNNING',True), ('QUEUED',True), ('SUCCESS',False), ('',False)])
+def test_known_active_task_does_not_starve_hold_recovery(panel, monkeypatch, provider_status, released):
+    held, waiting = setup_holds(panel, monkeypatch)
+    panel._jobs['active'] = dict(id='active', status='running', generation_backend='cloud', rh_task_id='known')
+    monkeypatch.setattr(panel, '_provider_json_request', lambda *a,**kw:{'code':0,'data':{'currentTaskCounts':1}})
+    monkeypatch.setattr(panel, 'rh_query', lambda tid:(provider_status, []))
+    for _ in range(2):
+        monkeypatch.setattr(panel, '_queue_hold_check_after', 0)
+        panel.reconcile_video_queue_holds()
+    assert bool(held['queue_hold']) is not released
+    assert waiting['status']=='queued' and panel._jobs['active']['rh_task_id']=='known'
+
+
+def test_task_change_during_provider_check_keeps_reservation(panel, monkeypatch):
+    held, _ = setup_holds(panel, monkeypatch)
+    panel._jobs['active'] = dict(id='active', status='running', generation_backend='cloud', rh_task_id='known')
+    monkeypatch.setattr(panel, '_queue_hold_idle_sample', ({'held':held['submit_started']}, {'active':'known'}))
+    monkeypatch.setattr(panel, '_provider_json_request', lambda *a,**kw:{'code':0,'data':{'currentTaskCounts':1}})
+    def query(tid):
+        panel._jobs['active']['status']='done'
+        return 'RUNNING', []
+    monkeypatch.setattr(panel, 'rh_query', query)
+    panel.reconcile_video_queue_holds()
+    assert held['queue_hold']
+
+
 @pytest.mark.parametrize('kind,hold',[('rejected',False),('unknown',True),('timeout',True)])
 def test_submit_failure_classification(panel, monkeypatch, kind, hold):
     job=dict(id='new',workflow='h3_edit_n',generation_backend='cloud',video_queued=True)

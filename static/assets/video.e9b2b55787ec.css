@@ -205,6 +205,15 @@
 .gallery-thumb img{object-fit:contain;background:#202127}.gallery-thumb{background:#202127}
 @media(max-width:600px){.task-grid{grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px}.gallery-navigation{padding:0 4px}.task-panel-head{gap:8px;flex-wrap:wrap}}
 
+.prompt-presets{margin:10px 0 16px;padding:10px;border:1px solid #b49b7040;border-radius:10px;background:#b49b7009}
+.prompt-presets summary{cursor:pointer;color:#cdb58e;font-size:12px;line-height:24px}
+.prompt-preset-slots{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:8px 0}
+.prompt-presets button{min-width:0;min-height:32px;padding:6px;border:1px solid #b49b703b;border-radius:6px;background:#ffffff05;color:#bdb4a6;font:inherit;font-size:11px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.prompt-presets button[aria-pressed=true]{border-color:#c6a56b;background:#b49b7026;color:#f0d49f}.prompt-presets button.saved:not([aria-pressed=true]){color:#dbc7a7}
+.prompt-presets button:disabled{opacity:.35;cursor:default}.prompt-presets button:focus-visible{outline:2px solid #dbbc85;outline-offset:2px}
+.form .prompt-presets input{min-height:32px;padding:6px 8px;font-size:12px;margin:0}
+.prompt-preset-actions{display:grid;grid-template-columns:1fr 1.3fr 1fr;gap:6px;margin:7px 0}.prompt-presets .note{line-height:1.6}
+
 /* SINGULARITY — the competition black-hole scene, fitted to the real workbench. */
 :host{background:#030407;color-scheme:dark}
 .jt-page-body.singularity{

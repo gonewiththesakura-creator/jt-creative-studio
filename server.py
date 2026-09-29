@@ -3052,7 +3052,7 @@ _queue_hold_idle_sample = None
 
 
 def reconcile_video_queue_holds():
-    """Release stale reservations only after two provider-confirmed idle samples.
+    """Release stale reservations after two fully accounted provider samples.
 
     Unknown submissions are never resubmitted or claimed to have failed upstream.
     The five-minute grace also excludes a delayed submit response from recovery.
@@ -3065,9 +3065,9 @@ def reconcile_video_queue_holds():
         held = {j['id']: j.get('submit_started') or j.get('dispatch_started') or j.get('created', now)
                 for j in _jobs.values() if j.get('video_queued') and j.get('queue_hold')
                 and j.get('status') == 'error' and not j.get('rh_task_id')}
-        if not held or any(now-start < 300 for start in held.values()) or any(
-                j.get('generation_backend') == 'cloud' and j.get('status') in ('running', 'recovering')
-                for j in _jobs.values()):
+        active = {j['id']: j.get('rh_task_id') for j in _jobs.values()
+                  if j.get('generation_backend') == 'cloud' and j.get('status') in ('running', 'recovering')}
+        if not held or any(now-start < 300 for start in held.values()) or any(not tid for tid in active.values()):
             _queue_hold_idle_sample = None
             return
         _queue_hold_check_after = now + 60
@@ -3077,19 +3077,31 @@ def reconcile_video_queue_holds():
             headers={'Content-Type': 'application/json', 'Authorization': 'Bearer '+RH_KEY})
         response = _provider_json_request(req, timeout=RH_TIMEOUT_QUERY)
         count = (response.get('data') or {}).get('currentTaskCounts')
-        if response.get('code') != 0 or isinstance(count, bool) or str(count) != '0':
+        if response.get('code') != 0 or isinstance(count, bool) or str(count) != str(len(active)):
+            _queue_hold_idle_sample = None
+            return
+        # A nonzero account count is safe only if every slot is explained by a
+        # known task which the provider still confirms as active. Never infer
+        # this from our potentially stale local statuses alone.
+        if len(set(active.values())) != len(active) or any(
+                rh_query(tid)[0] not in ('RUNNING', 'QUEUED') for tid in active.values()):
             _queue_hold_idle_sample = None
             return
     except Exception:
         _queue_hold_idle_sample = None
         return
     with _admission_lock, _lock_jobs:
-        if _release_draining or any(j.get('generation_backend') == 'cloud' and
-                j.get('status') in ('running', 'recovering') for j in _jobs.values()):
+        current_active = {j['id']: j.get('rh_task_id') for j in _jobs.values()
+                          if j.get('generation_backend') == 'cloud' and j.get('status') in ('running', 'recovering')}
+        current_held = {j['id']: j.get('submit_started') or j.get('dispatch_started') or j.get('created', now)
+                        for j in _jobs.values() if j.get('video_queued') and j.get('queue_hold')
+                        and j.get('status') == 'error' and not j.get('rh_task_id')}
+        if _release_draining or current_active != active or current_held != held:
             _queue_hold_idle_sample = None
             return
-        if _queue_hold_idle_sample != held:
-            _queue_hold_idle_sample = held
+        sample = (held, active)
+        if _queue_hold_idle_sample != sample:
+            _queue_hold_idle_sample = sample
             return
         before = {}
         for job_id, started in held.items():
@@ -3098,9 +3110,9 @@ def reconcile_video_queue_holds():
                 continue
             before[job_id] = dict(job)
             job.update(queue_hold=False, queue_hold_released_at=time.time(),
-                       queue_hold_release_reason='provider_idle_confirmed_twice',
+                       queue_hold_release_reason='provider_active_accounted_twice' if active else 'provider_idle_confirmed_twice',
                        provider_status='SUBMIT_UNCONFIRMED_IDLE',
-                       error='提交时连接中断，未收到任务号；已确认云端空闲并释放占位，未自动重提此任务。')
+                       error='提交时连接中断，未收到任务号；已核对云端任务并释放占位，旧任务结果仍未知，未自动重提。')
         try:
             if before:
                 save_jobs()

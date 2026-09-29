@@ -1,6 +1,29 @@
 export function mount({document,window,fetch,location}){
 const histOverlay=document.getElementById("histOverlay");
 const favOverlay=document.getElementById("favOverlay");
+function renderPromptPresets(parent,input,workflowId){
+  const key='jt-video-prompt-presets-v1:'+workflowId,box=document.createElement('details');
+  box.className='prompt-presets';box.open=true;
+  const heading=document.createElement('summary');heading.textContent='提示词预设';
+  const slots=document.createElement('div');slots.className='prompt-preset-slots';
+  const name=document.createElement('input');name.type='text';name.maxLength=24;name.placeholder='预设名称（可选）';name.setAttribute('aria-label','预设名称');
+  const actions=document.createElement('div');actions.className='prompt-preset-actions';
+  const note=document.createElement('div');note.className='note';note.setAttribute('aria-live','polite');
+  let selected=0,stored=[];
+  try{const value=JSON.parse(localStorage.getItem(key)||'[]');if(Array.isArray(value))stored=value}catch{}
+  let presets=Array.from({length:6},(_,i)=>{const p=stored[i];return p&&typeof p.prompt==='string'?{name:String(p.name||'').slice(0,24),prompt:p.prompt}:null});
+  const buttons=presets.map((_,i)=>{const b=document.createElement('button');b.type='button';b.onclick=()=>{selected=i;render();note.textContent=presets[i]?'已选择预设，点击“套用”填入提示词':'空位置，可保存当前提示词'};slots.append(b);return b});
+  const apply=document.createElement('button'),save=document.createElement('button'),clear=document.createElement('button');
+  for(const b of [apply,save,clear])b.type='button';
+  apply.textContent='套用';save.textContent='保存当前';clear.textContent='清空';actions.append(apply,save,clear);
+  const render=()=>{buttons.forEach((b,i)=>{b.textContent=presets[i]?.name||'预设 '+(i+1);b.title=presets[i]?.prompt||'空预设';b.setAttribute('aria-pressed',String(i===selected));b.classList.toggle('saved',Boolean(presets[i]))});name.value=presets[selected]?.name||'';apply.disabled=clear.disabled=!presets[selected]};
+  const persist=(next,message)=>{try{localStorage.setItem(key,JSON.stringify(next));presets=next;render();note.textContent=message}catch{note.textContent='保存失败：浏览器存储不可用，请勿关闭当前提示词'}};
+  save.onclick=()=>{if(!input.value.trim()){note.textContent='先填写提示词，再保存到预设';return}if(presets[selected]&&!confirm('覆盖这个位置已有的预设？'))return;const next=presets.slice();next[selected]={name:name.value.trim().slice(0,24),prompt:input.value};persist(next,'已保存至当前浏览器，刷新后仍保留')};
+  apply.onclick=()=>{const p=presets[selected];if(!p)return;input.value=p.prompt;input.dispatchEvent(new Event('input',{bubbles:true}));note.textContent='已套用，可继续修改；尚未提交生成'};
+  clear.onclick=()=>{if(!presets[selected]||!confirm('清空这个预设？当前提示词会保留。'))return;const next=presets.slice();next[selected]=null;persist(next,'已清空预设，当前提示词保留')};
+  note.textContent='6 个位置 · 保存在当前浏览器 · 仅保存提示词';render();box.append(heading,slots,name,actions,note);input.after(box);
+}
+
 function renderLoraSettings(form, params, state) {
   const controls = params.filter(([, param]) => param.group === 'lora' && param.type === 'select');
   if (!controls.length) return;
@@ -216,6 +239,7 @@ function renderForm(){const f=document.getElementById('wfForm'),workflow=cur,ver
     else if(p.type==='select'){inp=document.createElement('select');(p.options||[]).forEach(option=>{const item=document.createElement('option');item.value=optionValue(option);item.textContent=optionLabel(option);inp.appendChild(item)})}
     else{inp=document.createElement('input');inp.type=(p.type==='number'||p.type==='int'||p.vtype==='int'||p.vtype==='float')?'number':'text';if(p.min!==undefined)inp.min=p.min;if(p.max!==undefined)inp.max=p.max;if(p.step!==undefined)inp.step=p.step;else if(p.type==='int'||p.vtype==='int')inp.step='1'}
     inp.id='param_'+key;inp.dataset.paramType=p.vtype||p.type||'text';const d=paramDefault(key,p);if(d!==undefined){if(inp.type==='checkbox')inp.checked=d===true;else inp.value=d}f.appendChild(inp);if(workflow.id==='h3_edit_n'&&key==='duration'){const note=document.createElement('div');note.id='durationAutoNote';note.className='note';note.setAttribute('aria-live','polite');note.textContent=state.durationSelection?.note||'选择视频后自动读取时长，可手动修改（4–15 秒）';f.appendChild(note);inp.addEventListener('input',()=>{if(state.durationSelection){state.durationSelection.manual=true;state.durationSelection.value=inp.value;state.durationSelection.note='已手动设置时长';note.textContent=state.durationSelection.note}})}});
+  const promptInput=f.querySelector('#param_prompt');if(promptInput)renderPromptPresets(f,promptInput,workflow.id);
   renderLoraSettings(f,params,state);
   (cur.fixed_features||[]).forEach(text=>{const note=document.createElement('div');note.className='note unavailable';note.textContent=text;f.appendChild(note)})}
 function sendMediaFile(url,file,onProgress){return new Promise((resolve,reject)=>{const request=new XMLHttpRequest();request.open('POST',url);request.timeout=600000;request.setRequestHeader('Content-Type','application/octet-stream');request.upload.onprogress=event=>{if(event.lengthComputable)onProgress(Math.round(event.loaded/event.total*100))};request.onload=()=>{let data={};try{data=JSON.parse(request.responseText)}catch{}if(request.status>=200&&request.status<300&&data.uploadToken)resolve(data);else reject(new Error(data.error||'上传服务返回错误（'+request.status+'）'))};request.onerror=()=>reject(new Error('网络连接中断，请重新选择文件重试'));request.ontimeout=()=>reject(new Error('上传超时，请检查网络或压缩文件后重试'));request.send(file)})}
@@ -308,8 +332,8 @@ async function refreshVideoQueue(){
     rows.forEach((j,index)=>{const t=addTaskCard(j.id,j.wf_name||'视频任务');t.job=j;
       if(!t.configEl){t.configEl=document.createElement('div');t.configEl.className='task-configuration';t.info.insertBefore(t.configEl,t.metaEl)}t.configEl.textContent=jobConfigurationText(j);
       const mediaSignature=JSON.stringify([j.media,j.thumbnails]);if(t.mediaSignature!==mediaSignature){t.mediaSignature=mediaSignature;t.sourceThumbnail=Object.values(j.thumbnails||{}).find(src=>typeof src==='string'&&src.startsWith('/api/video-thumbnail/'));t.filesEl.replaceChildren();for(const [key,name] of Object.entries(j.media||{})){const item=document.createElement('div'),w=WFS.find(w=>w.id===j.workflow);item.className='queue-media';item.textContent=(w?.rh_media?.[key]?.label||'素材')+'：'+name;t.filesEl.append(item)}if(!Object.keys(j.media||{}).length)t.filesEl.textContent='无需上传素材'}
-      t.metaEl.textContent=j.queue_hold?'提交结果待核对，保留并发名额以防重复计费':j.status==='queued'?'等待第 '+j.position+' 位 · 尚未提交上游':j.status==='cancelled'?'已取消排队 · 未提交上游':j.status==='error'?(j.provider_status==='QUEUE_EXPIRED'?'素材已过期，请重新上传':j.error||'任务失败'):taskStatusText(j)+' · '+videoCoinText(j);
-      t.card.dataset.status=j.status;t.badge.textContent=j.queue_hold?'待核对':j.status==='queued'?'排队 · 第 '+j.position+' 位':j.status==='done'?'✓ 已完成':j.status==='cancelled'?'已取消':j.status==='error'?'✕ 失败':'◉ 生成中';t.tile.setAttribute('aria-label',t.wfName+' · '+t.badge.textContent+' · 任务详情');t.timeEl.textContent=j.elapsed?'用时 '+fmtTime(j.elapsed):'';t.actionsEl.hidden=!j.editable;t.viewEl.hidden=j.status!=='done';updateTaskThumbnail(t);
+      t.metaEl.textContent=j.queue_hold?'提交超时，未收到云端任务号；暂占 1 个名额，正在自动核对，不会重复提交':j.provider_status==='SUBMIT_UNCONFIRMED_IDLE'?'旧任务结果未知；已核对并释放名额，不影响后续排队，未自动重提':j.status==='queued'?'等待第 '+j.position+' 位 · 尚未提交上游':j.status==='cancelled'?'已取消排队 · 未提交上游':j.status==='error'?(j.provider_status==='QUEUE_EXPIRED'?'素材已过期，请重新上传':j.error||'任务失败'):taskStatusText(j)+' · '+videoCoinText(j);
+      t.card.dataset.status=j.status;t.badge.textContent=j.queue_hold?'核对中 · 占位':j.provider_status==='SUBMIT_UNCONFIRMED_IDLE'?'结果未知 · 已释放':j.status==='queued'?'排队 · 第 '+j.position+' 位':j.status==='done'?'✓ 已完成':j.status==='cancelled'?'已取消':j.status==='error'?'✕ 失败':'◉ 生成中';t.tile.setAttribute('aria-label',t.wfName+' · '+t.badge.textContent+' · 任务详情');t.timeEl.textContent=j.elapsed?'用时 '+fmtTime(j.elapsed):'';t.actionsEl.hidden=!j.editable;t.viewEl.hidden=j.status!=='done';updateTaskThumbnail(t);
       t.actionsEl.querySelectorAll('button').forEach(b=>b.disabled=t.busy||(['top','up'].includes(b.dataset.action)&&j.position===1)||(b.dataset.action==='down'&&j.position===state.waiting));
       t.viewEl.onclick=async()=>{t.info.hidePopover();t.viewEl.disabled=true;try{const full=await loadCompletedTask(j);if(full)renderTaskResult(full)}finally{t.viewEl.disabled=false}};
       if(j.status==='done')loadCompletedTask(j);
