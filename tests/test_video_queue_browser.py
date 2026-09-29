@@ -56,7 +56,7 @@ def test_queue_lightweight_editor_and_actions(browser, tmp_path):
 def test_completed_results_auto_appear_without_reloading_player(browser, tmp_path):
     page=browser.new_page(viewport={'width':1440,'height':1000})
     serve_page(page,block_scene=True)
-    jobs=[dict(id='playing',workflow='fixture-video',wf_name='已完成的视频',status='done',media={'source_video':'原视频.mp4'},rh_coins=99),
+    jobs=[dict(id='playing',workflow='fixture-video',wf_name='已完成的视频',status='done',media={'source_video':'原视频.mp4'},rh_coins=99,prompt='保留原片场景与镜头',params={'lora_1_model':'minimax-n4','lora_1_strength':.7,'lora_2_model':'none','lora_2_strength':.6}),
           dict(id='pending',workflow='fixture-video',wf_name='等待中的视频',status='queued',position=1,editable=True,params={'prompt':'保持动作'},media={}),
           dict(id='failed',workflow='fixture-video',wf_name='失败的视频',status='error',error='上游返回失败',media={})]
     detail_requests=[]
@@ -86,6 +86,7 @@ def test_completed_results_auto_appear_without_reloading_player(browser, tmp_pat
         expect(page.locator('#galleryMain video')).to_have_count(1)
         page.wait_for_function("document.querySelector('.page-host[data-page=\"/video\"]').shadowRoot.querySelector('#galleryMain video')?.readyState>=2")
         expect(page.locator('[data-group=done] .task-card')).to_have_count(1)
+        assert not page.locator('[data-group=done]').evaluate('(e)=>e.open')
         expect(page.locator('[data-group=active] .task-card')).to_have_count(1)
         expect(page.locator('[data-group=other] .task-card')).to_have_count(1)
         page.locator('#galleryMain video').evaluate("el=>el.dataset.retained='yes'")
@@ -94,11 +95,29 @@ def test_completed_results_auto_appear_without_reloading_player(browser, tmp_pat
         expect(page.locator('#galleryMain video')).to_have_attribute('data-retained','yes')
         expect(page.locator('#taskList video')).to_have_count(0)
         assert detail_requests==['playing','pending']
+        page.locator('.gallery-thumb').first.hover()
+        expect(page.locator('#galleryJobHint')).to_contain_text('保留原片场景与镜头')
+        expect(page.locator('#galleryJobHint')).to_contain_text('v4 · 强度 0.7')
+        expect(page.locator('#galleryJobHint')).to_contain_text('LoRA 2：不加载')
+        page.locator('.gallery-thumb').first.evaluate('(e)=>e.dataset.retained="yes"')
+        before_height=page.locator('#galleryMain').bounding_box()['height']
         page.locator('#galleryNext').click()
+        assert abs(page.locator('#galleryMain').bounding_box()['height']-before_height)<1
         expect(page.locator('#galleryMain img')).to_have_count(1)
         expect(page.locator('#galleryMain img')).to_have_js_property('naturalWidth',320)
         page.locator('#galleryPrev').click()
+        assert abs(page.locator('#galleryMain').bounding_box()['height']-before_height)<1
         expect(page.locator('#galleryMain video')).to_have_count(1)
+        page.wait_for_function("document.querySelector('.page-host[data-page=\"/video\"]').shadowRoot.querySelector('#galleryMain video')?.played.length>0")
+        expect(page.locator('.gallery-thumb').first).to_have_attribute('data-retained','yes')
+        page.locator('.gallery-thumb').first.scroll_into_view_if_needed()
+        scroll_before=page.locator('.preview-stage').evaluate('(e)=>e.scrollTop')
+        page.locator('.gallery-thumb').first.click()
+        assert abs(page.locator('.preview-stage').evaluate('(e)=>e.scrollTop')-scroll_before)<1
+        # Completion polling does not reopen the user's collapsed group.
+        assert not page.locator('[data-group=done]').evaluate('(e)=>e.open')
+        page.locator('[data-group=done] summary').click()
+        assert page.locator('[data-group=done]').evaluate('(e)=>e.open')
         page.locator('#galleryMain video').evaluate("el=>{el.dispatchEvent(new Event('loadeddata'))}")
         source_tile=page.locator('[data-job-id=playing] .task-picture img')
         expect(source_tile).to_have_attribute('src',source_path)

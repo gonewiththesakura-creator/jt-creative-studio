@@ -175,6 +175,9 @@
 /* Compact task contact sheets; only the selected result owns a media player. */
 #taskList{max-height:none;overflow:visible;contain:none;padding:12px}
 .task-group h3{margin:4px 0 10px;font-size:12px;font-weight:600;color:#c0bcb7}
+.task-group summary{padding:10px 0;cursor:pointer;font-size:12px;color:#c0bcb7}.task-group[open] summary{margin-bottom:6px}
+.task-configuration{white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0;color:#d4c6b1;max-height:200px;overflow:auto}
+.gallery-job-hint{position:fixed;z-index:220;width:min(360px,calc(100vw - 16px));max-height:min(320px,60vh);overflow:hidden;padding:12px 14px;border:1px solid #bda57f55;border-radius:10px;background:#191a20f7;color:#ddd5c8;box-shadow:0 8px 24px #0006;font-size:12px;line-height:1.65;white-space:pre-wrap;overflow-wrap:anywhere;pointer-events:none}
 .task-group+.task-group{margin-top:18px}
 .task-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px}
 #taskList .task-card{display:block;min-width:0;margin:0;padding:0;border:0;background:transparent;box-shadow:none}
@@ -198,7 +201,7 @@
 .gallery-navigation .gallery-nav::before{content:"";position:absolute;z-index:1;top:18px;left:20px;width:7px;height:7px;border-left:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(45deg)}
 .gallery-navigation #galleryNext::before{left:17px;transform:rotate(225deg)}
 .gallery-navigation .gallery-nav:hover,.gallery-navigation .gallery-nav:focus-visible{opacity:1}.gallery-navigation .gallery-nav:hover::after{background:#d5cfbf2b}.gallery-navigation .gallery-nav:disabled{visibility:hidden;pointer-events:none}
-.gallery-main{min-height:260px}.gallery-main video,.gallery-main img{max-width:100%;max-height:52vh;min-height:0}.gallery-thumbs{min-height:0;flex-shrink:0}.gallery-thumb{height:54px;flex-basis:70px}.gallery-actions .dl{margin:0}
+.gallery-main{min-height:0;display:grid;grid-template-rows:34px clamp(240px,52vh,680px) 56px;align-items:stretch;justify-content:stretch;width:100%}.gallery-meta{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.gallery-viewport{position:relative;min-width:0;min-height:0;overflow:hidden;display:grid;place-items:center;background:#0b0e12}.gallery-main .gallery-viewport video,.gallery-main .gallery-viewport img{position:absolute;inset:0;width:100%;height:100%;max-width:100%;max-height:100%;object-fit:contain;display:block}.gallery-actions{min-height:0}.gallery-thumbs{min-height:0;flex-shrink:0;overflow-anchor:none}.gallery-thumb{height:54px;flex-basis:70px}.gallery-actions .dl{margin:0}.preview-stage{overflow-anchor:none}
 .gallery-thumb img{object-fit:contain;background:#202127}.gallery-thumb{background:#202127}
 @media(max-width:600px){.task-grid{grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px}.gallery-navigation{padding:0 4px}.task-panel-head{gap:8px;flex-wrap:wrap}}
 
