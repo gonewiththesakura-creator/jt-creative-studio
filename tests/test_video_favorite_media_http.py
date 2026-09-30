@@ -8,7 +8,8 @@ srv=http.server.ThreadingHTTPServer(('127.0.0.1',0),m.Handler);threading.Thread(
 def call(method,path,payload=None):
  c=http.client.HTTPConnection('127.0.0.1',srv.server_port,timeout=5);raw=json.dumps(payload).encode() if payload else None;headers={'Cookie':COOKIE};headers.update({'Content-Type':'application/json'} if raw else {});c.request(method,path,raw,headers);r=c.getresponse();data=r.read();headers=dict(r.getheaders());status=r.status;c.close();return status,data,headers
 try:
- status,raw,_=call('POST','/api/favorites',{'job_id':'v','image_index':0});assert status==200,(status,raw);fav=json.loads(raw);assert fav['favorite_media_type']=='video/mp4' and 'image_path' not in fav,fav;assert Path(m._favorites[fav['id']]['image_path']).suffix=='.mp4'
+ status,raw,_=call('POST','/api/favorites',{'job_id':'v','image_index':0});assert status==202,(status,raw);fav=json.loads(raw);assert fav['favorite_media_type']=='video/mp4' and 'image_path' not in fav,fav;assert Path(m._favorites[fav['id']]['image_path']).suffix=='.mp4'
+ assert fav['archive_status']=='saving';m.archive_next_video_favorite();assert m._favorites[fav['id']]['archive_status']=='ready'
  status,data,headers=call('GET','/api/favorite-image/'+fav['id']);assert status==200 and headers['Content-Type']=='video/mp4' and data[4:8]==b'ftyp'
  status,_,_=call('GET','/api/favorite-preview/'+fav['id']);assert status==415,status
  print('VIDEO_FAVORITE_HTTP_OK',{'suffix':'.mp4','mime':'video/mp4','preview_status':415})

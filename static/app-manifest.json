@@ -13,9 +13,9 @@
       "title": "真人化工作流 · JT 灵感工作台"
     },
     "/video": {
-      "module": "/static/assets/video.99945efae9d3.js",
+      "module": "/static/assets/video.e75850fe31c5.js",
       "markup": "/static/assets/video.c86fafe6b99e.html",
-      "css": "/static/assets/video.e9b2b55787ec.css",
+      "css": "/static/assets/video.fac0362a5e29.css",
       "title": "JT 视频工作台"
     }
   },
@@ -72,9 +72,9 @@
     "/static/assets/three-LICENSE.8b378ebe60e2.txt",
     "/static/assets/three-core.9edde002b066.js",
     "/static/assets/three-module.71e909ad3fc6.js",
-    "/static/assets/video.99945efae9d3.js",
     "/static/assets/video.c86fafe6b99e.html",
-    "/static/assets/video.e9b2b55787ec.css",
+    "/static/assets/video.e75850fe31c5.js",
+    "/static/assets/video.fac0362a5e29.css",
     "/static/assets/workbench.a11ea545e441.js"
   ]
 }

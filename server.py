@@ -562,6 +562,39 @@ def save_favorites():
     _atomic_write_json_object(FAVORITES_FILE, _favorites, "favorites ledger")
 
 
+def video_favorite_archive_loop():
+    """One background downloader, independent of paid generation admission."""
+    while True:
+        try:
+            archive_next_video_favorite()
+        except Exception:
+            pass
+        time.sleep(2)
+
+
+def archive_next_video_favorite():
+    with _lock_jobs:
+        fav = next((dict(f) for f in _favorites.values() if f.get('archive_status') == 'saving'), None)
+    if not fav:
+        return
+    try:
+        dest = safe_child_path(FAVORITES_DIR, pathlib.Path(fav['image_path']))
+        download_file_resilient(fav['original_url'], dest, timeout=120)
+        changes = {'archive_status':'ready', 'archive_error':None}
+    except Exception:
+        changes = {'archive_status':'error', 'archive_error':'视频保存失败，请点击重试；可能是原链接已过期或网络暂时不可用'}
+    with _lock_jobs:
+        current = _favorites.get(fav['id'])
+        if current and current.get('archive_status') == 'saving':
+            before = dict(current)
+            current.update(changes)
+            try:
+                save_favorites()
+            except Exception:
+                current.clear(); current.update(before)
+                raise
+
+
 def _upload_token_hash(value):
     return hashlib.sha256(str(value or "").encode("utf-8")).hexdigest()
 
@@ -1267,13 +1300,15 @@ def realism_history_jobs(jobs):
             if job.get("workflow") in ids or job.get("style_id") == "realism"][:REALISM_HISTORY_LIMIT]
 
 
-def scoped_history_jobs(jobs, scope=None, style=None, limit=12):
+def scoped_history_jobs(jobs, scope=None, style=None, limit=12, before=None):
     if scope == "realism":
         return realism_history_jobs(jobs)
-    ordered = sorted(jobs, key=lambda row: row.get("created", 0), reverse=True)
+    ordered = sorted(jobs, key=lambda row: (row.get("created", 0), row.get('id','')), reverse=True)
+    if before is not None:
+        ordered = [j for j in ordered if (j.get('created',0),j.get('id','')) < before]
     if scope == "video":
         ids = {key for key, workflow in WORKFLOWS.items() if workflow.get("kind") == "video"}
-        ordered = [job for job in ordered if job.get("workflow") in ids]
+        ordered = [job for job in ordered if job.get('style_id') == 'video' or job.get("workflow") in ids]
     elif scope == "creator":
         ordered = [job for job in ordered if job.get("workflow") == "anima02"]
         if style is not None:
@@ -3980,7 +4015,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 session_id, _ = self._upload_session(create=False)
                 owned_sources = [src for src in _jobs.values()
                                  if session_owns_record(session_id, src)]
-                sources = scoped_history_jobs(owned_sources, scope, style)
+                limit, before = 12, None
+                if scope == 'video':
+                    try:
+                        limit = max(1, min(30, int((query.get('limit') or ['12'])[0])))
+                        if query.get('before'):
+                            value = json.loads(query['before'][0])
+                            before = (float(value[0]), str(value[1]))
+                            if not math.isfinite(before[0]): raise ValueError('bad cursor')
+                    except (ValueError, TypeError, IndexError, KeyError):
+                        return self._send(400, b'{"error":"invalid history cursor"}')
+                sources = scoped_history_jobs(owned_sources, scope, style, limit=limit, before=before)
                 for src in sources:
                     allowed = (
                         "id", "workflow", "status", "provider_status",
@@ -4718,7 +4763,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         if fav.get("job_id") == jid and fav.get("image_index") == idx
                         and session_owns_record(session_id, fav, "owner_session_hash")), None)
                 if existing_favorite:
-                    return self._send(200, json.dumps(public_favorite(existing_favorite), ensure_ascii=False).encode())
+                    with _lock_jobs:
+                        if existing_favorite.get('archive_status') == 'error':
+                            previous = dict(existing_favorite)
+                            existing_favorite.update(archive_status='saving', archive_error=None)
+                            try: save_favorites()
+                            except Exception:
+                                existing_favorite.clear(); existing_favorite.update(previous)
+                                raise
+                    return self._send(202 if existing_favorite.get('archive_status') == 'saving' else 200, json.dumps(public_favorite(existing_favorite), ensure_ascii=False).encode())
                 if (not job or job.get("status") != "done"
                         or not session_owns_record(session_id, job)):
                     return self._send(404, b'{"error":"completed job not found"}')
@@ -4735,6 +4788,25 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 }
                 suffix = remote_suffix if remote_suffix in allowed_suffixes else type_suffixes.get(str(im.get("file_type") or "").lower(), ".bin")
                 dest = FAVORITES_DIR / f"{fid}{suffix}"
+                video_mimes = {'.mp4':'video/mp4','.mov':'video/quicktime','.webm':'video/webm','.avi':'video/x-msvideo','.mkv':'video/x-matroska'}
+                if im.get('remote') and suffix in video_mimes:
+                    with _lock_jobs:
+                        if sum(session_owns_record(session_id,f,'owner_session_hash') for f in _favorites.values()) >= MAX_FAVORITES:
+                            return self._send(409, json.dumps({'error':'收藏数量已达上限，请先整理已有收藏'},ensure_ascii=False).encode())
+                    fav = {'id':fid,'created':time.time(),'job_id':jid,'image_index':idx,
+                           'image_url':f'/api/favorite-image/{fid}', 'original_url':im['url'],
+                           'image_path':str(dest), 'favorite_media_type':video_mimes[suffix],
+                           'owner_session_hash':_session_hash(session_id), 'archive_status':'saving',
+                           'prompt':job.get('prompt',''), 'style_id':job.get('style_id'),
+                           'selection_snapshot':job.get('selection_snapshot') or {}}
+                    with _lock_jobs:
+                        # Never evict an existing favorite for a pending archive.
+                        _favorites[fid] = fav
+                        try: save_favorites()
+                        except Exception:
+                            _favorites.pop(fid,None)
+                            raise
+                    return self._send(202, json.dumps(public_favorite(fav),ensure_ascii=False).encode())
                 try:
                     if im.get("remote"):
                         download_file_resilient(im["url"], dest, timeout=120)
@@ -4991,6 +5063,7 @@ def main():
             time.sleep(60)
     threading.Thread(target=clean_media_libraries, daemon=True).start()
     threading.Thread(target=video_queue_loop, daemon=True).start()
+    threading.Thread(target=video_favorite_archive_loop, daemon=True).start()
     for job in list(_jobs.values()):
         if job.get("status") == "recovering" and job.get("rh_task_id"):
             threading.Thread(target=resume_cloud_job, args=(job,), daemon=True).start()

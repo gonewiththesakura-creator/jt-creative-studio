@@ -177,7 +177,7 @@
 .task-group h3{margin:4px 0 10px;font-size:12px;font-weight:600;color:#c0bcb7}
 .task-group summary{padding:10px 0;cursor:pointer;font-size:12px;color:#c0bcb7}.task-group[open] summary{margin-bottom:6px}
 .task-configuration{white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0;color:#d4c6b1;max-height:200px;overflow:auto}
-.gallery-job-hint{position:fixed;z-index:220;width:min(360px,calc(100vw - 16px));max-height:min(320px,60vh);overflow:hidden;padding:12px 14px;border:1px solid #bda57f55;border-radius:10px;background:#191a20f7;color:#ddd5c8;box-shadow:0 8px 24px #0006;font-size:12px;line-height:1.65;white-space:pre-wrap;overflow-wrap:anywhere;pointer-events:none}
+.gallery-job-hint{position:fixed;z-index:220;width:min(360px,calc(100vw - 16px));max-height:min(320px,60vh);overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;padding:12px 14px;border:1px solid #bda57f55;border-radius:10px;background:#191a20f7;color:#ddd5c8;box-shadow:0 8px 24px #0006;font-size:12px;line-height:1.65;white-space:pre-wrap;overflow-wrap:anywhere;pointer-events:auto}
 .task-group+.task-group{margin-top:18px}
 .task-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px}
 #taskList .task-card{display:block;min-width:0;margin:0;padding:0;border:0;background:transparent;box-shadow:none}
