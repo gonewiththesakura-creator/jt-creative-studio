@@ -1364,7 +1364,6 @@
      "default": 5,
      "required": true,
      "min": 4,
-     "max": 15,
      "step": 1,
      "group": "common"
     },

@@ -18,9 +18,10 @@ print(json.dumps({'active':[j['id'] for j in jobs.values() if j.get('status') in
     return json.loads(r.command(client,'python3 -c '+shlex.quote(code),timeout=25))
 
 
-def main():
+def main(extra_paths=()):
     manifest=json.loads((t.BASE/'static/app-manifest.json').read_text(encoding='utf8'))
     paths=['server.py']+[p.lstrip('/') for p in manifest['pages']['/video'].values() if p.startswith('/static/')]+['static/video.html','static/app-manifest.json','static/app.html']
+    paths.extend(extra_paths)
     data={p:(t.BASE/p).read_bytes().replace(b'\r\n',b'\n') for p in paths}
     c=t._connect(t.BASE/'tools/creds.json',r.DEPLOY_SSH_KEY_PATH);s=c.open_sftp()
     for p,raw in data.items():
