@@ -78,6 +78,8 @@ print(json.dumps({'waiting_preserved':len(ids),'ids':ids}))
         raise
     finally:
         if not swapped or state['phase'] in ('committed','rolled-back'):
+            if not c.get_transport() or not c.get_transport().is_active():
+                c=t._connect(t.BASE/'tools/creds.json',r.DEPLOY_SSH_KEY_PATH)
             if isolated:r.restore_watchdog_state(c,state['watchdog'])
             if admission:r.set_release_start_draining(c,False);r.set_remote_release_drain(c,False)
             r.release_release_lock(c,tx);state['cleanup_complete']=True;t._atomic_json(STATE,state)

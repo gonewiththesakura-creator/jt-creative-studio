@@ -147,6 +147,10 @@ class ProviderTaskFailed(RuntimeError):
     """The provider explicitly reported a terminal failure."""
 
 
+class ProviderTaskCancelled(ProviderTaskFailed):
+    """The provider confirmed that this task has stopped."""
+
+
 class ProviderStateUncertain(RuntimeError):
     """A provider task exists, but its current state cannot be confirmed."""
 
@@ -1729,6 +1733,8 @@ def rh_query(task_id, job=None):
         if job is not None:
             job["provider_status"] = "UNAVAILABLE" if unavailable else "STOPPED"
             job["provider_finished"] = time.time()
+        if stopped and job is not None and job.get('cancel_requested'):
+            raise ProviderTaskCancelled('RH_TASK_STOPPED')
         raise ProviderTaskFailed("RH_TASK_UNAVAILABLE" if unavailable else "RH_TASK_STOPPED")
     results = r.get("results") or []
     coins = normalize_rh_coins(r, results)
@@ -1832,11 +1838,34 @@ def prepend_trigger_once(prompt, trigger):
     prompt = re.sub(r"(?:\s*,\s*){2,}", ", ", prompt).strip(" ,\n\t")
     return f"{trigger}, {prompt}" if prompt else trigger
 
+def _request_provider_cancel(job, task_id):
+    """Only the existing poll worker sends cancellation; never release on ACK."""
+    if not job.get('cancel_requested') or time.time() < job.get('cancel_retry_after', 0):
+        return
+    with _lock_jobs:
+        job['cancel_retry_after'] = time.time() + 60
+        save_jobs()
+    try:
+        req = urllib.request.Request('https://www.runninghub.ai/task/openapi/cancel',
+            data=json.dumps({'apiKey': RH_KEY, 'taskId': task_id}).encode(),
+            headers={'Content-Type':'application/json', 'Authorization':'Bearer '+RH_KEY})
+        result = _provider_json_request(req, timeout=RH_TIMEOUT_QUERY)
+        if result.get('code') == 0:
+            job['cancel_note'] = '取消请求已送达，等待云端确认停止'
+        else:
+            job['cancel_note'] = '云端尚未确认取消（代码 '+str(result.get('code'))+'），将继续核对'
+    except Exception:
+        job['cancel_note'] = '取消请求连接不明，正在重试并核对云端状态'
+    with _lock_jobs:
+        save_jobs()
+
+
 def _rh_wait_task(job, task_id, deadline, progress_base=0, progress_span=100):
     query_failures = 0
     last_query_error = None
     while time.time() < deadline:
         try:
+            _request_provider_cancel(job, task_id)
             status, results = rh_query(task_id, job=job)
             query_failures = 0
             last_query_error = None
@@ -2191,6 +2220,9 @@ def resume_cloud_job(job):
         job.update({"images": images, "status": "done", "provider_status": "DONE",
                     "progress_pct": 100, "provider_finished": time.time(),
                     "download_finished": time.time(), "error": None})
+    except ProviderTaskCancelled:
+        job.update(status='cancelled', provider_status='CANCELLED', queue_hold=False,
+                   cancel_confirmed_at=time.time(), error=None)
     except ProviderStateUncertain:
         job["status"] = "recovering"
         job["provider_status"] = "RECOVERING"
@@ -3139,6 +3171,9 @@ def video_queue_snapshot(session_id):
             row.update(media=public_job_media(j.get('media')), params=public_job_params(j),
                        error=public_job_error(j), position=positions.get(j['id']),
                        editable=j.get('status') == 'queued', queue_hold=bool(j.get('queue_hold')))
+            row.update(cancellable=j.get('generation_backend') == 'cloud' and j.get('status') in ('running','recovering'),
+                       cancel_requested=bool(j.get('cancel_requested')), cancel_note=j.get('cancel_note'),
+                       cancel_confirmed=bool(j.get('cancel_confirmed_at')))
             row['thumbnails'] = {key: '/api/video-thumbnail/'+j['id']+'/'+digest+'.jpg'
                                  for key, digest in j.get('input_thumbnails', {}).items()
                                  if key in row['media'] and re.fullmatch(r'[0-9a-f]{32}', str(digest))}
@@ -3153,6 +3188,23 @@ def edit_video_queue(session_id, body):
         job = _jobs.get(str(body.get('job_id', '')))
         if not job or not job.get('video_queued') or not session_owns_record(session_id, job):
             raise LookupError('任务不存在')
+        if body.get('action') == 'cancel_running':
+            if job.get('generation_backend') != 'cloud' or job.get('status') not in ('running','recovering'):
+                raise ValueError('任务已结束或不支持云端取消，请刷新查看结果')
+            if job.get('cancel_requested'):
+                return
+            if body.get('revision') != job.get('queue_revision', 0):
+                raise ValueError('任务已更新，请刷新后重试')
+            before = dict(job)
+            job.update(cancel_requested=True, cancel_requested_at=time.time(),
+                       cancel_note='等待云端确认取消；确认前仍占用并发名额',
+                       queue_revision=job.get('queue_revision', 0)+1)
+            try:
+                save_jobs()
+            except Exception:
+                job.clear(); job.update(before)
+                raise
+            return
         if job['status'] != 'queued':
             raise ValueError('任务已经开始或结束，不能再编辑或取消排队')
         if body.get('revision') != job.get('queue_revision', 0):
@@ -3224,6 +3276,9 @@ def run_job(job):
             job["progress_pct"] = 100
         else:
             raise RuntimeError("unknown generation backend")
+    except ProviderTaskCancelled:
+        job.update(status='cancelled', provider_status='CANCELLED', queue_hold=False,
+                   cancel_confirmed_at=time.time(), error=None)
     except ProviderStateUncertain:
         job["status"] = "recovering"
         job["provider_status"] = "RECOVERING"
