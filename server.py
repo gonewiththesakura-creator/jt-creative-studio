@@ -3852,8 +3852,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 suffix = pathlib.Path(name).suffix.lower()
                 allowed = {'.mp4','.mov','.webm','.avi','.mkv'} if media_type == 'video' else {'.png','.jpg','.jpeg','.webp'}
                 if suffix not in allowed: raise ValueError('文件类型与上传位置不匹配')
-                quota = reserve_upload_attempt(session_id, size)
-                if self._upload_quota_rejection(quota): return
+                # Personal uploads send bytes directly to RunningHub. The
+                # server-proxy bandwidth quota does not apply to this receipt.
                 token = direct_uploads.challenge(SESSION_SECRET, _session_hash(session_id),
                     dict(workflow=wid, input_key=key, filename=name, media_type=media_type, size=size))
                 result = {'challenge': token}

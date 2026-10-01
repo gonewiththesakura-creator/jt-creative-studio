@@ -29,6 +29,7 @@ def test_proof_binds_session_expiry_and_provider_reference(monkeypatch):
 def test_direct_http_registration_without_file_or_key(panel,monkeypatch):
     monkeypatch.setattr(panel,'RH_KEY','offline-personal-key-1234')
     monkeypatch.setattr(panel,'rh_upload_temp_file',lambda *a:pytest.fail('must not transfer files'))
+    monkeypatch.setattr(panel,'reserve_upload_attempt',lambda *a,**k:pytest.fail('personal direct upload must not consume proxy quota'))
     with running_server(panel) as httpd:
         cookie=session_cookie(panel)
         status,row,_=json_request(httpd,'POST','/api/upload-direct-start',dict(workflow='h3_edit_n',input_key='reference_image',filename='test.png',size=123),cookie=cookie)
