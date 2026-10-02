@@ -15,6 +15,9 @@
 .task-remove[hidden],.media-remove[hidden]{display:none}
 .task-card:hover .task-remove,.task-card:focus-within .task-remove,.drop:hover .media-remove,.drop:focus-within .media-remove{opacity:1}
 .task-remove:hover,.media-remove:hover{background:#8e3039;color:#fff}
+.task-remove,.task-remove:hover{border:0;background:transparent}
+.task-remove::before{content:'';width:10px;height:10px;border-radius:50%;background:#e96565;box-shadow:0 0 0 3px #311b22b3;transition:background .15s,box-shadow .15s}
+.task-remove:hover::before,.task-remove:focus-visible::before{background:#ff8888;box-shadow:0 0 0 4px #76353d88}
 .task-remove:disabled{opacity:.45;cursor:wait}
 .task-redo-quick{position:absolute;top:6px;right:6px;z-index:3;display:grid;place-items:center;width:28px;height:28px;min-height:0;padding:0;border:1px solid #cba65d77;border-radius:6px;background:#30291deb;color:#f0d59a;font-size:21px;line-height:1;cursor:pointer;opacity:0;transition:opacity .15s,background .15s}
 .task-redo-quick[hidden]{display:none}

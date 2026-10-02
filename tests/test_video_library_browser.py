@@ -14,6 +14,8 @@ def test_details_hover_scroll_history_and_pending_favorite(browser):
     try:
         page.goto('http://fixture.test/video')
         thumb=page.locator('.gallery-thumb').first;thumb.hover()
+        page.wait_for_timeout(1000)
+        expect(page.locator('#galleryJobHint')).to_be_hidden()
         hint=page.locator('#galleryJobHint');expect(hint).to_be_visible()
         hint.hover();page.wait_for_timeout(400);expect(hint).to_be_visible()
         page.mouse.wheel(0,600)

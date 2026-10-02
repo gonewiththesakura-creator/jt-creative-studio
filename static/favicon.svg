@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>JT 创作台</title>
+  <rect x="1" y="1" width="62" height="62" rx="14" fill="#15171d" stroke="#d5b37a" stroke-opacity=".45" stroke-width="2"/>
+  <path fill="#e2c18c" d="M13 16h16v26c0 8-5 12-13 12h-5v-8h5c3 0 5-2 5-5V24h-8zm20 0h22v8h-7v30h-8V24h-7z"/>
+</svg>

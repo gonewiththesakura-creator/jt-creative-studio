@@ -17,6 +17,8 @@ def completed_video(panel):
     media = {
         'reference_image': 'subject.png',
         'reference_image_2': 'wardrobe.png',
+        'reference_image_3': 'lighting.png',
+        'reference_image_4': 'details.png',
         'source_video': 'movement.mp4',
     }
     params = {

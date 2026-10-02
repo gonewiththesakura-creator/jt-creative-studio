@@ -93,6 +93,7 @@ def build():
             'title': title,
         }
     shell = (FRONT / 'index.html').read_text(encoding='utf8').replace('__APP_CSS__', styles).replace('__APP_MAIN__', manifest['main']).replace('__APP_MANIFEST__', json.dumps(manifest,ensure_ascii=False).replace('<','\\u003c'))
+    shell = shell.replace('</head>', '<link rel="icon" type="image/png" sizes="64x64" href="/static/favicon.png?v=jt1"></head>', 1)
     (ROOT/'static/app.html').write_text(shell,encoding='utf8')
     manifest['assets'] = ['/static/assets/'+name for name in sorted(USED)]
     (ROOT/'static/app-manifest.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2),encoding='utf8')

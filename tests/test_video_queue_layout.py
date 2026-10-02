@@ -1,5 +1,6 @@
 """A long queue keeps its contact sheet intact while cards move between groups."""
 import base64
+import time
 
 from playwright.sync_api import expect
 
@@ -51,12 +52,30 @@ def test_long_queue_keeps_compact_tiles_after_hover_reorder_and_completion(brows
         page.goto('http://fixture.test/video')
         expect(page.locator('[data-group=active] .task-card')).to_have_count(48)
         compact_tiles()
+        brief = page.locator('[data-job-id="46"] .task-tile')
+        brief.hover()
+        page.wait_for_timeout(500)
+        expect(page.locator('[data-job-id="46"] .task-details')).to_be_hidden()
+        page.mouse.move(0, 0)
+        page.wait_for_timeout(1700)
+        expect(page.locator('[data-job-id="46"] .task-details')).to_be_hidden()
         late = page.locator('[data-job-id="47"]')
         late.locator('.task-tile').hover()
+        entered = time.perf_counter()
         expect(late.locator('.task-badge')).to_have_text('排队 · 第 46 位')
         popup = late.locator('.task-details')
+        page.wait_for_timeout(1000)
+        expect(popup).to_be_hidden()
         expect(popup).to_be_visible()
+        assert time.perf_counter() - entered >= 1.8
         assert popup.evaluate('(e)=>getComputedStyle(e).position') == 'fixed'
+        cancel = late.locator('.task-remove')
+        expect(cancel).to_have_text('')
+        expect(cancel).to_have_attribute('aria-label', '取消排队')
+        assert cancel.evaluate("e=>getComputedStyle(e,'::before').width") == '10px'
+        popup.hover()
+        page.wait_for_timeout(250)
+        expect(popup).to_be_visible()
         compact_tiles()
         late.get_by_role('button', name='置顶插队').click()
         expect(late.locator('.task-badge')).to_have_text('排队 · 第 1 位')
@@ -77,6 +96,7 @@ def test_long_queue_keeps_compact_tiles_after_hover_reorder_and_completion(brows
         last = page.locator('[data-group=active] .task-card').last
         last.locator('.task-tile').hover()
         expect(last.locator('.task-badge')).to_be_visible()
+        expect(last.locator('.task-details')).to_be_visible()
         compact_tiles()
         assert last.locator('.task-details').bounding_box()['width'] <= 374
         page.screenshot(path=str(tmp_path / 'long-queue-mobile.png'), full_page=True)
