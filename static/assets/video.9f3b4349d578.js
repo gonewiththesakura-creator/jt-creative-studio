@@ -321,7 +321,8 @@ function addTaskCard(jobId,wfName){
   let closeTimer;const show=()=>{clearTimeout(closeTimer);if(!info.matches(':popover-open'))info.showPopover();const rect=tile.getBoundingClientRect();info.style.left=Math.max(8,Math.min(rect.left,window.innerWidth-info.offsetWidth-8))+'px';const below=window.innerHeight-rect.bottom-14,above=rect.top-14,useBelow=below>=Math.min(info.scrollHeight+32,420)||below>=above;info.style.maxHeight=Math.max(80,useBelow?below:above)+'px';info.style.top=(useBelow?rect.bottom+6:Math.max(8,rect.top-info.offsetHeight-6))+'px'},hide=()=>{closeTimer=setTimeout(()=>{if(!info.matches(':hover')&&!info.contains(document.activeElement))info.hidePopover()},180)};tile.onpointerenter=e=>{if(e.pointerType!=='touch')show()};tile.onpointerleave=hide;tile.onfocus=show;tile.onclick=()=>{show();if(t.job?.status==='done')view.click()};info.onpointerenter=()=>clearTimeout(closeTimer);info.onpointerleave=hide;info.onfocusout=hide;
   t.showDetails=show;
   for(const [action,label] of [['top','置顶插队'],['up','上移'],['down','下移'],['edit','编辑参数']]){const b=document.createElement('button');b.type='button';b.textContent=label;b.dataset.action=action;b.onclick=()=>{info.hidePopover();return action==='edit'?openQueueEditor(t.job):queueAction(t.job,action)};actions.append(b)}
-  const remove=document.createElement('button');remove.type='button';remove.className='task-remove';remove.textContent='×';remove.hidden=true;remove.title='取消任务';remove.setAttribute('aria-label','取消任务');remove.onclick=event=>{event.stopPropagation();if(!t.job||t.busy||t.job.cancel_requested)return;info.hidePopover();queueAction(t.job,t.job.status==='queued'?'cancel':'cancel_running')};card.append(remove);t.removeEl=remove;return t;
+  const remove=document.createElement('button');remove.type='button';remove.className='task-remove';remove.textContent='×';remove.hidden=true;remove.title='取消任务';remove.setAttribute('aria-label','取消任务');remove.onclick=event=>{event.stopPropagation();if(!t.job||t.busy||t.job.cancel_requested)return;info.hidePopover();queueAction(t.job,t.job.status==='queued'?'cancel':'cancel_running')};card.append(remove);t.removeEl=remove;
+  const redo=document.createElement('button'),quickRedo=document.createElement('button');redo.type=quickRedo.type='button';redo.className='task-redo dl';redo.textContent='重做一次';quickRedo.className='task-redo-quick';quickRedo.textContent='↻';quickRedo.title='重做一次（复用素材与配置，更换随机种子）';quickRedo.setAttribute('aria-label','重做一次');redo.hidden=quickRedo.hidden=true;const repeat=event=>{event.stopPropagation();info.hidePopover();redoCompletedTask(t)};redo.onclick=quickRedo.onclick=repeat;info.append(redo);card.append(quickRedo);t.redoEl=redo;t.redoQuickEl=quickRedo;return t;
 }
 function updateTaskThumbnail(t){const entry=galleryItems.find(x=>x.j.id===t.job?.id),result=entry&&resultThumbnail(entry),src=result||t.sourceThumbnail||'',signature=src+'|'+t.job?.status;if(t.thumbSignature===signature)return;t.thumbSignature=signature;t.thumb.replaceChildren();if(src){const img=document.createElement('img');img.src=src;img.loading='lazy';img.decoding='async';img.alt=result?'生成结果缩略图':'原视频首帧';img.onerror=()=>img.remove();t.thumb.append(img);if(!result){const hint=document.createElement('small');hint.textContent='原视频';t.thumb.append(hint)}}else t.thumb.textContent=t.job?.status==='done'?'▶':'▧'}
 const resultLoads=new Map();let resultLoadChain=Promise.resolve();
@@ -344,6 +345,7 @@ async function refreshVideoQueue(){
       if(j.cancel_requested&&j.cancellable){t.badge.textContent='取消中 · 核对停止';t.metaEl.textContent=j.cancel_note||'等待云端确认取消；确认前仍占用并发名额'}
       t.actionsEl.hidden=!j.editable&&!j.cancellable;
       t.removeEl.hidden=!j.editable&&!j.cancellable;t.removeEl.disabled=!!t.busy||!!j.cancel_requested;t.removeEl.title=j.cancel_requested?'正在取消':j.status==='queued'?'取消排队':'取消生成';t.removeEl.setAttribute('aria-label',t.removeEl.title);
+      t.redoEl.hidden=t.redoQuickEl.hidden=j.status!=='done';t.redoEl.disabled=t.redoQuickEl.disabled=!!t.redoBusy;
       t.actionsEl.querySelectorAll('button').forEach(b=>{const cancel=b.dataset.action==='cancel_running';b.hidden=cancel?!j.cancellable:!j.editable;if(cancel)b.textContent=j.cancel_requested?'取消中…':'取消生成';b.disabled=t.busy||(cancel&&j.cancel_requested)||(['top','up'].includes(b.dataset.action)&&j.position===1)||(b.dataset.action==='down'&&j.position===state.waiting)});
       t.viewEl.onclick=async()=>{t.info.hidePopover();t.viewEl.disabled=true;try{const full=await loadCompletedTask(j);if(full)renderTaskResult(full)}finally{t.viewEl.disabled=false}};
       if(j.status==='done')loadCompletedTask(j);
@@ -356,6 +358,13 @@ async function queueAction(job,action,extra={}){
   try{await api('/api/video-queue',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({job_id:job.id,revision:job.queue_revision,action,...extra})});return true}
   catch(e){document.getElementById('genStatus').textContent='队列操作失败：'+e.message;return false}
   finally{t.busy=false;await refreshVideoQueue()}
+}
+async function redoCompletedTask(t){
+  if(t.redoBusy||t.job?.status!=='done')return;t.redoBusy=true;t.redoEl.disabled=t.redoQuickEl.disabled=true;
+  const pendingKey='jt-pending-video-redo-'+t.job.id,status=document.getElementById('genStatus');let client_request_id=localStorage.getItem(pendingKey);if(!client_request_id){client_request_id='redo-'+Date.now()+'-'+Math.random().toString(36).slice(2);localStorage.setItem(pendingKey,client_request_id)}status.textContent='正在提交重做…';
+  try{const result=await api('/api/video-generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({redo_job_id:t.job.id,client_request_id}),signal:AbortSignal.timeout(20000)});if(!result.job_id)throw new Error('提交结果未确认');localStorage.removeItem(pendingKey);status.textContent='✓ 已加入队列 · 重做任务 '+result.job_id;await refreshVideoQueue()}
+  catch(e){const rejected=e.status>=400&&e.status<500;if(rejected)localStorage.removeItem(pendingKey);status.textContent='重做未完成：'+e.message+(rejected?'':'；再次点击会核对同一次提交')}
+  finally{t.redoBusy=false;t.redoEl.disabled=t.redoQuickEl.disabled=false}
 }
 function openQueueEditor(job){
   if(!job?.editable||document.getElementById('queueEditor'))return;const w=WFS.find(w=>w.id===job.workflow);if(!w)return;

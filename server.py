@@ -1498,7 +1498,10 @@ def public_job_params(job):
 
 def public_video_thumbnails(job):
     media = public_job_media(job.get('media'))
-    return {key: '/api/video-thumbnail/'+job['id']+'/'+digest+'.jpg'
+    source_id = job.get('thumbnail_source_job') or job['id']
+    if source_id != job['id'] and _jobs.get(source_id, {}).get('request_session_hash') != job.get('request_session_hash'):
+        return {}
+    return {key: '/api/video-thumbnail/'+source_id+'/'+digest+'.jpg'
             for key, digest in job.get('input_thumbnails', {}).items()
             if key in media and re.fullmatch(r'[0-9a-f]{32}', str(digest))}
 
@@ -4696,6 +4699,36 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
             try: body = self._read_json()
             except Exception: return self._send(400, b'{"error":"bad json"}')
+            session_id = self._require_session()
+            if not session_id: return
+            try:
+                client_request_id = normalize_client_request_id(body.get("client_request_id"))
+            except ValueError as error:
+                return self._send(400, json.dumps({"error": str(error)}).encode())
+            redo = None
+            if body.get('redo_job_id'):
+                with _lock_jobs:
+                    original = _jobs.get(str(body['redo_job_id']))
+                    if not original or not session_owns_record(session_id, original):
+                        return self._send(404, b'{"error":"job not found"}')
+                    if original.get('status') != 'done' or original.get('style_id') != 'video':
+                        return self._send(409, json.dumps({'error':'仅已完成的视频任务支持重做'},ensure_ascii=False).encode())
+                    redo = dict(original)
+                params = dict(redo.get('params') or {})
+                w = WORKFLOWS.get(redo.get('workflow'), {})
+                seed_control = (w.get('rh_params') or {}).get('seed')
+                if seed_control:
+                    minimum, maximum = int(seed_control.get('min', 0)), int(seed_control.get('max', 2**31-1))
+                    # A new click varies the sample; an uncertain network retry
+                    # must reproduce the same effective request for deduplication.
+                    digest = hmac.new(SESSION_SECRET, ('video-redo:'+_session_hash(session_id)+':'+redo['id']+':'+client_request_id).encode(), hashlib.sha256).digest()
+                    seed = minimum + int.from_bytes(digest[:8], 'big') % (maximum-minimum+1)
+                    if seed == params.get('seed') and maximum > minimum:
+                        seed = minimum + (seed-minimum+1) % (maximum-minimum+1)
+                    params['seed'] = seed
+                body = {'workflow':redo.get('workflow'), 'prompt':redo.get('prompt'),
+                        'negative_prompt':redo.get('negative_prompt', ''), 'params':params,
+                        'selection_snapshot':redo.get('selection_snapshot')}
             wf = body.get("workflow")
             if wf not in WORKFLOWS:
                 return self._send(400, b'{"error":"unknown workflow"}')
@@ -4719,21 +4752,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 schema_params["prompt"] = prompt
             if "negative" in (w.get("rh_params") or {}) and "negative" not in schema_params:
                 schema_params["negative"] = negative_prompt
-            session_id = self._require_session()
-            if not session_id:
-                return
             try:
-                provider_media, public_media = resolve_upload_capabilities(
-                    w, submitted_media, session_id)
+                if redo:
+                    provider_media, _ = normalize_rh_workflow_inputs(w, redo.get('provider_media') or {}, schema_params)
+                    public_media, _ = normalize_rh_workflow_inputs(w, redo.get('media') or {}, schema_params)
+                else:
+                    provider_media, public_media = resolve_upload_capabilities(w, submitted_media, session_id)
                 _, params = normalize_rh_workflow_inputs(w, public_media, schema_params)
             except ValueError as error:
                 return self._send(400, json.dumps({"error": str(error)}, ensure_ascii=False).encode())
             prompt = str(params.get("prompt", prompt)).strip()
             negative_prompt = str(params.get("negative", negative_prompt)).strip()
-            try:
-                client_request_id = normalize_client_request_id(body.get("client_request_id"))
-            except ValueError as error:
-                return self._send(400, json.dumps({"error": str(error)}).encode())
             request_sha256 = effective_request_sha256({
                 "workflow": wf, "generation_backend": "cloud",
                 "provider_media": provider_media, "prompt": prompt,
@@ -4753,6 +4782,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     return self._send(409, json.dumps({
                         "error": "client_request_id already used with different request payload",
                     }).encode())
+                if redo and public_media and time.time() >= redo.get('queue_media_expires', 0):
+                    return self._send(410, json.dumps({'error':'原素材已过期，请重新上传素材后生成；原提示词和 LoRA 配置仍可查看'},ensure_ascii=False).encode())
                 with _lock_jobs:
                     waiting = _video_waiting()
                     own_waiting = sum(session_owns_record(session_id, j) for j in waiting)
@@ -4761,10 +4792,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     return self._send(429, json.dumps({
                         "error": "等待队列已满，请完成或取消部分任务后再提交",
                     }, ensure_ascii=False).encode())
-                with _upload_capabilities_lock:
-                    media_expires = min((_upload_capabilities.get(
-                        _upload_token_hash(str(submitted_media[key])), {}).get('expires', 0)
-                        for key in public_media), default=time.time()+UPLOAD_CAPABILITY_TTL)
+                if redo:
+                    media_expires = redo.get('queue_media_expires', time.time()+UPLOAD_CAPABILITY_TTL) if public_media else time.time()+UPLOAD_CAPABILITY_TTL
+                else:
+                    with _upload_capabilities_lock:
+                        media_expires = min((_upload_capabilities.get(
+                            _upload_token_hash(str(submitted_media[key])), {}).get('expires', 0)
+                            for key in public_media), default=time.time()+UPLOAD_CAPABILITY_TTL)
                 job = {"id": uuid.uuid4().hex[:12], "workflow": wf, "prompt": prompt,
                    "negative_prompt": negative_prompt, "prompt_mode": "manual",
                    "media": public_media, "provider_media": provider_media,
@@ -4786,6 +4820,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                    "client_request_id": client_request_id,
                    "request_session_hash": session_hash,
                    "effective_request_sha256": request_sha256}
+                if redo:
+                    job['redo_of'] = redo['id']
+                    job['input_thumbnails'] = dict(redo.get('input_thumbnails') or {})
+                    job['thumbnail_source_job'] = redo.get('thumbnail_source_job') or redo['id']
                 quota_status = register_billable_job(job, session_id)
                 if self._billable_quota_rejection(quota_status):
                     return
