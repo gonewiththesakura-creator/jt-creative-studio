@@ -29,8 +29,8 @@ def verify(secret, api_key, session_hash, token, proof, provider_name=''):
     if not isinstance(provider_name, str) or (provider_name and (
         not re.fullmatch(r'(?:api|openapi)/[A-Za-z0-9._/-]{1,900}', provider_name)
         or any(part in ('', '.', '..') for part in provider_name.split('/')))):
-        raise ValueError('RunningHub 返回了无效的文件标识')
+        raise ValueError('云端返回了无效的文件标识')
     expected = hmac.new(api_key.encode(), (token+'\n'+provider_name).encode(), hashlib.sha256).hexdigest()
     if not api_key or not re.fullmatch(r'[0-9a-f]{64}', proof) or not hmac.compare_digest(proof, expected):
-        raise ValueError('个人 Key 与工作台生成账户不一致，请填写工作台当前使用的 RunningHub Key')
+        raise ValueError('个人 Key 与工作台生成账户不一致，请填写工作台当前使用的 API Key')
     return scope

@@ -50,6 +50,8 @@ def main(extra_paths=()):
             if not current['active']:break
             if time.time()>deadline:raise RuntimeError('Active work did not finish; leaving existing service intact')
             time.sleep(15)
+        s.close();c.close()
+        c=t._connect(t.BASE/'tools/creds.json',r.DEPLOY_SSH_KEY_PATH);s=c.open_sftp()
         isolated=True;r.isolate_watchdog(c)
         assert not snapshot(c)['active']
         r.stop_panel_resilient(c)
@@ -70,17 +72,20 @@ assert all(after.get(k)==before[k] for k in ids),'queued job changed during rest
 print(json.dumps({'waiting_preserved':len(ids),'ids':ids}))
 """.replace('BACKUP',repr(ledger))
         print(r.command(c,'python3 -c '+shlex.quote(code)),flush=True)
+        s.close();c.close()
+        c=t._connect(t.BASE/'tools/creds.json',r.DEPLOY_SSH_KEY_PATH);s=c.open_sftp()
         ui.verify(c,data)
         r.write_transaction_phase(c,tx,'committed');state['phase']='committed';t._atomic_json(STATE,state)
     except BaseException:
         if swapped and state['phase']!='committed':
+            if not c.get_transport() or not c.get_transport().is_active():
+                c=t._connect(t.BASE/'tools/creds.json',r.DEPLOY_SSH_KEY_PATH);s=c.open_sftp()
             r.write_transaction_phase(c,tx,'rolling-back');r.rollback_release(c,s,remotes,tx)
             r.write_transaction_phase(c,tx,'rolled-back');state['phase']='rolled-back';t._atomic_json(STATE,state)
         raise
     finally:
         if not swapped or state['phase'] in ('committed','rolled-back'):
-            if not c.get_transport() or not c.get_transport().is_active():
-                c=t._connect(t.BASE/'tools/creds.json',r.DEPLOY_SSH_KEY_PATH)
+            c.close();c=t._connect(t.BASE/'tools/creds.json',r.DEPLOY_SSH_KEY_PATH)
             if isolated:r.restore_watchdog_state(c,state['watchdog'])
             if admission:r.set_release_start_draining(c,False);r.set_remote_release_drain(c,False)
             r.release_release_lock(c,tx);state['cleanup_complete']=True;t._atomic_json(STATE,state)

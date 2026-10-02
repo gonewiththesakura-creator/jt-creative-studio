@@ -32,7 +32,7 @@ INJECT_TMPL = r"""
 .jt-back{display:inline-block;margin-bottom:14px;text-decoration:none;color:#8d625b;font-weight:800;font-size:13px}
 </style>
 <section class="jt-gen">
-  <div class="jt-gen-head">🎨 直接出图（RunningHub 云端 · {STYLE_NAME}）</div>
+  <div class="jt-gen-head">🎨 直接出图（云端 · {STYLE_NAME}）</div>
   <div class="jt-row">
     <div class="jt-field"><label>种子模式</label><select id="jtSeedMode"><option value="random">随机</option><option value="fixed">固定</option></select></div>
     <div class="jt-field"><label>种子值</label><input id="jtSeed" type="number" min="1" max="9007199254740991" step="1"></div>

@@ -5,7 +5,7 @@ SERVER=(ROOT/'server.py').read_text(encoding='utf8')
 SOURCE=(ROOT/'sources/video_business.js').read_text(encoding='utf8')
 checks={
  'server preserves video suffix':all(x in SERVER for x in ['.mp4','.mov','.webm','.avi','.mkv','favorite_media_type']),
- 'favorite endpoint serves stored MIME':'favorite_media_type' in SERVER and 'self._send(200, data, ctype' in SERVER,
+ 'favorite endpoint serves stored MIME':'favorite_media_type' in SERVER and 'self._write_stream(p, ctype' in SERVER,
  'video favorites render player':all(x in SOURCE for x in ["document.createElement(isVideo?'video':'img')",'media.controls=true','videoCoinText']),
  'favorite media safe DOM':'promptNode.textContent' in SOURCE and 'media.src=' in SOURCE,
 }

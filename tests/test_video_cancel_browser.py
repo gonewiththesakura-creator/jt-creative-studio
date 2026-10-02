@@ -2,7 +2,7 @@ from test_app_shell import browser, serve_page
 from playwright.sync_api import expect
 
 
-def test_running_cancel_confirmation_and_pending_ui(browser):
+def test_running_cancel_icon_and_pending_ui(browser):
     page=browser.new_page(viewport={'width':1440,'height':1000})
     serve_page(page,block_scene=True)
     job=dict(id='running',workflow='fixture-video',status='running',cancellable=True,editable=False,queue_revision=0,media={},params={})
@@ -21,12 +21,10 @@ def test_running_cancel_confirmation_and_pending_ui(browser):
         cancel=card.get_by_role('button',name='取消生成',exact=True)
         expect(cancel).to_be_visible()
         expect(card.get_by_role('button',name='编辑参数')).to_be_hidden()
-        page.once('dialog',lambda d:d.dismiss());cancel.click()
-        assert not posts
-        page.once('dialog',lambda d:d.accept());cancel.click()
+        cancel.click()
         expect(card.locator('.task-badge')).to_have_text('取消中 · 核对停止')
         card.locator('.task-tile').hover()
-        expect(card.get_by_role('button',name='取消中…',exact=True)).to_be_disabled()
+        expect(card.get_by_role('button',name='正在取消',exact=True)).to_be_disabled()
         assert len(posts)==1 and posts[0]['action']=='cancel_running'
         expect(page.locator('#taskCount')).to_contain_text('执行 1/2')
     finally:page.close()

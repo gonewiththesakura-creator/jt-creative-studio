@@ -62,7 +62,7 @@
    ],
    "speed": "约1.5-2分钟/次(云端)",
    "ref": "无（纯文字生成）",
-   "desc": "RunningHub云端 · 人物LoRA(05_style3_v2_step1600)+画风LoRA(04_style3_step800) · 触发词 jt_style3_v2",
+   "desc": "云端 · 人物LoRA(05_style3_v2_step1600)+画风LoRA(04_style3_step800) · 触发词 jt_style3_v2",
    "template": "anima02.json",
    "translate_default": true,
    "backend": "runninghub",
@@ -120,7 +120,7 @@
    "kind": "video",
    "backend": "runninghub",
    "rh_workflow_id": "2093554209044480001",
-   "desc": "RunningHub云端 · MiniMax H3 FL2VA · 4步T8加速 · 支持文生/图生视频与首尾帧",
+   "desc": "云端 · MiniMax H3 FL2VA · 4步T8加速 · 支持文生/图生视频与首尾帧",
    "rh_media": {
     "first_frame": {
      "node": "37",
@@ -186,7 +186,7 @@
    "kind": "video",
    "backend": "runninghub",
    "rh_workflow_id": "2093554049743339522",
-   "desc": "RunningHub云端 · Wan2.2 Animate · 人物图+服装图换装迁移 · 视频动作",
+   "desc": "云端 · Wan2.2 Animate · 人物图+服装图换装迁移 · 视频动作",
    "rh_media": {
     "person": {
      "node": "54",
@@ -266,7 +266,7 @@
    "kind": "video",
    "backend": "runninghub",
    "rh_workflow_id": "2093554104655167490",
-   "desc": "RunningHub云端 · Wan2.2 Animate · 视频动作迁移到目标角色",
+   "desc": "云端 · Wan2.2 Animate · 视频动作迁移到目标角色",
    "rh_media": {
     "person": {
      "node": "1031",
@@ -335,7 +335,7 @@
    "kind": "video",
    "backend": "runninghub",
    "rh_workflow_id": "2093554154237509633",
-   "desc": "RunningHub云端 · MiniMax H3 FL2VA · 8步Turbo · 图生视频。提示词需含“视频时长：[N]秒”格式，否则工作流内部解析会失败。",
+   "desc": "云端 · MiniMax H3 FL2VA · 8步Turbo · 图生视频。提示词需含“视频时长：[N]秒”格式，否则工作流内部解析会失败。",
    "rh_media": {
     "first_frame": {
      "node": "37",
@@ -377,7 +377,7 @@
    "kind": "video",
    "backend": "runninghub",
    "rh_workflow_id": "2093554183483215873",
-   "desc": "RunningHub云端 · MiniMax H3 · 4步Turbo · 首帧+尾帧生成视频",
+   "desc": "云端 · MiniMax H3 · 4步Turbo · 首帧+尾帧生成视频",
    "rh_media": {
     "first_frame": {
      "node": "146",
@@ -434,7 +434,7 @@
    "kind": "ai_app",
    "backend": "runninghub",
    "rh_ai_app_id": "2025090022289973249",
-   "desc": "第三方 RunningHub AI 应用：将二次元、动漫或漫画人物图转换为真人风格图像。",
+   "desc": "云端 AI 应用：将二次元、动漫或漫画人物图转换为真人风格图像。",
    "rh_media": {
     "source_image": {
      "node": "504",
@@ -457,7 +457,7 @@
     "requirements": ""
    },
    "provider_name": "Anime to Live-Action V6 Speed",
-   "provider_attribution": "第三方 RunningHub AI 应用"
+   "provider_attribution": "云端 AI 应用"
   },
   {
    "id": "realism_krea2",
@@ -536,7 +536,7 @@
     }
    },
    "params_defaults": {},
-   "speed": "RunningHub云端，耗时按工作流和当前队列而定",
+   "speed": "云端，耗时按工作流和当前队列而定",
    "ref": "按页面字段上传图片；文生图工作流无需图片"
   },
   {
@@ -603,7 +603,7 @@
     }
    },
    "params_defaults": {},
-   "speed": "RunningHub云端，耗时按工作流和当前队列而定",
+   "speed": "云端，耗时按工作流和当前队列而定",
    "ref": "按页面字段上传图片；文生图工作流无需图片"
   },
   {
@@ -683,7 +683,7 @@
     }
    },
    "params_defaults": {},
-   "speed": "RunningHub云端，耗时按工作流和当前队列而定",
+   "speed": "云端，耗时按工作流和当前队列而定",
    "ref": "按页面字段上传图片；文生图工作流无需图片",
    "rh_instance_type": "plus"
   },
@@ -777,7 +777,7 @@
     }
    },
    "params_defaults": {},
-   "speed": "RunningHub云端，耗时按工作流和当前队列而定",
+   "speed": "云端，耗时按工作流和当前队列而定",
    "ref": "按页面字段上传图片；文生图工作流无需图片"
   },
   {
@@ -939,7 +939,7 @@
     }
    },
    "params_defaults": {},
-   "speed": "RunningHub云端，耗时按工作流和当前队列而定",
+   "speed": "云端，耗时按工作流和当前队列而定",
    "ref": "按页面字段上传图片；文生图工作流无需图片"
   },
   {
@@ -1003,7 +1003,7 @@
     }
    },
    "params_defaults": {},
-   "speed": "RunningHub云端，耗时按工作流和当前队列而定",
+   "speed": "云端，耗时按工作流和当前队列而定",
    "ref": "按页面字段上传图片；文生图工作流无需图片"
   },
   {
@@ -1136,7 +1136,7 @@
    "fixed_features": [
     "当前API图不包含背景替换与黑背景视频分支"
    ],
-   "speed": "RunningHub云端，耗时按视频长度和队列而定",
+   "speed": "云端，耗时按视频长度和队列而定",
    "section": "动作迁移"
   },
   {
@@ -1295,7 +1295,7 @@
    "fixed_features": [
     "当前API图不包含多图参考、骨骼图动作与背景替换分支"
    ],
-   "speed": "RunningHub云端，耗时按视频长度和队列而定",
+   "speed": "云端，耗时按视频长度和队列而定",
    "section": "动作迁移"
   },
   {
@@ -1420,7 +1420,7 @@
     }
    },
    "params_defaults": {},
-   "speed": "RunningHub云端，耗时按视频长度和队列而定",
+   "speed": "云端，耗时按视频长度和队列而定",
    "ref": "1–4张参考图 + 1段待编辑视频",
    "section": "视频编辑"
   },
@@ -1492,7 +1492,7 @@
     }
    },
    "params_defaults": {},
-   "speed": "RunningHub云端，耗时按视频长度和队列而定",
+   "speed": "云端，耗时按视频长度和队列而定",
    "ref": "1段待编辑视频",
    "section": "视频编辑",
    "rh_result_labels": [
@@ -1568,7 +1568,7 @@
     }
    },
    "params_defaults": {},
-   "speed": "RunningHub云端，耗时按视频长度和队列而定",
+   "speed": "云端，耗时按视频长度和队列而定",
    "ref": "1段待编辑视频",
    "section": "视频编辑",
    "rh_result_labels": [
@@ -1638,7 +1638,7 @@
    "fixed_features": [
     "输出高度由作者工作流固定为1920，并按原图比例计算宽度。"
    ],
-   "speed": "RunningHub云端，耗时按队列而定",
+   "speed": "云端，耗时按队列而定",
    "ref": "1张待修改图片"
   },
   {
@@ -1743,7 +1743,7 @@
    "fixed_features": [
     "建议先用1–3秒测试；宽高应与人物参考图和动作视频方向一致。"
    ],
-   "speed": "RunningHub云端，耗时按视频长度和队列而定",
+   "speed": "云端，耗时按视频长度和队列而定",
    "ref": "1张人物图 + 1段动作视频",
    "section": "动作迁移"
   },

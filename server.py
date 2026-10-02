@@ -554,6 +554,11 @@ def load_favorites():
 def public_favorite(item):
     result = dict(item) if isinstance(item, dict) else {}
     result["selection_snapshot"] = public_selection_snapshot(result.get("selection_snapshot"))
+    job = _jobs.get(result.get("job_id"), {})
+    if result.get("owner_session_hash") and result.get("owner_session_hash") == job.get("request_session_hash"):
+        result["thumbnails"] = public_video_thumbnails(job)
+        if not result["selection_snapshot"]["params"]:
+            result["selection_snapshot"] = public_selection_snapshot(job.get("selection_snapshot"))
     for private_key in ("provider_media", "image_path", "original_url"):
         result.pop(private_key, None)
     return result
@@ -1359,9 +1364,9 @@ def public_job_error(job):
     job_id = str((job or {}).get("id") or "unknown")[:64]
     backend = str((job or {}).get("generation_backend") or "cloud")
     if backend == "cloud" and "RH_TASK_STOPPED" in error:
-        return f"任务已在 RunningHub 停止或取消。面板任务号 {job_id}"
+        return f"任务已在云端停止或取消。面板任务号 {job_id}"
     if backend == "cloud" and "RH_TASK_UNAVAILABLE" in error:
-        return f"RunningHub 返回任务不存在或已过期，已结束等待。请在 RH 后台核对记录。面板任务号 {job_id}"
+        return f"云端返回任务不存在或已过期，已结束等待。请联系维护人员核对记录。面板任务号 {job_id}"
     if backend == "local":
         return f"本地任务失败；请使用面板任务号 {job_id} 联系维护人员"
     if backend == "api":
@@ -1489,6 +1494,13 @@ def public_job_params(job):
     workflow = WORKFLOWS.get(str((job or {}).get("workflow") or ""), {})
     allowed = set((workflow.get("rh_params") or {}).keys())
     return {key: _json_safe_integer_metadata(raw[key]) for key in allowed if key in raw}
+
+
+def public_video_thumbnails(job):
+    media = public_job_media(job.get('media'))
+    return {key: '/api/video-thumbnail/'+job['id']+'/'+digest+'.jpg'
+            for key, digest in job.get('input_thumbnails', {}).items()
+            if key in media and re.fullmatch(r'[0-9a-f]{32}', str(digest))}
 
 
 def substitute(template_text, mapping):
@@ -3209,9 +3221,7 @@ def video_queue_snapshot(session_id):
             row.update(cancellable=j.get('generation_backend') == 'cloud' and j.get('status') in ('running','recovering'),
                        cancel_requested=bool(j.get('cancel_requested')), cancel_note=j.get('cancel_note'),
                        cancel_confirmed=bool(j.get('cancel_confirmed_at')))
-            row['thumbnails'] = {key: '/api/video-thumbnail/'+j['id']+'/'+digest+'.jpg'
-                                 for key, digest in j.get('input_thumbnails', {}).items()
-                                 if key in row['media'] and re.fullmatch(r'[0-9a-f]{32}', str(digest))}
+            row['thumbnails'] = public_video_thumbnails(j)
             rows.append(row)
         return {'jobs': rows, 'running': sum(bool(_cloud_slot_used(j)) for j in _jobs.values()),
                 'waiting': len(waiting), 'limit': VIDEO_MAX_CONCURRENT, 'draining': bool(_release_draining)}
@@ -3676,13 +3686,33 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if large_slot_acquired:
                 self.server._large_response_slots.release()
 
-    def _write_stream(self, path, ctype, download_name=None, cache_control="private, max-age=3600"):
+    def _write_stream(self, path, ctype, download_name=None, cache_control="private, max-age=3600", allow_range=False):
         path = pathlib.Path(path)
         # Open first so a stat/open race cannot produce a 200 header followed
         # by a second 404 response.
         with path.open("rb") as source:
             size = os.fstat(source.fileno()).st_size
-            is_large = size >= LARGE_RESPONSE_THRESHOLD
+            start, end, code = 0, size - 1, 200
+            requested = self.headers.get('Range') if allow_range else None
+            if requested:
+                match = re.fullmatch(r'bytes=(\d*)-(\d*)', requested.strip())
+                try:
+                    if not match or not any(match.groups()) or not size:
+                        raise ValueError('invalid range')
+                    first, last = match.groups()
+                    if first:
+                        start = int(first)
+                        end = min(int(last), size - 1) if last else size - 1
+                    else:
+                        suffix = int(last)
+                        if suffix <= 0: raise ValueError('invalid suffix')
+                        start = max(0, size - suffix)
+                    if start >= size or end < start: raise ValueError('unsatisfiable range')
+                    code = 206
+                except ValueError:
+                    return self._send(416, b'', ctype, {'Content-Range': f'bytes */{size}', 'Accept-Ranges': 'bytes'})
+            length = max(0, end - start + 1)
+            is_large = length >= LARGE_RESPONSE_THRESHOLD
             slot = False
             if is_large:
                 slot = self.server._large_response_slots.acquire(blocking=False)
@@ -3693,9 +3723,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 with self.server._metrics_lock:
                     self.server._active_large_responses += 1
             try:
-                self.send_response(200)
+                self.send_response(code)
                 self.send_header("Content-Type", ctype)
-                self.send_header("Content-Length", str(size))
+                self.send_header("Content-Length", str(length))
+                if allow_range:
+                    self.send_header('Accept-Ranges', 'bytes')
+                if code == 206:
+                    self.send_header('Content-Range', f'bytes {start}-{end}/{size}')
                 if download_name:
                     self.send_header("Content-Disposition", f'inline; filename="{download_name}"')
                 self.send_header("Cache-Control", cache_control)
@@ -3704,14 +3738,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     self.connection.settimeout(RESPONSE_SOCKET_TIMEOUT)
                     timeout = min(
                         RESPONSE_BODY_MAX_TIMEOUT,
-                        RESPONSE_BODY_BASE_TIMEOUT + size / RESPONSE_BODY_MIN_BYTES_PER_SECOND,
+                        RESPONSE_BODY_BASE_TIMEOUT + length / RESPONSE_BODY_MIN_BYTES_PER_SECOND,
                     )
                     deadline = self._start_absolute_deadline(timeout)
-                while True:
-                    chunk = source.read(64 * 1024)
+                source.seek(start)
+                remaining = length
+                while remaining:
+                    chunk = source.read(min(64 * 1024, remaining))
                     if not chunk:
                         break
                     self.wfile.write(chunk)
+                    remaining -= len(chunk)
             finally:
                 self._cancel_absolute_deadline(deadline)
                 if is_large:
@@ -3864,7 +3901,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     body.get('challenge'), body.get('proof'), provider_name)
                 if action == 'verify': result = {'ok': True}
                 else:
-                    if not provider_name: raise ValueError('缺少 RunningHub 文件标识')
+                    if not provider_name: raise ValueError('缺少云端文件标识')
                     token = issue_upload_capability(provider_name, scope['workflow'], scope['input_key'],
                         scope['media_type'], scope['filename'], session_id)
                     result = {'uploadToken': token, 'filename': scope['filename']}
@@ -3966,9 +4003,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             except ValueError:
                 return self._send(403, b'{"error":"bad path"}')
             if not p.exists(): return self._send(404, b'{"error":"favorite image missing"}')
-            data = p.read_bytes()
+            with p.open('rb') as source:
+                data = source.read(64)
             ctype = fav.get("favorite_media_type") or image_content_type(data, p.name) or "application/octet-stream"
-            self._send(200, data, ctype, {"Cache-Control": "private, max-age=86400"})
+            self._write_stream(p, ctype, cache_control="private, max-age=86400", allow_range=ctype.startswith('video/'))
         elif path.startswith("/api/job/"):
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
             jid = path.split("/api/job/", 1)[1]
@@ -4049,6 +4087,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     j["error"] = public_job_error(src)
                     j["media"] = public_job_media(src.get("media"))
                     j["selection_snapshot"] = public_job_selection_snapshot(src.get("selection_snapshot"))
+                    if scope == 'video':
+                        j['thumbnails'] = public_video_thumbnails(src)
                     items.append(j)
             self._send(200, json.dumps(items, ensure_ascii=False).encode())
         elif path.startswith("/api/local-preview/"):
@@ -4287,7 +4327,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 upload_token = issue_upload_capability(
                     remote_name, workflow_id, input_key, media_type, filename, session_id)
             except Exception as error:
-                return self._send(502, json.dumps({"error": "RunningHub上传失败，请稍后重试"}, ensure_ascii=False).encode())
+                return self._send(502, json.dumps({"error": "云端上传失败，请稍后重试"}, ensure_ascii=False).encode())
             headers = {"Set-Cookie": cookie_header} if cookie_header else None
             return self._send(200, json.dumps({
                 "uploadToken": upload_token, "filename": filename,
@@ -4403,7 +4443,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 upload_token = issue_upload_capability(
                     remote_name, workflow_id, input_key, media_type, filename, session_id)
             except Exception as error:
-                return self._send(502, json.dumps({"error": "RunningHub上传失败，请稍后重试"}, ensure_ascii=False).encode())
+                return self._send(502, json.dumps({"error": "云端上传失败，请稍后重试"}, ensure_ascii=False).encode())
             headers = {"Set-Cookie": cookie_header} if cookie_header else None
             return self._send(200, json.dumps({
                 "uploadToken": upload_token, "filename": filename,
@@ -4571,7 +4611,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         "mediaType": ctype, "input_key": input_key,
                     }, ensure_ascii=False).encode(), headers=headers)
                 except Exception:
-                    return self._send(502, json.dumps({"error": "RunningHub上传失败，请稍后重试"}, ensure_ascii=False).encode())
+                    return self._send(502, json.dumps({"error": "云端上传失败，请稍后重试"}, ensure_ascii=False).encode())
                 finally:
                     if temp_path:
                         temp_path.unlink(missing_ok=True)
@@ -4602,7 +4642,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 upload_token = issue_upload_capability(
                     remote_name, workflow_id, input_key, media_type, filename, session_id)
             except Exception as error:
-                return self._send(502, json.dumps({"error": "RunningHub上传失败，请稍后重试"}, ensure_ascii=False).encode())
+                return self._send(502, json.dumps({"error": "云端上传失败，请稍后重试"}, ensure_ascii=False).encode())
             headers = {"Set-Cookie": cookie_header} if cookie_header else None
             return self._send(200, json.dumps({
                 "uploadToken": upload_token, "filename": filename,
