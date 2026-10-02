@@ -1,15 +1,20 @@
 import copy
+import pytest
 
 from playwright.sync_api import expect
 from test_app_shell import browser, serve_page
 
 
-def test_completed_redo_keeps_form_and_retries_same_submission(browser, tmp_path):
+@pytest.mark.parametrize('source_status', ['done', 'error', 'cancelled'])
+def test_completed_redo_keeps_form_and_retries_same_submission(browser, tmp_path, source_status):
     page = browser.new_page(viewport={'width': 1440, 'height': 1000})
     requests = serve_page(page, block_scene=True)
     source = dict(
         id='original', workflow='fixture-video', wf_name='Original video',
-        status='done', editable=False, media={'source_video': 'source.mp4'},
+        status=source_status, editable=False, redoable=True,
+        media={'source_video': 'source.mp4', 'reference_image': 'subject.png',
+               'reference_image_2': 'wardrobe.png', 'reference_image_3': 'lighting.png',
+               'reference_image_4': 'details.png'},
         params={'prompt': 'Original prompt', 'lora_1_model': 'minimax-n4',
                 'lora_1_strength': .7, 'lora_2_model': 'minimax-n2',
                 'lora_2_strength': .6, 'lora_3_model': 'none', 'seed': 42},
@@ -18,7 +23,9 @@ def test_completed_redo_keeps_form_and_retries_same_submission(browser, tmp_path
     original = copy.deepcopy(source)
     jobs = [source, dict(id='waiting', workflow='fixture-video',
                         wf_name='Waiting video', status='queued', editable=True,
-                        position=1, queue_revision=0, media={}, params={})]
+                        position=1, queue_revision=0, media={}, params={}),
+            dict(id='unresolved', workflow='fixture-video', status='error',
+                 queue_hold=True, redoable=False, editable=False, media={}, params={})]
     posts, held = [], []
     errors = []
     page.on('pageerror', lambda error: errors.append(str(error)))
@@ -47,7 +54,9 @@ def test_completed_redo_keeps_form_and_retries_same_submission(browser, tmp_path
         queued = page.locator('[data-job-id="waiting"]')
         expect(queued.locator('.task-redo-quick')).to_be_hidden()
         expect(queued.locator('.task-redo')).to_be_hidden()
-        page.locator('[data-group="done"] summary').click()
+        expect(page.locator('[data-job-id="unresolved"] .task-redo-quick')).to_be_hidden()
+        if source_status == 'done':
+            page.locator('[data-group="done"] summary').click()
         card = page.locator('[data-job-id="original"]')
         quick = card.locator('.task-redo-quick')
         card.locator('.task-tile').hover()

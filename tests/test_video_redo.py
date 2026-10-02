@@ -65,10 +65,25 @@ def redo(httpd, panel, original, request_id, **overrides):
                         cookie=session_cookie(panel))
 
 
-def test_redo_uses_saved_inputs_new_seed_and_deduplicates_retry(panel):
+@pytest.mark.parametrize('original_status', ['done', 'error', 'cancelled'])
+def test_redo_uses_saved_inputs_new_seed_and_deduplicates_retry(panel, original_status):
     original = completed_video(panel)
+    original['status'] = original_status
+    if original_status != 'done':
+        original['images'] = []
+    if original_status == 'error':
+        original.update(error='Provider execution failed', provider_status='FAILED')
+    elif original_status == 'cancelled':
+        original.update(provider_status='CANCELLED', cancel_requested=True,
+                        cancel_confirmed_at=time.time())
     before = copy.deepcopy(original)
     with running_server(panel) as httpd:
+        status, queue, _ = json_request(httpd, 'GET', '/api/video-queue',
+                                        cookie=session_cookie(panel))
+        assert status == 200 and queue['jobs'][0]['redoable'] is True
+        status, saved, _ = json_request(httpd, 'GET', '/api/job/' + original['id'],
+                                        cookie=session_cookie(panel))
+        assert status == 200 and saved['redoable'] is True
         status, first, _ = redo(
             httpd, panel, original, 'redo-first',
             prompt='browser override', workflow='h3_t2v_i2v',
@@ -124,24 +139,39 @@ def test_expired_inputs_reject_new_redo_but_allow_accepted_retry(panel):
     assert len(panel._jobs) == 2
 
 
-def test_redo_requires_owned_completed_video_and_required_media(panel):
+def test_redo_requires_owned_finished_video_and_required_media(panel):
     original = completed_video(panel)
+    before = copy.deepcopy(original)
     with running_server(panel) as httpd:
         status, _, _ = json_request(
             httpd, 'POST', '/api/video-generate',
             {'redo_job_id': original['id'], 'client_request_id': 'redo-other-owner'},
             cookie=session_cookie(panel, 'other-session-1234567890'))
         assert status == 404
-        original['status'] = 'running'
-        status, _, _ = redo(httpd, panel, original, 'redo-running')
-        assert status == 409
-        original['status'] = 'done'
+        unresolved_states = (
+            {'status': 'queued'},
+            {'status': 'running'},
+            {'status': 'recovering'},
+            {'status': 'error', 'queue_hold': True},
+            {'status': 'error', 'cancel_requested': True},
+            {'status': 'error', 'provider_status': 'RUNNING'},
+            {'status': 'error', 'provider_status': 'SUBMITTING'},
+        )
+        for index, changes in enumerate(unresolved_states):
+            original.clear(); original.update(copy.deepcopy(before)); original.update(changes)
+            status, queue, _ = json_request(httpd, 'GET', '/api/video-queue',
+                                            cookie=session_cookie(panel))
+            assert status == 200 and queue['jobs'][0]['redoable'] is False
+            status, rejected, _ = redo(httpd, panel, original, 'redo-unresolved-' + str(index))
+            assert status == 409 and '暂不能重做' in rejected['error']
+        original.clear(); original.update(copy.deepcopy(before))
         for key in ('provider_media', 'media'):
             saved = original[key].pop('source_video')
             status, _, _ = redo(httpd, panel, original, 'redo-missing-' + key)
             assert status == 400
             original[key]['source_video'] = saved
     assert list(panel._jobs) == [original['id']]
+    assert original == before
 
 
 @pytest.mark.parametrize('limit_name', ['VIDEO_QUEUE_LIMIT', 'VIDEO_QUEUE_SESSION_LIMIT'])

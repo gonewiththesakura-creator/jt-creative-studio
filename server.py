@@ -3215,6 +3215,10 @@ def video_ui_terminal(job):
             and job.get('provider_status') not in ('RUNNING', 'QUEUED', 'RECOVERING', 'SUBMITTING'))
 
 
+def video_redoable(job):
+    return job.get('style_id') == 'video' and video_ui_terminal(job)
+
+
 def clear_video_ui(session_id, scope):
     """Persist display-only clearing, retaining job inputs, outputs and favorites."""
     flags = {
@@ -3265,7 +3269,7 @@ def video_queue_snapshot(session_id):
             row.update(cancellable=j.get('generation_backend') == 'cloud' and j.get('status') in ('running','recovering'),
                        cancel_requested=bool(j.get('cancel_requested')), cancel_note=j.get('cancel_note'),
                        cancel_confirmed=bool(j.get('cancel_confirmed_at')),
-                       gallery_cleared=bool(j.get('gallery_cleared')))
+                       gallery_cleared=bool(j.get('gallery_cleared')), redoable=video_redoable(j))
             row['thumbnails'] = public_video_thumbnails(j)
             rows.append(row)
         return {'jobs': rows, 'running': sum(bool(_cloud_slot_used(j)) for j in _jobs.values()),
@@ -4084,6 +4088,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 j["media"] = public_job_media(src.get("media"))
                 j["params"] = public_job_params(src)
                 j["selection_snapshot"] = public_job_selection_snapshot(src.get("selection_snapshot"))
+                j["redoable"] = video_redoable(src)
             self._send(200, json.dumps(j, ensure_ascii=False).encode())
         elif path == "/api/jobs":
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
@@ -4775,8 +4780,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     original = _jobs.get(str(body['redo_job_id']))
                     if not original or not session_owns_record(session_id, original):
                         return self._send(404, b'{"error":"job not found"}')
-                    if original.get('status') != 'done' or original.get('style_id') != 'video':
-                        return self._send(409, json.dumps({'error':'仅已完成的视频任务支持重做'},ensure_ascii=False).encode())
+                    if original.get('style_id') != 'video':
+                        return self._send(409, json.dumps({'error':'仅视频任务支持重做'},ensure_ascii=False).encode())
+                    if not video_redoable(original):
+                        return self._send(409, json.dumps({'error':'正在运行或核对中的任务暂不能重做'},ensure_ascii=False).encode())
                     redo = dict(original)
                 params = dict(redo.get('params') or {})
                 w = WORKFLOWS.get(redo.get('workflow'), {})
