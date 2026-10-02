@@ -3205,11 +3205,52 @@ def reconcile_video_queue_holds():
         _queue_hold_idle_sample = None
 
 
+def video_ui_terminal(job):
+    """UI clearing must not hide work whose provider outcome is unresolved."""
+    return (job.get('status') in ('done', 'error', 'cancelled')
+            and not job.get('queue_hold')
+            and not _cloud_slot_used(job)
+            and not _dreamapi_pending(job)
+            and not (job.get('cancel_requested') and not job.get('cancel_confirmed_at'))
+            and job.get('provider_status') not in ('RUNNING', 'QUEUED', 'RECOVERING', 'SUBMITTING'))
+
+
+def clear_video_ui(session_id, scope):
+    """Persist display-only clearing, retaining job inputs, outputs and favorites."""
+    flags = {
+        'history': ('history_cleared', 'task_cleared', 'gallery_cleared'),
+        'errors': ('history_cleared', 'task_cleared', 'gallery_cleared'),
+        'gallery': ('gallery_cleared',),
+    }
+    if scope not in flags:
+        raise ValueError('未知的清除范围')
+    with _lock_jobs:
+        matching = [job for job in _jobs.values()
+                    if job.get('style_id') == 'video'
+                    and session_owns_record(session_id, job) and video_ui_terminal(job)
+                    and (scope != 'errors' or job.get('status') in ('error', 'cancelled'))
+                    and (scope != 'gallery' or job.get('status') == 'done')]
+        before = {job['id']: dict(job) for job in matching
+                  if any(not job.get(flag) for flag in flags[scope])}
+        for job in matching:
+            if job['id'] in before:
+                job.update({flag: True for flag in flags[scope]})
+        try:
+            if before:
+                save_jobs()
+        except Exception:
+            for job_id, previous in before.items():
+                _jobs[job_id].clear(); _jobs[job_id].update(previous)
+            raise
+        return {'ok': True, 'scope': scope, 'cleared_ids': [job['id'] for job in matching]}
+
+
 def video_queue_snapshot(session_id):
     with _lock_jobs:
         waiting = _video_waiting()
         positions = {j['id']: i + 1 for i, j in enumerate(waiting)}
-        own = [j for j in _jobs.values() if j.get('style_id') == 'video' and session_owns_record(session_id, j)]
+        own = [j for j in _jobs.values() if j.get('style_id') == 'video' and session_owns_record(session_id, j)
+               and not (j.get('task_cleared') and video_ui_terminal(j))]
         active = sorted((j for j in own if j.get('status') in ('queued', 'running', 'recovering')),
                         key=lambda j: (j.get('status') == 'queued', positions.get(j['id'], 0), j['created']))
         recent = sorted((j for j in own if j.get('status') not in ('queued', 'running', 'recovering')),
@@ -3223,7 +3264,8 @@ def video_queue_snapshot(session_id):
                        editable=j.get('status') == 'queued', queue_hold=bool(j.get('queue_hold')))
             row.update(cancellable=j.get('generation_backend') == 'cloud' and j.get('status') in ('running','recovering'),
                        cancel_requested=bool(j.get('cancel_requested')), cancel_note=j.get('cancel_note'),
-                       cancel_confirmed=bool(j.get('cancel_confirmed_at')))
+                       cancel_confirmed=bool(j.get('cancel_confirmed_at')),
+                       gallery_cleared=bool(j.get('gallery_cleared')))
             row['thumbnails'] = public_video_thumbnails(j)
             rows.append(row)
         return {'jobs': rows, 'running': sum(bool(_cloud_slot_used(j)) for j in _jobs.values()),
@@ -4033,7 +4075,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "api_prompt_compacted", "api_upstream_prompt_chars",
                     "api_upstream_model", "api_upstream_quality", "api_upstream_size",
                     "api_provider_size",
-                    "media", "params",
+                    "media", "params", "history_cleared", "task_cleared", "gallery_cleared",
                     "client_request_id",
                     "transfer_index", "transfer_total", "transfer_started", "transfer_finished",
                 )
@@ -4055,7 +4097,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 style = (query.get("style") or [None])[0]
                 session_id, _ = self._upload_session(create=False)
                 owned_sources = [src for src in _jobs.values()
-                                 if session_owns_record(session_id, src)]
+                                 if session_owns_record(session_id, src)
+                                 and not (src.get('style_id') == 'video' and src.get('history_cleared')
+                                          and video_ui_terminal(src))]
                 limit, before = 12, None
                 if scope == 'video':
                     try:
@@ -4083,7 +4127,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         "api_prompt_compacted", "api_upstream_prompt_chars",
                         "api_upstream_model", "api_upstream_quality", "api_upstream_size",
                         "api_provider_size",
-                        "client_request_id",
+                        "client_request_id", "history_cleared", "task_cleared", "gallery_cleared",
                         "transfer_index", "transfer_total", "transfer_started", "transfer_finished",
                     )
                     j = {k: src.get(k) for k in allowed}
@@ -4682,6 +4726,26 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._send(200, b'{"ok":true}')
             except (ValueError, TypeError, OSError):
                 return self._send(400, b'{"error":"invalid thumbnail"}')
+        if path == '/api/video-clear':
+            if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
+            session_id = self._require_session()
+            if not session_id: return
+            origin = self.headers.get('Origin')
+            if (self.headers.get('Sec-Fetch-Site') == 'cross-site'
+                    or (origin and (urllib.parse.urlparse(origin).scheme not in ('http', 'https')
+                                    or urllib.parse.urlparse(origin).netloc.lower()
+                                    != str(self.headers.get('Host') or '').lower()))):
+                return self._send(403, b'{"error":"same-origin request required"}')
+            try:
+                body = self._read_json(1024)
+                if not isinstance(body, dict): raise ValueError('bad json')
+                result = clear_video_ui(session_id, body.get('scope'))
+            except (ValueError, TypeError, OverflowError) as error:
+                return self._send(400, json.dumps({'error': str(error)}, ensure_ascii=False).encode())
+            except Exception:
+                return self._send(503, json.dumps({'error': '清除未保存，请稍后重试'}, ensure_ascii=False).encode())
+            return self._send(200, json.dumps(result, ensure_ascii=False).encode(),
+                              headers={'Cache-Control': 'no-store'})
         if path == '/api/video-queue':
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
             session_id = self._require_session()
