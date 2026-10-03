@@ -139,6 +139,35 @@ def test_expired_inputs_reject_new_redo_but_allow_accepted_retry(panel):
     assert len(panel._jobs) == 2
 
 
+@pytest.mark.parametrize('provider_status,error,task_id', [
+    ('SUBMITTING', 'RH submission rejected: code=605', None),
+    ('RUNNING', 'RH task failed: 805 工作流运行失败；节点275 VHS_LoadVideo: ValueError', 'failed-task'),
+    ('RUNNING', '恢复云任务失败：RH task failed: 805 工作流运行失败', 'failed-task'),
+])
+def test_saved_definite_failures_remain_redoable_despite_stale_provider_state(
+        panel, provider_status, error, task_id):
+    original = completed_video(panel)
+    original.update(status='error', images=[], provider_status=provider_status,
+                    error=error, rh_task_id=task_id)
+    before = copy.deepcopy(original)
+    with running_server(panel) as httpd:
+        status, queue, _ = json_request(httpd, 'GET', '/api/video-queue',
+                                        cookie=session_cookie(panel))
+        assert status == 200 and queue['jobs'][0]['redoable'] is True
+        status, detail, _ = json_request(httpd, 'GET', '/api/job/' + original['id'],
+                                         cookie=session_cookie(panel))
+        assert status == 200 and detail['redoable'] is True
+        status, accepted, _ = redo(httpd, panel, original, 'redo-legacy-failed')
+        assert status == 200, accepted
+    child = panel._jobs[accepted['job_id']]
+    assert child['status'] == 'queued'
+    assert child['provider_media'] == original['provider_media']
+    assert child['media'] == original['media']
+    assert child['prompt'] == original['prompt']
+    assert child['params']['lora_1_model'] == original['params']['lora_1_model']
+    assert original == before
+
+
 def test_redo_requires_owned_finished_video_and_required_media(panel):
     original = completed_video(panel)
     before = copy.deepcopy(original)
@@ -156,6 +185,12 @@ def test_redo_requires_owned_finished_video_and_required_media(panel):
             {'status': 'error', 'cancel_requested': True},
             {'status': 'error', 'provider_status': 'RUNNING'},
             {'status': 'error', 'provider_status': 'SUBMITTING'},
+            {'status': 'error', 'provider_status': 'SUBMITTING',
+             'error': 'RH submission rejected: code=0'},
+            {'status': 'error', 'provider_status': 'SUBMITTING',
+             'rh_task_id': 'unconfirmed-task', 'error': 'RH submission rejected: code=605'},
+            {'status': 'error', 'provider_status': 'RUNNING', 'queue_hold': True,
+             'rh_task_id': 'failed-task', 'error': 'RH task failed: 805'},
         )
         for index, changes in enumerate(unresolved_states):
             original.clear(); original.update(copy.deepcopy(before)); original.update(changes)

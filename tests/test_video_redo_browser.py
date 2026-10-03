@@ -20,6 +20,8 @@ def test_completed_redo_keeps_form_and_retries_same_submission(browser, tmp_path
                 'lora_2_strength': .6, 'lora_3_model': 'none', 'seed': 42},
         images=[{'url': '/result.png', 'file_type': 'image'}],
     )
+    if source_status == 'error':
+        source.update(provider_status='SUBMITTING', error='云端账户余额不足，任务未提交。')
     original = copy.deepcopy(source)
     jobs = [source, dict(id='waiting', workflow='fixture-video',
                         wf_name='Waiting video', status='queued', editable=True,

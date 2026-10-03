@@ -1357,12 +1357,32 @@ def public_job_media(media):
     return result
 
 
+def _rh_balance_rejection(error):
+    """Recognize an explicit unaccepted submission, never an uncertain POST."""
+    if error == 'RH submission rejected: code=605':
+        return True
+    for prefix in ('RH submit rejected: ', 'RH AI App submit rejected: '):
+        if not error.startswith(prefix):
+            continue
+        try:
+            response = json.loads(error[len(prefix):])
+        except (ValueError, TypeError):
+            return False
+        return (isinstance(response, dict) and not response.get('taskId')
+                and str(response.get('errorCode') or response.get('code')) == '605'
+                and str(response.get('status') or '').upper() not in ('RUNNING', 'QUEUED'))
+    return False
+
+
 def public_job_error(job):
     error = str((job or {}).get("error") or "").strip()
     if not error:
         return None
     job_id = str((job or {}).get("id") or "unknown")[:64]
     backend = str((job or {}).get("generation_backend") or "cloud")
+    if backend == 'cloud' and _rh_balance_rejection(error):
+        reason = '后续提交失败' if job.get('rh_task_id') else '任务未提交'
+        return f"云端账户余额不足，{reason}。请联系管理员检查额度。面板任务号 {job_id}"
     if backend == "cloud" and "RH_TASK_STOPPED" in error:
         return f"任务已在云端停止或取消。面板任务号 {job_id}"
     if backend == "cloud" and "RH_TASK_UNAVAILABLE" in error:
@@ -1683,7 +1703,10 @@ def rh_submit(workflow_id, node_info_list, instance_type="default", use_personal
         if transient and attempt < 2 and time.time() < deadline:
             time.sleep(2 * (attempt + 1))
             continue
-        raise RuntimeError(f"RH submit rejected: {last}")
+        rejection = f"RH submit rejected: {last}"
+        if _rh_balance_rejection(rejection):
+            raise ProviderTaskFailed(rejection)
+        raise RuntimeError(rejection)
     raise RuntimeError(f"RH submit failed: hard deadline exceeded: {last}")
 
 def rh_submit_ai_app(app_id, node_info_list):
@@ -1699,7 +1722,10 @@ def rh_submit_ai_app(app_id, node_info_list):
     task_id = result.get("taskId")
     if task_id and status in ("QUEUED", "RUNNING"):
         return task_id
-    raise RuntimeError("RH AI App submit rejected: " + json.dumps(result, ensure_ascii=False)[:600])
+    rejection = "RH AI App submit rejected: " + json.dumps(result, ensure_ascii=False)[:600]
+    if _rh_balance_rejection(rejection):
+        raise ProviderTaskFailed(rejection)
+    raise RuntimeError(rejection)
 
 def rh_failed_task_detail(task_id):
     """Read a failed task's actionable node reason without resubmitting it."""
@@ -1793,6 +1819,8 @@ def rh_query(task_id, job=None):
     if job is not None and coins is not None:
         job["rh_coins"] = coins
     if status == "FAILED":
+        if job is not None:
+            job.update(provider_status='FAILED', provider_finished=time.time())
         detail = rh_failed_task_detail(task_id)
         suffix = f"；{detail}" if detail else ""
         raise ProviderTaskFailed(
@@ -2273,6 +2301,10 @@ def resume_cloud_job(job):
     except ProviderTaskCancelled:
         job.update(status='cancelled', provider_status='CANCELLED', queue_hold=False,
                    cancel_confirmed_at=time.time(), error=None)
+    except ProviderTaskFailed as error:
+        job.update(status='error', provider_status='FAILED', queue_hold=False,
+                   provider_failure_confirmed_at=time.time(), provider_finished=time.time(),
+                   error=f"恢复云任务失败：{str(error)[:450]}")
     except ProviderStateUncertain:
         job["status"] = "recovering"
         job["provider_status"] = "RECOVERING"
@@ -3032,6 +3064,11 @@ def rh_submit_h3_multi(job, w):
     result = _provider_json_request(req,timeout=RH_TIMEOUT_SUBMIT)
     task_id = (result.get('data') or {}).get('taskId')
     if result.get('code') == 0 and task_id: return str(task_id)
+    if task_id:
+        # A task already exists even if the response also reports an error.
+        # Keep its identifier and poll it instead of enabling a second submit.
+        persist_provider_task(job, str(task_id))
+        raise ProviderStateUncertain('RH submission returned a task id with an unconfirmed state')
     if result.get('code') not in (None, 0):
         raise ProviderTaskFailed('RH submission rejected: code='+str(result.get('code')))
     raise ProviderStateUncertain('RH submission returned no task id')
@@ -3205,14 +3242,29 @@ def reconcile_video_queue_holds():
         _queue_hold_idle_sample = None
 
 
+def _cloud_failure_confirmed(job):
+    """Also recognize terminal exceptions saved before failure states were fixed."""
+    if job.get('status') != 'error' or job.get('generation_backend') != 'cloud':
+        return False
+    if job.get('provider_failure_confirmed_at'):
+        return True
+    error = str(job.get('error') or '').removeprefix('恢复云任务失败：')
+    if job.get('rh_task_id'):
+        return error.startswith('RH task failed: ')
+    return (re.fullmatch(r'RH submission rejected: code=[1-9]\d*', error) is not None
+            or _rh_balance_rejection(error))
+
+
 def video_ui_terminal(job):
     """UI clearing must not hide work whose provider outcome is unresolved."""
+    confirmed_failure = _cloud_failure_confirmed(job)
     return (job.get('status') in ('done', 'error', 'cancelled')
             and not job.get('queue_hold')
             and not _cloud_slot_used(job)
             and not _dreamapi_pending(job)
-            and not (job.get('cancel_requested') and not job.get('cancel_confirmed_at'))
-            and job.get('provider_status') not in ('RUNNING', 'QUEUED', 'RECOVERING', 'SUBMITTING'))
+            and (confirmed_failure or (
+                not (job.get('cancel_requested') and not job.get('cancel_confirmed_at'))
+                and job.get('provider_status') not in ('RUNNING', 'QUEUED', 'RECOVERING', 'SUBMITTING'))))
 
 
 def video_redoable(job):
@@ -3373,6 +3425,10 @@ def run_job(job):
     except ProviderTaskCancelled:
         job.update(status='cancelled', provider_status='CANCELLED', queue_hold=False,
                    cancel_confirmed_at=time.time(), error=None)
+    except ProviderTaskFailed as error:
+        job.update(status='error', provider_status='FAILED', queue_hold=False,
+                   provider_failure_confirmed_at=time.time(), provider_finished=time.time(),
+                   error=str(error)[:500])
     except ProviderStateUncertain:
         job["status"] = "recovering"
         job["provider_status"] = "RECOVERING"
