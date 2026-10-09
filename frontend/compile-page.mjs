@@ -20,4 +20,4 @@ const ast=parse(adapted,{ecmaVersion:2022,ranges:true,sourceType:'module'});
 const scopes=analyze(ast,{ecmaVersion:2022,sourceType:'module'});
 const names=[...new Set(scopes.globalScope.through.map(r=>r.identifier.name))].filter(n=>ids.includes(n));
 const bindings=names.map(n=>`const ${n}=document.getElementById(${JSON.stringify(n)});`).join('\n');
-process.stdout.write(`export function mount({document,window,fetch,location}){\n${bindings}\n${adapted}\nreturn {styleBoot:${creator?'STYLE_BOOT':'null'}};\n}`);
+process.stdout.write(`export function mount({document,window,fetch,location,localStorage,sessionStorage}){\n${bindings}\n${adapted}\nreturn {styleBoot:${creator?'STYLE_BOOT':'null'}};\n}`);

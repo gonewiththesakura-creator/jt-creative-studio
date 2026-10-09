@@ -1,0 +1,74 @@
+/* Casdoor jt-workbench only: use as raw formCss and formCssMobile. */
+.login-background {
+  isolation: isolate;
+  overflow: hidden;
+  color: #f1e7d8;
+  background: #07080b !important;
+}
+.login-background::before {
+  content: "";
+  position: fixed;
+  inset: -15%;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at 72% 49%, transparent 0 24%, #07080b 29% 100%),
+    radial-gradient(ellipse at 72% 49%, #050607 0 18%, #a76e31 18.5%,
+      #f3d7a2 19%, #ad7135 19.5%, #5e391c 20%, transparent 23%),
+    radial-gradient(ellipse at 70% 52%, #6d431c 0, #261b13 37%, #07080b 68%);
+  opacity: .78;
+  animation: jt-identity-reveal 1.2s ease-out both;
+}
+.login-background .login-panel {
+  padding-top: 32px;
+  border: 1px solid rgba(216, 183, 134, .32);
+  border-radius: 22px;
+  background: rgba(12, 13, 17, .93);
+  color: #f1e7d8;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, .45);
+}
+.login-background .login-logo-box img {
+  height: 54px;
+  width: 54px;
+  object-fit: contain;
+}
+.login-background .login-form input {
+  border-color: rgba(216, 183, 134, .3);
+  background-color: #111318;
+  color: #f1e7d8;
+}
+.login-background .login-form input::placeholder {
+  color: #a79f95;
+}
+.login-background .login-form input:focus-visible {
+  outline: 2px solid #d8b786;
+  outline-offset: 2px;
+}
+.login-background .login-form button[type="submit"] {
+  min-height: 44px;
+  background: linear-gradient(110deg, #ead0aa, #c99f69);
+  color: #21170e;
+  border-color: #d8b786;
+}
+.login-background .login-form a {
+  color: #e1c294;
+}
+.login-background #footer {
+  color: #afa394;
+}
+@keyframes jt-identity-reveal {
+  from { opacity: 0; }
+  to { opacity: .78; }
+}
+@media (max-width: 640px) {
+  .login-background::before {
+    inset: -5% -55%;
+  }
+  .login-background .login-panel {
+    border-radius: 18px;
+    padding: 26px 22px 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .login-background::before { animation: none; }
+}

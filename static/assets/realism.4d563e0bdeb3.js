@@ -1,4 +1,4 @@
-export function mount({document,window,fetch,location}){
+export function mount({document,window,fetch,location,localStorage,sessionStorage}){
 const workflowPreview=document.getElementById("workflowPreview");
 const previewEmpty=document.getElementById("previewEmpty");
 const previewMessage=document.getElementById("previewMessage");

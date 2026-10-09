@@ -10,6 +10,13 @@ r=t.release
 STATE=t.BASE/'audit/queue-presets-20260929/release.json'
 
 
+def normalize_release_bytes(path, payload):
+    """Normalize source text only; binary assets must retain exact bytes."""
+    if path.lower().endswith(('.py', '.js', '.css', '.html', '.json', '.txt')):
+        return payload.replace(b'\r\n', b'\n')
+    return payload
+
+
 def snapshot(client):
     code="""import json,pathlib
 jobs=json.loads(pathlib.Path('/home/admin/comfy-panel/panel_data/jobs.json').read_text())
@@ -22,16 +29,16 @@ def main(extra_paths=()):
     manifest=json.loads((t.BASE/'static/app-manifest.json').read_text(encoding='utf8'))
     paths=['server.py']+[p.lstrip('/') for p in manifest['pages']['/video'].values() if p.startswith('/static/')]+['static/video.html','static/app-manifest.json','static/app.html']
     paths.extend(extra_paths)
-    data={p:(t.BASE/p).read_bytes().replace(b'\r\n',b'\n') for p in paths}
+    data={p:normalize_release_bytes(p,(t.BASE/p).read_bytes()) for p in paths}
     c=t._connect(t.BASE/'tools/creds.json',r.DEPLOY_SSH_KEY_PATH);s=c.open_sftp()
     for p,raw in data.items():
         old=subprocess.run(['git','show','HEAD:'+p],cwd=t.BASE,capture_output=True)
         try:
-            with s.open(r.REMOTE_ROOT+'/'+p,'rb') as f:live=f.read().replace(b'\r\n',b'\n')
+            with s.open(r.REMOTE_ROOT+'/'+p,'rb') as f:live=normalize_release_bytes(p,f.read())
         except FileNotFoundError:
             assert old.returncode!=0,'missing production '+p
             continue
-        assert live==raw or (old.returncode==0 and live==old.stdout.replace(b'\r\n',b'\n')),'production changed '+p
+        assert live==raw or (old.returncode==0 and live==normalize_release_bytes(p,old.stdout)),'production changed '+p
     r.require_persistent_release_drain_contract(c);r.require_release_start_draining_unset(c)
     tx=r.new_release_transaction();r.acquire_release_lock(c,tx)
     state={'transaction':tx,'phase':'preparing','watchdog':r.capture_watchdog_state(c)}

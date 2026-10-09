@@ -51,6 +51,8 @@ def serve_page(page, legacy=False, requests=None, block_scene=False):
         requests.append((request.method, path, request.resource_type))
         if request.method != 'GET':
             return route.fulfill(status=503,json={'error':'offline: paid requests forbidden'})
+        if path == '/api/auth/me':
+            return route.fulfill(json={'enabled':False,'authenticated':False})
         if path == '/api/workflows':
             return route.fulfill(json=[{'id':'fixture-'+kind,'kind':kind,'backend':'runninghub','name':'测试工作流',
                 'rh_media':{},'rh_params':{'prompt':{'type':'text','label':'提示词','default':'测试'}}}

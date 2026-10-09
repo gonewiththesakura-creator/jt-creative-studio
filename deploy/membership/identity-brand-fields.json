@@ -1,0 +1,14 @@
+{
+  "themeData": {
+    "isEnabled": true,
+    "themeType": "dark",
+    "colorPrimary": "#D8B786",
+    "borderRadius": 14,
+    "isCompact": false
+  },
+  "formOffset": 2,
+  "title": "JT 创作台 · 登录",
+  "favicon": "https://studio.dreamapi.club/static/favicon.png",
+  "logo": "https://studio.dreamapi.club/static/favicon.png",
+  "logoDark": "https://studio.dreamapi.club/static/favicon.png"
+}

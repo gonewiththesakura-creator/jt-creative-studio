@@ -25,6 +25,7 @@ function checkBusy() {
   if (busy !== businessBusy) { businessBusy = busy; draw(); }
 }
 function observePage(root) {
+  if (!root || typeof root.querySelector !== 'function') return;
   pageRoots.add(root);
   new MutationObserver(checkBusy).observe(root, {subtree:true, childList:true, attributes:true, attributeFilter:['class','aria-busy']});
   checkBusy();
@@ -59,7 +60,7 @@ appearance=installAppearance(controls,values=>applySceneSettings(values));
 installPreview();
 function attachPage(root,scope) { observePage(root);installPreview(scope.document,scope.page?.styleBoot); }
 addEventListener('jt:page-mounted',event=>attachPage(event.detail.root,event.detail.scope));
-if(window.jtApp)for(const page of window.jtApp.router.pages.values())attachPage(page.shadow,page.scope);
+if(window.jtApp?.router)for(const page of window.jtApp.router.pages.values())attachPage(page.shadow,page.scope);
 function fallback(error) {
   console.warn('Black-hole visual unavailable; workbench remains usable.', error?.message || 'WebGL context lost');
   available = false;
@@ -71,7 +72,7 @@ function fallback(error) {
 }
 
 async function startScene() {
-  // Defer GPU setup until the business interface has painted. No blocking overlay.
+  // The login gate or business interface has painted before GPU setup begins.
   try {
     if(window.jtApp)window.jtApp.metrics.importStarted=performance.now();
     const [THREE, {EffectComposer}, {RenderPass}, {UnrealBloomPass}, {OutputPass}, shaders] = await Promise.all([
@@ -163,5 +164,6 @@ async function startScene() {
     available=true;applySceneSettings(settings);draw();
   } catch(error) { fallback(error); }
 }
-if ('requestIdleCallback' in window) requestIdleCallback(startScene,{timeout:1600});
+if (document.body.dataset.loginScene&&document.body.dataset.loginScene!=='workbench')requestAnimationFrame(startScene);
+else if ('requestIdleCallback' in window) requestIdleCallback(startScene,{timeout:1600});
 else setTimeout(startScene,250);

@@ -16,6 +16,9 @@ import socket, base64, struct, subprocess, io, gzip, ipaddress, tempfile, ssl, h
 from video_uploads import UploadStaging
 from media_library import MediaLibrary
 import direct_uploads
+from membership_http import MembershipGateway
+from membership_store import MembershipError
+from membership_media import stream_media
 _video_upload_staging = UploadStaging()
 
 BASE = pathlib.Path(__file__).resolve().parent
@@ -29,6 +32,7 @@ _SESSION_SECRET_SOURCE = os.environ.get("PANEL_SESSION_SECRET") or TOKEN or secr
 SESSION_SECRET = hashlib.sha256(("jt-session-signing:" + _SESSION_SECRET_SOURCE).encode("utf-8")).digest()
 DATA_DIR = pathlib.Path(os.environ.get("PANEL_DIR", str(BASE / "panel_data")))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
+_membership = MembershipGateway(DATA_DIR)
 _media_library = MediaLibrary(DATA_DIR / 'media_library')
 JOBS_DIR = DATA_DIR / "jobs"; JOBS_DIR.mkdir(exist_ok=True)
 JOBS_FILE = DATA_DIR / "jobs.json"
@@ -559,7 +563,7 @@ def public_favorite(item):
         result["thumbnails"] = public_video_thumbnails(job)
         if not result["selection_snapshot"]["params"]:
             result["selection_snapshot"] = public_selection_snapshot(job.get("selection_snapshot"))
-    for private_key in ("provider_media", "image_path", "original_url"):
+    for private_key in ("provider_media", "image_path", "original_url", "owner_session_hash", "owner_user_id"):
         result.pop(private_key, None)
     return result
 
@@ -1211,11 +1215,20 @@ def billable_quota_status(session_id, now=None, backend=None):
 def register_billable_job(job, session_id):
     """Atomically persist an accepted paid job and its legacy ledger metadata."""
     with _billable_quota_lock:
+        rejected = _membership.reserve(job, session_id)
+        if rejected:
+            return rejected
         job["quota_session_hash"] = _session_hash(session_id)
         job["billable_quota_recorded"] = True
         with _lock_jobs:
             _jobs[job["id"]] = job
-            save_jobs()
+            try:
+                save_jobs()
+            except Exception:
+                _jobs.pop(job["id"], None)
+                if job.get("membership_reserved"):
+                    _membership.store.settle_job(job["id"], False)
+                raise
     return None
 
 
@@ -1354,6 +1367,21 @@ def public_job_media(media):
                 or re.search(r"[\x00-\x1f\x7f]", text)):
             continue
         result[str(key)[:100]] = text[:255]
+    return result
+
+
+def public_job_images(job):
+    images = job.get('images') or []
+    if not _membership.enabled:
+        return images
+    result = []
+    for index, source in enumerate(images):
+        item = {key: value for key, value in source.items()
+                if key in ('url', 'preview_url', 'file', 'file_type', 'remote', 'size', 'stage_id', 'stage_label', 'archive_status')}
+        if source.get('remote'):
+            item['url'] = f"/api/result-media/{job['id']}/{index}"
+            item['preview_url'] = item['url']
+        result.append(item)
     return result
 
 
@@ -2718,7 +2746,7 @@ def dreamapi_run_image(job, jobdir):
         )
     except DreamAPIHTTPError as error:
         if 400 <= error.status < 500 and error.status != 408:
-            _dreamapi_checkpoint(job, api_pending_until=0)
+            _dreamapi_checkpoint(job, api_pending_until=0, provider_rejection_confirmed_at=time.time(), provider_http_status=error.status)
         raise
     _dreamapi_checkpoint(job, api_pending_until=0)
     if not isinstance(result, dict) or not isinstance(result.get("data"), list):
@@ -2737,6 +2765,7 @@ def dreamapi_run_image(job, jobdir):
     if not image_item and not url_item:
         suffix = f" (response_id={response_id or 'none'}, keys={response_shape or 'none'})"
         raise RuntimeError("DreamAPI returned no completed image" + suffix)
+    _dreamapi_checkpoint(job, provider_result_received_at=time.time())
     job["provider_status"] = "API_PROCESSING_RESULT"
     job["progress_pct"] = 75
     if image_item:
@@ -2844,6 +2873,10 @@ def local_run_image(job, jobdir, w, prompt=None, negative_prompt=None,
         prefix=f"comfy_panel/local/{job['id']}/{stage_id or 'image'}",
         lora_strengths=job.get("lora_strengths") or {},
     )
+    if _membership.enabled and job.get('membership_reserved'):
+        with _lock_jobs:
+            job['submit_started'] = time.time()
+            save_jobs()
     pid = submit_job({"prompt": api})
     job["prompt_ids"].append(pid)
     job["comfy_prompt_id"] = pid
@@ -3144,6 +3177,15 @@ def dispatch_video_queue():
                 job.update(status='error', error='排队素材已过期，请重新上传后提交', provider_status='QUEUE_EXPIRED')
                 save_jobs()
                 continue
+            if _membership.enabled and job.get('membership_reserved'):
+                try:
+                    _membership.store.start_job(job['id'])
+                except MembershipError as error:
+                    if error.code != 'concurrency_limit':
+                        job.update(status='error', error=str(error), provider_status='MEMBERSHIP_REJECTED')
+                        _membership.settle(job)
+                        save_jobs()
+                    continue
             job.update(status='running', provider_status='DISPATCHING', dispatch_started=time.time())
             save_jobs()
             try:
@@ -3158,6 +3200,10 @@ def dispatch_video_queue():
 def video_queue_loop():
     while True:
         try:
+            if _membership.enabled:
+                with _lock_jobs:
+                    membership_jobs = [dict(job) for job in _jobs.values() if job.get('membership_reserved')]
+                _membership.reconcile(membership_jobs)
             reconcile_video_queue_holds()
             dispatch_video_queue()
         except Exception:
@@ -3440,6 +3486,8 @@ def run_job(job):
     except Exception as e:
         job["status"] = "error"
         job["error"] = str(e)[:500]
+        if job.get('generation_backend') == 'local' and str(e).startswith('ComfyUI execution error:'):
+            job['provider_failure_confirmed_at'] = time.time()
         if job.get('video_queued') and job.get('submit_started') and not job.get('rh_task_id') and not isinstance(e, ProviderTaskFailed):
             job['queue_hold'] = True
         if job.get("generation_backend") == "api":
@@ -3622,12 +3670,51 @@ class BoundedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
         super().handle_error(request, client_address)
 
 
+def membership_reservations(actor, body=None):
+    """Administrator reconciliation never submits, cancels or edits cloud work."""
+    def can_settle(job, reservation):
+        if not job:
+            return bool(reservation) and time.time() - reservation['created_at'] > 300
+        return (job.get('status') == 'error' and not job.get('queue_hold')
+                and not _dreamapi_pending(job) and not _cloud_slot_used(job))
+
+    with _admission_lock, _lock_jobs:
+        if body is not None:
+            job = _jobs.get(body['job_id'])
+            reservation = _membership.store.get_reservation(body['job_id'])
+            if not can_settle(job, reservation):
+                raise MembershipError('job_not_settleable', '任务仍在执行或核对中，不能手工结算', 409)
+            result = _membership.store.admin_settle_job(actor, body['job_id'], body.get('success'), body.get('note'))
+            _membership._settled_jobs.add(body['job_id'])
+            return {'reservation': result}
+        rows = []
+        for reservation in _membership.store.list_unsettled_reservations(limit=1000):
+            job = _jobs.get(reservation['job_id']) or {}
+            reason = ('任务账本缺失，请先核对云端记录' if not job else
+                      '任务仍在排队' if job.get('status') == 'queued' else
+                      '任务正在执行或核对' if job.get('status') in ('running', 'recovering') or job.get('queue_hold') else
+                      '云端已返回结果，但结果保存未完成' if job.get('provider_result_received_at') else
+                      '提交或结果未确认，请核对后处理' if job.get('status') == 'error' else '等待状态核对')
+            rows.append({key: reservation[key] for key in ('job_id', 'user_id', 'kind', 'units', 'state', 'created_at')} | {
+                'job_status': job.get('status') or 'error', 'reason': reason, 'can_settle': can_settle(job, reservation)})
+        return {'reservations': rows}
+
+
+_membership.reservations_callback = membership_reservations
+
+
 class Handler(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.0"
 
     def log_message(self, *a): pass
 
+    def end_headers(self):
+        _membership.security_headers(self)
+        super().end_headers()
+
     def _upload_session(self, create=False):
+        if _membership.enabled:
+            return _membership.owner_key(self), None
         session_id = ""
         refresh = False
         try:
@@ -3667,7 +3754,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
         return True
 
     def _billable_quota_rejection(self, status):
-        """Keep the route admission interface; website count caps are disabled."""
+        if status:
+            _membership.reply(self, status.get('status', 403), {
+                'error': status['error'], 'code': status.get('code', 'quota_exhausted')})
+            return True
         return False
 
     def _start_absolute_deadline(self, seconds):
@@ -3897,8 +3987,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self._send(200, body, ctype, response_headers)
 
     def _auth(self):
-        # 令牌鉴权已取消（用户要求 8189 直接免登录使用）
-        return True
+        return not _membership.enabled or bool(_membership.session(self))
 
     def _management_auth(self):
         if not PANEL_RELEASE_TOKEN:
@@ -3940,7 +4029,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if deadline[1]["expired"]:
                 raise TimeoutError("request body deadline exceeded")
             raise ValueError("incomplete request body")
-        return json.loads(raw.decode())
+        value = json.loads(raw.decode())
+        if not isinstance(value, dict):
+            raise ValueError("request body must be an object")
+        return value
 
     def _read_upload_to_temp_file(self, byte_count):
         """Read exactly one bounded raw upload into a private temporary file."""
@@ -4017,6 +4109,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = urllib.parse.urlparse(self.path).path
+        if _membership.guard(self, path):
+            return
+        if path.startswith('/api/result-media/'):
+            if not self._auth():
+                return self._send(401, b'{"error":"unauthorized"}')
+            match = re.fullmatch(r'/api/result-media/([0-9a-f]{12})/(\d{1,4})', path)
+            if not match:
+                return self._send(404, b'{"error":"not found"}')
+            session_id, _ = self._upload_session()
+            with _lock_jobs:
+                job = _jobs.get(match[1])
+                images = (job or {}).get('images') or []
+                index = int(match[2])
+                if not job or not session_owns_record(session_id, job) or index >= len(images) or not images[index].get('remote'):
+                    return self._send(404, b'{"error":"not found"}')
+                item = dict(images[index])
+            return stream_media(self, item['url'], safe_output_filename(item.get('file') or 'result.mp4'))
         if path == '/api/media-library':
             return self._send(410, json.dumps({'error': '临时素材库已取消，请刷新页面使用个人直传'}, ensure_ascii=False).encode())
         if path.startswith('/api/video-thumbnail/'):
@@ -4140,6 +4249,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "transfer_index", "transfer_total", "transfer_started", "transfer_finished",
                 )
                 j = {k: src.get(k) for k in allowed}
+                j['images'] = public_job_images(src)
                 j["error"] = public_job_error(src)
                 j["media"] = public_job_media(src.get("media"))
                 j["params"] = public_job_params(src)
@@ -4192,6 +4302,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         "transfer_index", "transfer_total", "transfer_started", "transfer_finished",
                     )
                     j = {k: src.get(k) for k in allowed}
+                    j['images'] = public_job_images(src)
                     j["error"] = public_job_error(src)
                     j["media"] = public_job_media(src.get("media"))
                     j["selection_snapshot"] = public_job_selection_snapshot(src.get("selection_snapshot"))
@@ -4286,7 +4397,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     tmp.replace(preview)
                     src.unlink(missing_ok=True)
                 data = preview.read_bytes()
-                self._send(200, data, "image/jpeg", {"Cache-Control": "public, max-age=86400"})
+                self._send(200, data, "image/jpeg", {"Cache-Control": "private, max-age=86400"})
             except (BrokenPipeError, ConnectionResetError):
                 return
             except Exception as e:
@@ -4371,6 +4482,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         global _release_draining
         request_target = urllib.parse.urlparse(self.path)
         path = request_target.path
+        if _membership.guard(self, path, write=True):
+            return
         try:
             content_length = int(self.headers.get("Content-Length", 0))
         except ValueError:
@@ -5241,7 +5354,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                            "api_fit": api_fit, "api_ratio": api_ratio}
                           if generation_backend == "api" else {}),
                     })}
-            if generation_backend in ("cloud", "api"):
+            if _membership.enabled or generation_backend in ("cloud", "api"):
                 quota_status = register_billable_job(job, session_id)
                 if self._billable_quota_rejection(quota_status):
                     return
@@ -5256,11 +5369,12 @@ def main():
     global TOKEN
     if not TOKEN:
         TOKEN = os.environ.get("PANEL_TOKEN") or secrets.token_urlsafe(24)
-        print(f"[panel] no PANEL_TOKEN set, generated: {TOKEN}", flush=True)
+        print("[panel] no legacy PANEL_TOKEN configured", flush=True)
     load_jobs()
     load_favorites()
     load_upload_capabilities()
     load_upload_usage()
+    _membership.reconcile_startup(_jobs)
     def clean_media_libraries():
         while True:
             try: _media_library.cleanup()

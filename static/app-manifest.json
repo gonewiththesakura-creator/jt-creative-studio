@@ -1,26 +1,26 @@
 {
   "pages": {
     "/": {
-      "module": "/static/assets/index.d993230ed940.js",
+      "module": "/static/assets/index.140803f588a7.js",
       "markup": "/static/assets/index.12d80087d3c2.html",
       "css": "/static/assets/index.a5da9b762738.css",
       "title": "JT 灵感工作台"
     },
     "/realism": {
-      "module": "/static/assets/realism.c1d4cb032b68.js",
+      "module": "/static/assets/realism.4d563e0bdeb3.js",
       "markup": "/static/assets/realism.86a9e1b9285b.html",
       "css": "/static/assets/realism.436d28acb3d2.css",
       "title": "真人化工作流 · JT 灵感工作台"
     },
     "/video": {
-      "module": "/static/assets/video.7ee26ba0d8f7.js",
+      "module": "/static/assets/video.6523b20277b1.js",
       "markup": "/static/assets/video.c86fafe6b99e.html",
       "css": "/static/assets/video.d567d1150834.css",
       "title": "JT 视频工作台"
     }
   },
-  "singularity": "/static/assets/workbench.a11ea545e441.js",
-  "main": "/static/assets/main.8ced96b830d2.js",
+  "singularity": "/static/assets/workbench.4d1f51fcb662.js",
+  "main": "/static/assets/main.eae8e702eb18.js",
   "assets": [
     "/static/assets/CopyShader.a33057d5ac91.js",
     "/static/assets/EffectComposer.88857d0d9347.js",
@@ -32,14 +32,18 @@
     "/static/assets/RenderPass.5c6b1fa147e5.js",
     "/static/assets/ShaderPass.fee60b008c8e.js",
     "/static/assets/UnrealBloomPass.6b2ef6cf2ccd.js",
-    "/static/assets/api.0424bfb40c97.js",
-    "/static/assets/app.78053914471a.css",
+    "/static/assets/account-storage.0c5081b9ad66.js",
+    "/static/assets/account.76becf52272a.js",
+    "/static/assets/api.1e898baa005a.js",
+    "/static/assets/app.c4e82442bd92.css",
     "/static/assets/appearance.effeec028e01.js",
     "/static/assets/index.12d80087d3c2.html",
+    "/static/assets/index.140803f588a7.js",
     "/static/assets/index.a5da9b762738.css",
-    "/static/assets/index.d993230ed940.js",
-    "/static/assets/main.8ced96b830d2.js",
-    "/static/assets/page-scope.02362d635b7a.js",
+    "/static/assets/login-scene.e879cf492548.js",
+    "/static/assets/main.eae8e702eb18.js",
+    "/static/assets/membership-admin.cd307a45430a.js",
+    "/static/assets/page-scope.347478376310.js",
     "/static/assets/preview.42d1afbc0d5d.webp",
     "/static/assets/preview.44210fb33e25.webp",
     "/static/assets/preview.46d999fa4701.webp",
@@ -55,9 +59,9 @@
     "/static/assets/preview.ed7e8d525912.webp",
     "/static/assets/preview.f3423c1c4545.webp",
     "/static/assets/realism.436d28acb3d2.css",
+    "/static/assets/realism.4d563e0bdeb3.js",
     "/static/assets/realism.86a9e1b9285b.html",
-    "/static/assets/realism.c1d4cb032b68.js",
-    "/static/assets/router.c2c2e271b875.js",
+    "/static/assets/router.9d20830207ba.js",
     "/static/assets/shaders.96809084e5fe.js",
     "/static/assets/style-cold.cd6fd3eb3ad4.json",
     "/static/assets/style-graphic.b6e8b9e468d5.json",
@@ -72,9 +76,9 @@
     "/static/assets/three-LICENSE.8b378ebe60e2.txt",
     "/static/assets/three-core.9edde002b066.js",
     "/static/assets/three-module.71e909ad3fc6.js",
-    "/static/assets/video.7ee26ba0d8f7.js",
+    "/static/assets/video.6523b20277b1.js",
     "/static/assets/video.c86fafe6b99e.html",
     "/static/assets/video.d567d1150834.css",
-    "/static/assets/workbench.a11ea545e441.js"
+    "/static/assets/workbench.4d1f51fcb662.js"
   ]
 }

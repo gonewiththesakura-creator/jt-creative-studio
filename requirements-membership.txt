@@ -1,0 +1,4 @@
+# OIDC signatures are verified by PyJWT/cryptography, never hand-written.
+# Versions checked against official PyPI on 2026-10-09.
+PyJWT[crypto]==2.15.1
+cryptography==50.0.1

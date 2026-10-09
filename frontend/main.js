@@ -1,8 +1,17 @@
 import {createRouter} from './router.js';
+import {initializeAccount} from './account.js';
+import {initializeLoginScene,revealWorkbenchFromLogin} from './login-scene.js';
 const manifest=JSON.parse(document.getElementById('appManifest').textContent);
+window.jtApp={router:null,metrics:{renderers:0,firstFrame:null}};
+initializeLoginScene();
+// One visual-only scene starts behind the login gate. Private pages and their
+// data requests still wait for the authenticated account response below.
+requestAnimationFrame(()=>requestAnimationFrame(()=>import(manifest.singularity).catch(error=>{console.warn('Scene unavailable:',error.message);document.body.dataset.singularity='fallback'})));
+const account=await initializeAccount();
 const router=createRouter(manifest);
-window.jtApp={router,metrics:{renderers:0,firstFrame:null}};
+window.jtApp.router=router;
 await router.navigate(location.pathname);
+if(account.entryTransition)await revealWorkbenchFromLogin();
 // Configuration loading may be slow; do not compete with it for first interaction.
 const initial=router.pages.get(location.pathname);
 if(initial)await new Promise(resolve=>{
@@ -14,8 +23,6 @@ if(initial)await new Promise(resolve=>{
 });
 // Two paint opportunities before importing any graphics modules.
 requestAnimationFrame(()=>requestAnimationFrame(()=>{
- const start=()=>import(manifest.singularity).catch(error=>{console.warn('Scene unavailable:',error.message);document.body.dataset.singularity='fallback'});
- if('requestIdleCallback'in window)requestIdleCallback(start,{timeout:1600});else setTimeout(start,250);
  const connection=navigator.connection||{};
  if(!connection.saveData&&!/2g/.test(connection.effectiveType||''))setTimeout(()=>{
   const preload=()=>Object.keys(manifest.pages).filter(path=>path!==location.pathname).forEach(path=>router.preload(path).catch(()=>{}));

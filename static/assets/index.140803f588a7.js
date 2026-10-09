@@ -1,4 +1,4 @@
-export function mount({document,window,fetch,location}){
+export function mount({document,window,fetch,location,localStorage,sessionStorage}){
 const stylePreview=document.getElementById("stylePreview");
 const stylePreviewCaption=document.getElementById("stylePreviewCaption");
 const previewEmpty=document.getElementById("previewEmpty");

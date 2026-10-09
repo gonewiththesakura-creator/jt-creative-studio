@@ -380,6 +380,7 @@ let directTransfers=0;const directWaiters=[];
 function initPersonalUpload(){
   // Retired library identifiers are no longer used by this page.
   localStorage.removeItem('jt-media-library');
+  if(window.jtAccountEnabled){personalRhKey='';return}
   const settings=document.createElement('details');settings.className='personal-upload';settings.id='personalUpload';
   settings.innerHTML='<summary>个人直传 <span></span></summary><p>填写与工作台生成账户相同的 API Key。</p><form><input type="password" aria-label="个人上传 API Key" placeholder="填写个人上传 API Key" autocomplete="off" spellcheck="false"><label><input type="checkbox">记住此浏览器（仅在自己的电脑勾选）</label><div><button type="submit">保存</button><button type="button" data-clear>清除</button></div><p class="personal-upload-note" role="status"></p></form>';
   document.querySelector('.pane-heading').after(settings);
@@ -406,6 +407,7 @@ function directUploadBinary(file,key,onProgress){return new Promise((resolve,rej
   const form=new FormData();form.append('file',file,file.name);xhr.send(form);
 })}
 async function sendDirectMediaFile(url,file,onProgress){
+  if(window.jtAccountEnabled)return sendAccountMediaFile(url,file,onProgress);
   const key=personalKeyRequired(),q=new URL(url,location.origin).searchParams;
   const post=(action,body)=>api('/api/upload-direct-'+action,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(20000)});
   const {challenge}=await post('start',{workflow:q.get('workflow'),input_key:q.get('input_key'),filename:file.name,size:file.size});
@@ -424,6 +426,35 @@ async function sendDirectMediaFile(url,file,onProgress){
   // On a registration failure the provider result stays cached; retry never
   // uploads the same File again. Only this small signed receipt hits our server.
   return post('register',{challenge,proof:proof(provider_name),provider_name});
+}
+const accountMediaUploads=new WeakMap();
+async function sendAccountMediaFile(url,file,onProgress){
+  const query=new URL(url,location.origin).searchParams,scope=[query.get('workflow'),query.get('input_key')].join(':');
+  let uploads=accountMediaUploads.get(file);if(!uploads){uploads=new Map();accountMediaUploads.set(file,uploads)}
+  let upload=uploads.get(scope);
+  if(!upload){
+    const result=await api('/api/upload-start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({workflow:query.get('workflow'),input_key:query.get('input_key'),filename:file.name,size:file.size}),signal:AbortSignal.timeout(20000)});
+    upload={id:result.upload_id,offset:0};uploads.set(scope,upload);
+  }
+  try{
+    const chunkSize=512*1024;
+    while(upload.offset<file.size){
+      const end=Math.min(file.size,upload.offset+chunkSize),body=file.slice(upload.offset,end);
+      const result=await api('/api/upload-chunk?'+new URLSearchParams({id:upload.id,offset:upload.offset}),{method:'POST',headers:{'Content-Type':'application/octet-stream'},body,signal:AbortSignal.timeout(130000)});
+      if(!Number.isInteger(result.offset)||result.offset<=upload.offset||result.offset>file.size)throw Error('上传进度校验失败，请重新选择文件');
+      upload.offset=result.offset;onProgress(Math.min(99,Math.floor(upload.offset/file.size*100)));
+    }
+    onProgress(100);
+    const deadline=Date.now()+240000;
+    while(Date.now()<deadline){
+      const result=await api('/api/upload-finish',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({upload_id:upload.id}),signal:AbortSignal.timeout(20000)});
+      if(result.uploadToken)return result;
+      if(result.status==='error'){uploads.delete(scope);throw Error(result.error||'文件接收失败，请点击继续上传重试')}
+      if(result.status!=='processing')throw Error('上传结果尚未确认，请点击继续上传核对');
+      await new Promise(resolve=>setTimeout(resolve,1200));
+    }
+    throw Error('文件接收仍在处理中，请点击继续上传核对');
+  }catch(error){if([400,404,410].includes(error.status))uploads.delete(scope);throw error}
 }
 initPersonalUpload();
 
