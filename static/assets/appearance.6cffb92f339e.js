@@ -25,9 +25,21 @@ function normalize(data) {
  return result;
 }
 
+export function readAppearance(){
+ try{return normalize(JSON.parse(localStorage.getItem(KEY)||'null'));}catch{return {...defaults};}
+}
+export function applyAppearanceStyles(settings){
+ const style=document.body.style;
+ style.setProperty('--appearance-glass',`rgba(15,16,20,${settings.glassOpacity})`);
+ style.setProperty('--appearance-field',`rgba(17,18,22,${settings.fieldOpacity})`);
+ style.setProperty('--appearance-chrome',`rgba(6,7,10,${settings.chromeOpacity})`);
+ style.setProperty('--appearance-blur',settings.glassBlur+'px');
+ style.setProperty('--appearance-edge',`rgba(255,230,200,${settings.edge})`);
+ style.setProperty('--appearance-opacity',settings.opacity);
+}
+
 export function installAppearance(controls, onChange) {
- let settings={...defaults};
- try {settings=normalize(JSON.parse(localStorage.getItem(KEY)||'null'));} catch {}
+ let settings=readAppearance();
  const button=document.createElement('button');button.type='button';button.className='topbar-action';button.id='appearanceOpen';button.textContent='外观';button.setAttribute('aria-expanded','false');button.setAttribute('aria-controls','appearancePanel');controls.append(button);
  const panel=document.createElement('section');panel.id='appearancePanel';panel.className='appearance-panel';panel.hidden=true;panel.setAttribute('aria-label','黑洞与玻璃外观控制台');
  panel.innerHTML='<header><div><small>APPEARANCE</small><h2>黑洞与玻璃</h2></div><button type="button" aria-label="关闭外观控制台">×</button></header><p class="appearance-note">拖动或输入数值即时预览。保存后，当前浏览器的三个工作台页面共用这组设置。</p><div class="appearance-fields"></div><footer><button type="button" data-setting-action="save">保存设置</button><button type="button" data-setting-action="reset">恢复默认</button><button type="button" data-setting-action="export">导出配置</button><button type="button" data-setting-action="import">导入配置</button><input type="file" accept="application/json,.json" hidden><p role="status" aria-live="polite"></p></footer>';
@@ -42,13 +54,7 @@ export function installAppearance(controls, onChange) {
   inputs.set(key,list);group.append(row);
  }
  function apply(){
-  const style=document.body.style;
-  style.setProperty('--appearance-glass',`rgba(15,16,20,${settings.glassOpacity})`);
-  style.setProperty('--appearance-field',`rgba(17,18,22,${settings.fieldOpacity})`);
-  style.setProperty('--appearance-chrome',`rgba(6,7,10,${settings.chromeOpacity})`);
-  style.setProperty('--appearance-blur',settings.glassBlur+'px');
-  style.setProperty('--appearance-edge',`rgba(255,230,200,${settings.edge})`);
-  style.setProperty('--appearance-opacity',settings.opacity);
+  applyAppearanceStyles(settings);
   onChange({...settings});
  }
  function sync(){for(const [key,list] of inputs)for(const input of list)input.value=settings[key];apply();}

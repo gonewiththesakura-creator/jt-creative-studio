@@ -1,7 +1,7 @@
 """JT account entitlements, activation codes and sessions.
 
-Casdoor owns authentication identities; this database is the single source of
-truth for JT plans, remaining units and reservations. No entitlement is inferred
+External identities and JT access codes identify accounts; this database is the
+single source of truth for JT plans, remaining units and reservations. No entitlement is inferred
 from client input or from an identity-provider role. Every value-changing
 operation uses an immediate SQLite transaction, including code redemption and
 quota reservation. Plain activation codes and session tokens are never stored.
@@ -61,7 +61,7 @@ def _public_plan(row):
 
 
 class MembershipStore:
-    SCHEMA_VERSION = 1
+    SCHEMA_VERSION = 2
     FEATURES = frozenset(("image", "video", "upload", "history", "favorites"))
     BACKENDS = frozenset(("cloud", "api", "local"))
 
@@ -71,10 +71,11 @@ class MembershipStore:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connection() as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, self.SCHEMA_VERSION):
+            if version not in (0, 1, self.SCHEMA_VERSION):
                 raise RuntimeError("Unsupported membership database version")
             db.execute("PRAGMA journal_mode=WAL")
             db.executescript("""
+                BEGIN IMMEDIATE;
                 CREATE TABLE IF NOT EXISTS users (
                     id TEXT PRIMARY KEY, issuer TEXT NOT NULL, subject TEXT NOT NULL,
                     username TEXT NOT NULL, email TEXT NOT NULL, owner_key TEXT NOT NULL UNIQUE,
@@ -134,7 +135,19 @@ class MembershipStore:
                 CREATE TABLE IF NOT EXISTS rate_buckets (
                     bucket_key TEXT PRIMARY KEY, count INTEGER NOT NULL, expires_at INTEGER NOT NULL
                 );
-                PRAGMA user_version=1;
+                CREATE TABLE IF NOT EXISTS login_credentials (
+                    id TEXT PRIMARY KEY, code_hash TEXT NOT NULL UNIQUE, code_hint TEXT NOT NULL,
+                    plan_id TEXT REFERENCES plans(id), plan_snapshot TEXT,
+                    created_by TEXT NOT NULL REFERENCES users(id), created_at INTEGER NOT NULL,
+                    note TEXT NOT NULL, user_id TEXT REFERENCES users(id), activated_at INTEGER,
+                    entitlement_id TEXT REFERENCES entitlements(id), last_used_at INTEGER,
+                    login_count INTEGER NOT NULL DEFAULT 0 CHECK(login_count>=0), revoked_at INTEGER,
+                    CHECK(user_id IS NOT NULL OR (plan_id IS NOT NULL AND plan_snapshot IS NOT NULL))
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS login_credential_active_user ON login_credentials(user_id)
+                    WHERE user_id IS NOT NULL AND revoked_at IS NULL;
+                PRAGMA user_version=2;
+                COMMIT;
             """)
         self._restrict_files()
 
@@ -210,6 +223,14 @@ class MembershipStore:
         with self._connection() as db:
             return _public_user(db.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone())
 
+    def get_user_by_identity(self, issuer, subject):
+        """Read an exact trusted identity without registering or updating a user."""
+        issuer = _text(issuer, "身份来源", 500)
+        subject = _text(subject, "身份标识", 300)
+        with self._connection() as db:
+            return _public_user(db.execute("SELECT * FROM users WHERE issuer=? AND subject=?",
+                                           (issuer, subject)).fetchone())
+
     def get_user_by_owner_key(self, owner_key):
         """Trusted server lookup; owner keys must never be exposed as credentials."""
         if not isinstance(owner_key, str) or not 20 <= len(owner_key) <= 100:
@@ -249,6 +270,8 @@ class MembershipStore:
             db.execute("UPDATE users SET disabled=?,updated_at=? WHERE id=?", (int(disabled), self._now(), user_id))
             if disabled:
                 db.execute("DELETE FROM auth_sessions WHERE user_id=?", (user_id,))
+                db.execute("UPDATE login_credentials SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL",
+                           (self._now(), user_id))
             self._audit(db, actor_id, "user_disable" if disabled else "user_enable", user_id)
             return _public_user(self._user(db, user_id, False))
 
@@ -341,6 +364,120 @@ class MembershipStore:
                 self._audit(db, actor_id, "code_revoke", code_id)
             return {"id": code_id, "revoked": True}
 
+    @staticmethod
+    def _normalize_access_code(code):
+        if not isinstance(code, str) or len(code) > 256:
+            raise MembershipError("invalid_access_code", "登录激活码无效或已停用", 401)
+        code = "".join(code.split()).upper()
+        if not re.fullmatch(r"JT-A-(?:[0-9A-F]{8}-){5}[0-9A-F]{8}", code):
+            raise MembershipError("invalid_access_code", "登录激活码无效或已停用", 401)
+        return code
+
+    @staticmethod
+    def _public_access_code(row):
+        if row is None:
+            return None
+        fields = ("id", "code_hint", "plan_id", "created_by", "created_at", "note", "user_id",
+                  "activated_at", "entitlement_id", "last_used_at", "login_count", "revoked_at")
+        result = {key: row[key] for key in fields}
+        result["plan_name"] = json.loads(row["plan_snapshot"])["name"] if row["plan_snapshot"] else None
+        return result
+
+    def _new_access_code(self, db, actor_id, plan_id, snapshot, note, user_id=None, entitlement_id=None):
+        value = secrets.token_hex(24).upper()
+        code = "JT-A-" + "-".join(value[i:i + 8] for i in range(0, len(value), 8))
+        code_id, now = uuid.uuid4().hex, self._now()
+        db.execute("""INSERT INTO login_credentials(id,code_hash,code_hint,plan_id,plan_snapshot,
+            created_by,created_at,note,user_id,entitlement_id) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                   (code_id, _hash(code), code[-4:], plan_id, snapshot, actor_id, now, note, user_id, entitlement_id))
+        row = db.execute("SELECT * FROM login_credentials WHERE id=?", (code_id,)).fetchone()
+        return self._public_access_code(row) | {"code": code}
+
+    def issue_access_codes(self, actor_id, plan_id, count=1, note=""):
+        """Issue unused account credentials; the purchased term starts on first login."""
+        actor_id = _text(actor_id, "管理员编号", 128)
+        plan_id = _text(plan_id, "套餐编号", 128)
+        count = _integer(count, "登录激活码数量", 1, 100)
+        note = _text(note, "备注", 500, False)
+        with self._connection(True) as db:
+            self._admin(db, actor_id)
+            plan = _public_plan(db.execute("SELECT * FROM plans WHERE id=? AND active=1", (plan_id,)).fetchone())
+            if plan is None:
+                raise MembershipError("plan_not_found", "套餐不存在或已停用", 404)
+            snapshot = json.dumps(plan, ensure_ascii=False)
+            result = [self._new_access_code(db, actor_id, plan_id, snapshot, note) for _ in range(count)]
+            self._audit(db, actor_id, "access_codes_issue", plan_id, {"count": count, "note": note})
+            return result
+
+    def authenticate_access_code(self, code):
+        """Authenticate an account without redeeming or renewing the code again.
+
+        The returned access_credential_id is trusted server context, not public
+        user data. Pass it to create_session so a concurrent revocation cannot
+        mint a new session after this authentication transaction finishes.
+        """
+        code = self._normalize_access_code(code)
+        with self._connection(True) as db:
+            row = db.execute("SELECT * FROM login_credentials WHERE code_hash=?", (_hash(code),)).fetchone()
+            if row is None or row["revoked_at"] is not None:
+                raise MembershipError("invalid_access_code", "登录激活码无效或已停用", 401)
+            now = self._now()
+            user_id = row["user_id"]
+            if user_id is None:
+                user_id = uuid.uuid4().hex
+                db.execute("""INSERT INTO users(id,issuer,subject,username,email,owner_key,created_at,updated_at)
+                    VALUES(?,?,?,?,?,?,?,?)""", (user_id, "urn:jt:access-code", user_id,
+                    "用户 " + user_id[:8], "", secrets.token_urlsafe(32), now, now))
+                entitlement_id = self._grant_entitlement(db, user_id, row["plan_id"], row["plan_snapshot"], now)
+                db.execute("UPDATE login_credentials SET user_id=?,entitlement_id=? WHERE id=?",
+                           (user_id, entitlement_id, row["id"]))
+                self._audit(db, user_id, "access_code_activate", row["id"],
+                            {"plan_id": row["plan_id"], "entitlement_id": entitlement_id})
+            user = _public_user(self._user(db, user_id))
+            db.execute("""UPDATE login_credentials SET activated_at=COALESCE(activated_at,?),
+                last_used_at=?,login_count=login_count+1 WHERE id=?""", (now, now, row["id"]))
+            return user | {"access_credential_id": row["id"]}
+
+    def list_access_codes(self, actor_id, limit=100, offset=0):
+        limit = _integer(limit, "数量", 1, 100)
+        offset = _integer(offset, "偏移", 0, 1000000)
+        with self._connection() as db:
+            self._admin(db, actor_id)
+            return [self._public_access_code(row) for row in db.execute(
+                "SELECT * FROM login_credentials ORDER BY created_at DESC,id LIMIT ? OFFSET ?", (limit, offset))]
+
+    def rotate_access_code(self, actor_id, user_id, note=""):
+        """Bind a replacement credential to an existing account, preserving its data."""
+        actor_id = _text(actor_id, "管理员编号", 128)
+        user_id = _text(user_id, "账户编号", 128)
+        note = _text(note, "备注", 500, False)
+        with self._connection(True) as db:
+            self._admin(db, actor_id)
+            self._user(db, user_id, False)
+            current = self._entitlement(db, user_id)
+            db.execute("UPDATE login_credentials SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL",
+                       (self._now(), user_id))
+            db.execute("DELETE FROM auth_sessions WHERE user_id=?", (user_id,))
+            result = self._new_access_code(db, actor_id, current["plan_id"] if current else None,
+                current["plan_snapshot"] if current else None, note, user_id, current["id"] if current else None)
+            self._audit(db, actor_id, "access_code_rotate", result["id"], {"user_id": user_id, "note": note})
+            return result
+
+    def revoke_access_code(self, actor_id, code_id):
+        actor_id = _text(actor_id, "管理员编号", 128)
+        code_id = _text(code_id, "登录激活码编号", 128)
+        with self._connection(True) as db:
+            self._admin(db, actor_id)
+            row = db.execute("SELECT * FROM login_credentials WHERE id=?", (code_id,)).fetchone()
+            if row is None:
+                raise MembershipError("code_not_found", "登录激活码不存在", 404)
+            if row["revoked_at"] is None:
+                db.execute("UPDATE login_credentials SET revoked_at=? WHERE id=?", (self._now(), code_id))
+                if row["user_id"] is not None:
+                    db.execute("DELETE FROM auth_sessions WHERE user_id=?", (row["user_id"],))
+                self._audit(db, actor_id, "access_code_revoke", code_id, {"user_id": row["user_id"]})
+            return self._public_access_code(db.execute("SELECT * FROM login_credentials WHERE id=?", (code_id,)).fetchone())
+
     def _entitlement(self, db, user_id):
         return db.execute("SELECT * FROM entitlements WHERE user_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1", (user_id,)).fetchone()
 
@@ -358,6 +495,32 @@ class MembershipStore:
         result["running_jobs"] = counts.get("running", 0)
         return result
 
+    def _grant_entitlement(self, db, user_id, plan_id, snapshot, now):
+        """Apply frozen purchased terms in the caller's immediate transaction."""
+        plan = json.loads(snapshot)
+        current = self._entitlement(db, user_id)
+        if current is not None and current["expires_at"] > now:
+            if current["plan_id"] != plan_id:
+                raise MembershipError("active_plan_conflict", "当前套餐尚未到期，请到期后兑换其他套餐", 409)
+            old_plan = json.loads(current["plan_snapshot"])
+            if any(old_plan[key] != plan[key] for key in ("max_concurrent", "features", "backends")):
+                raise MembershipError("active_plan_conflict", "此激活码的套餐功能已调整，请当前套餐到期后兑换", 409)
+            entitlement_id = current["id"]
+            if (current["image_granted"] + plan["image_units"] > 100000000 or
+                    current["video_granted"] + plan["video_units"] > 100000000 or
+                    current["expires_at"] + plan["duration_days"] * 86400 > now + 36600 * 86400):
+                raise MembershipError("entitlement_limit", "套餐累计额度或期限超过上限", 409)
+            db.execute("""UPDATE entitlements SET expires_at=expires_at+?,image_granted=image_granted+?,video_granted=video_granted+?,
+                image_available=image_available+?,video_available=video_available+?,updated_at=? WHERE id=?""",
+                       (plan["duration_days"] * 86400, plan["image_units"], plan["video_units"], plan["image_units"], plan["video_units"], now, entitlement_id))
+        else:
+            entitlement_id = uuid.uuid4().hex
+            db.execute("""INSERT INTO entitlements(id,user_id,plan_id,plan_snapshot,starts_at,expires_at,image_granted,video_granted,
+                          image_available,video_available,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                       (entitlement_id, user_id, plan_id, snapshot, now, now + plan["duration_days"] * 86400,
+                        plan["image_units"], plan["video_units"], plan["image_units"], plan["video_units"], now, now))
+        return entitlement_id
+
     def redeem(self, user_id, code):
         code = _text(code, "激活码", 80).upper()
         if not re.fullmatch(r"JT-(?:[0-9A-F]{8}-){3}[0-9A-F]{8}", code):
@@ -368,29 +531,7 @@ class MembershipStore:
             row = db.execute("SELECT * FROM activation_codes WHERE code_hash=?", (_hash(code),)).fetchone()
             if row is None or row["redeemed_at"] is not None or row["revoked_at"] is not None:
                 raise MembershipError("invalid_code", "激活码无效或已使用", 400)
-            plan = json.loads(row["plan_snapshot"])
-            current = self._entitlement(db, user_id)
-            if current is not None and current["expires_at"] > now:
-                if current["plan_id"] != row["plan_id"]:
-                    raise MembershipError("active_plan_conflict", "当前套餐尚未到期，请到期后兑换其他套餐", 409)
-                old_plan = json.loads(current["plan_snapshot"])
-                # Changed capabilities must not silently upgrade/downgrade an active purchase.
-                if any(old_plan[key] != plan[key] for key in ("max_concurrent", "features", "backends")):
-                    raise MembershipError("active_plan_conflict", "此激活码的套餐功能已调整，请当前套餐到期后兑换", 409)
-                entitlement_id = current["id"]
-                if (current["image_granted"] + plan["image_units"] > 100000000 or
-                        current["video_granted"] + plan["video_units"] > 100000000 or
-                        current["expires_at"] + plan["duration_days"] * 86400 > now + 36600 * 86400):
-                    raise MembershipError("entitlement_limit", "套餐累计额度或期限超过上限", 409)
-                db.execute("""UPDATE entitlements SET expires_at=expires_at+?,image_granted=image_granted+?,video_granted=video_granted+?,
-                    image_available=image_available+?,video_available=video_available+?,updated_at=? WHERE id=?""",
-                           (plan["duration_days"] * 86400, plan["image_units"], plan["video_units"], plan["image_units"], plan["video_units"], now, entitlement_id))
-            else:
-                entitlement_id = uuid.uuid4().hex
-                db.execute("""INSERT INTO entitlements(id,user_id,plan_id,plan_snapshot,starts_at,expires_at,image_granted,video_granted,
-                              image_available,video_available,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
-                           (entitlement_id, user_id, row["plan_id"], row["plan_snapshot"], now, now + plan["duration_days"] * 86400,
-                            plan["image_units"], plan["video_units"], plan["image_units"], plan["video_units"], now, now))
+            entitlement_id = self._grant_entitlement(db, user_id, row["plan_id"], row["plan_snapshot"], now)
             db.execute("UPDATE activation_codes SET redeemed_by=?,redeemed_at=?,entitlement_id=? WHERE id=?",
                        (user_id, now, entitlement_id, row["id"]))
             self._audit(db, user_id, "code_redeem", row["id"], {"plan_id": row["plan_id"], "entitlement_id": entitlement_id})
@@ -529,11 +670,16 @@ class MembershipStore:
                 "SELECT * FROM reservations WHERE state IN('reserved','running') AND job_id>? ORDER BY job_id LIMIT ?",
                 (after_job_id, limit))]
 
-    def create_session(self, user_id, ttl=43200):
+    def create_session(self, user_id, ttl=43200, access_credential_id=None):
         ttl = _integer(ttl, "登录期限", 60, 604800)
         token, csrf, now = secrets.token_urlsafe(48), secrets.token_urlsafe(32), self._now()
         with self._connection(True) as db:
             user = _public_user(self._user(db, user_id))
+            if access_credential_id is not None:
+                access_credential_id = _text(access_credential_id, "登录凭证编号", 128)
+                if not db.execute("""SELECT 1 FROM login_credentials
+                        WHERE id=? AND user_id=? AND revoked_at IS NULL""", (access_credential_id, user_id)).fetchone():
+                    raise MembershipError("invalid_access_code", "登录激活码无效或已停用", 401)
             db.execute("DELETE FROM auth_sessions WHERE expires_at<=?", (now,))
             db.execute("INSERT INTO auth_sessions(token_hash,user_id,csrf,created_at,expires_at) VALUES(?,?,?,?,?)",
                        (_hash(token), user_id, csrf, now, now + ttl))

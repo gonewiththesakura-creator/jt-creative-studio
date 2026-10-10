@@ -19,8 +19,8 @@
       "title": "JT 视频工作台"
     }
   },
-  "singularity": "/static/assets/workbench.4d1f51fcb662.js",
-  "main": "/static/assets/main.eae8e702eb18.js",
+  "singularity": "/static/assets/workbench.b4e4fe3d3eac.js",
+  "main": "/static/assets/main.fba5917061ac.js",
   "assets": [
     "/static/assets/CopyShader.a33057d5ac91.js",
     "/static/assets/EffectComposer.88857d0d9347.js",
@@ -33,16 +33,16 @@
     "/static/assets/ShaderPass.fee60b008c8e.js",
     "/static/assets/UnrealBloomPass.6b2ef6cf2ccd.js",
     "/static/assets/account-storage.0c5081b9ad66.js",
-    "/static/assets/account.76becf52272a.js",
+    "/static/assets/account.c09a0ac9eadc.js",
     "/static/assets/api.1e898baa005a.js",
-    "/static/assets/app.c4e82442bd92.css",
-    "/static/assets/appearance.effeec028e01.js",
+    "/static/assets/app.509733d104e9.css",
+    "/static/assets/appearance.6cffb92f339e.js",
     "/static/assets/index.12d80087d3c2.html",
     "/static/assets/index.140803f588a7.js",
     "/static/assets/index.a5da9b762738.css",
-    "/static/assets/login-scene.e879cf492548.js",
-    "/static/assets/main.eae8e702eb18.js",
-    "/static/assets/membership-admin.cd307a45430a.js",
+    "/static/assets/login-scene.e6464d51d36a.js",
+    "/static/assets/main.fba5917061ac.js",
+    "/static/assets/membership-admin.c42d4c8892e7.js",
     "/static/assets/page-scope.347478376310.js",
     "/static/assets/preview.42d1afbc0d5d.webp",
     "/static/assets/preview.44210fb33e25.webp",
@@ -79,6 +79,6 @@
     "/static/assets/video.6523b20277b1.js",
     "/static/assets/video.c86fafe6b99e.html",
     "/static/assets/video.d567d1150834.css",
-    "/static/assets/workbench.4d1f51fcb662.js"
+    "/static/assets/workbench.b4e4fe3d3eac.js"
   ]
 }

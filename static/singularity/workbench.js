@@ -81,6 +81,7 @@ async function startScene() {
       import('three/addons/postprocessing/OutputPass.js'), import('./shaders.js?v='+new URL(import.meta.url).searchParams.get('v'))
     ]);
     const renderer = new THREE.WebGLRenderer({canvas, antialias:innerWidth>820, powerPreference:'low-power'});
+    const gl=renderer.getContext();
     if(window.jtApp){window.jtApp.metrics.renderers++;window.jtApp.metrics.initialized=performance.now();}
     renderer.debug.onShaderError = () => fallback(new Error('Black-hole shader could not compile'));
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -102,6 +103,19 @@ async function startScene() {
     const bloom=new UnrealBloomPass(new THREE.Vector2(1,1),.075,.4,1.15);
     composer.addPass(bloom);
     composer.addPass(new OutputPass());
+    // Retain the finished, tone-mapped frame at its existing resolution. Login
+    // travel samples this texture; it never enlarges a DOM canvas or reruns the
+    // expensive ray marcher while the interface is fading.
+    composer.renderToScreen=false;
+    const displayUniforms={image:{value:null},zoom:{value:1},center:{value:new THREE.Vector2(.5,.5)}};
+    const displayScene=new THREE.Scene();
+    displayScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2,2),new THREE.ShaderMaterial({
+      uniforms:displayUniforms,vertexShader:shaders.vertexShader,
+      fragmentShader:'varying vec2 vUv; uniform sampler2D image; uniform float zoom; uniform vec2 center; void main(){gl_FragColor=texture2D(image,center+(vUv-center)/zoom);}',
+      depthTest:false,depthWrite:false,toneMapped:false
+    })));
+    const display=()=>{renderer.setRenderTarget(null);renderer.render(displayScene,camera)};
+    let entryActive=false,hasFrame=false,entryReady=Promise.resolve(false),pendingFrame=null;
     let azimuth=0, elevation=12, radius=20, width=1, height=1, frameId=0, last=0, sim=0, pointer=null;
     let settings=appearance.get();
     let budget = (innerWidth <= 820 ? 550000 : 1400000)*settings.quality, slowFrames=0;
@@ -117,7 +131,7 @@ async function startScene() {
     }
     function render(now) {
       frameId=0;
-      if (!available || document.hidden) return;
+      if (!available || document.hidden || entryActive) return;
       if (last && now-last < (width<=820?50:33)) { frameId=requestAnimationFrame(render); return; }
       const dt=Math.max(0,(now-(last||now))/1000);last=now;
       if (!paused && !businessBusy) sim+=dt*settings.speed;
@@ -130,7 +144,7 @@ async function startScene() {
       uniforms.cameraRight.value.applyAxisAngle(uniforms.cameraForward.value,settings.tilt*Math.PI/180);
       uniforms.cameraUp.value.crossVectors(uniforms.cameraRight.value,uniforms.cameraForward.value).normalize();
       const before=performance.now();
-      try { composer.render(); } catch(error) { fallback(error); return; }
+      try {composer.render();displayUniforms.image.value=composer.readBuffer.texture;display();hasFrame=true;} catch(error) { fallback(error); return; }
       if (!available) return;
       if(window.jtApp){window.jtApp.metrics.frames=(window.jtApp.metrics.frames||0)+1;window.jtApp.metrics.sim=sim;window.jtApp.metrics.pixelBudget=budget;}
       // GPU commands are asynchronous: CPU submission time alone misses a slow
@@ -139,9 +153,48 @@ async function startScene() {
       if (slowFrames>8 && budget>300000) { budget=Math.max(300000,budget*.6);slowFrames=0;resize(); }
       document.body.dataset.singularity='ready';
       if(window.jtApp&&!window.jtApp.metrics.firstFrame)window.jtApp.metrics.firstFrame=performance.now();
-      if (!paused && !businessBusy && !frameId) frameId=requestAnimationFrame(render);
+      if (!paused && !businessBusy && settings.speed>0 && settings.opacity>0 && !frameId){
+        // Keep at most one expensive frame in flight. A slow GPU must not build
+        // up a backlog that later blocks input or the login transition.
+        pendingFrame=gl.fenceSync?.(gl.SYNC_GPU_COMMANDS_COMPLETE,0);gl.flush();
+        const nextFrame=()=>{
+          frameId=0;
+          if(!pendingFrame){if(available&&!entryActive&&!document.hidden)frameId=requestAnimationFrame(render);return}
+          const status=gl.clientWaitSync(pendingFrame,0,0),done=status===gl.ALREADY_SIGNALED||status===gl.CONDITION_SATISFIED;
+          if(done||entryActive||!available||document.hidden){gl.deleteSync(pendingFrame);pendingFrame=null;if(done&&available&&!entryActive&&!document.hidden)frameId=requestAnimationFrame(render);return}
+          frameId=requestAnimationFrame(nextFrame);
+        };
+        frameId=requestAnimationFrame(pendingFrame?nextFrame:render);
+      }
     }
-    draw = () => { if (available && !document.hidden && !frameId) {last=0;frameId=requestAnimationFrame(render);} };
+    draw = () => { if (available && !document.hidden && !entryActive && !frameId) {last=0;frameId=requestAnimationFrame(render);} };
+    if(window.jtApp)window.jtApp.scene={
+      beginEntry(){
+        if(!available||!hasFrame)return false;
+        if(entryActive)return true;
+        entryActive=true;cancelAnimationFrame(frameId);frameId=0;
+        if(pendingFrame){gl.deleteSync(pendingFrame);pendingFrame=null}
+        const x=width<=820?settings.mobileX:settings.offsetX,y=width<=820?settings.mobileY:settings.offsetY;
+        displayUniforms.center.value.set(.5+x*height/width,.5+y);
+        // Command submission is asynchronous. Drain the final expensive frame
+        // before starting the travel clock, without a blocking gl.finish().
+        const fence=gl.fenceSync?.(gl.SYNC_GPU_COMMANDS_COMPLETE,0);
+        entryReady=fence?new Promise(resolve=>{
+          const deadline=performance.now()+3000;gl.flush();
+          const check=()=>{
+            const status=gl.clientWaitSync(fence,0,0),done=status===gl.ALREADY_SIGNALED||status===gl.CONDITION_SATISFIED;
+            if(done||!entryActive||!available||performance.now()>deadline){gl.deleteSync(fence);resolve(done&&entryActive&&available);return}
+            requestAnimationFrame(check);
+          };
+          requestAnimationFrame(check);
+        }):Promise.resolve(true);
+        return true;
+      },
+      waitForEntry:()=>entryReady,
+      paintEntry(zoom){if(!entryActive||!available)return;displayUniforms.zoom.value=zoom;display();},
+      endEntry(){entryActive=false;displayUniforms.zoom.value=1;last=0;draw();},
+      getAppearance:()=>({...settings})
+    };
     applySceneSettings = values => {
       const qualityChanged=settings.quality!==values.quality;
       settings=values;azimuth=settings.azimuth;elevation=settings.elevation;radius=settings.radius;

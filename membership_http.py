@@ -22,6 +22,9 @@ class MembershipGateway:
         self.oidc = oidc
         self._settled_jobs = set()
         self.origin = os.environ.get("JT_PUBLIC_ORIGIN", "").rstrip("/")
+        self.login_mode = os.environ.get('JT_LOGIN_MODE', 'oidc')
+        if self.login_mode not in ('oidc', 'access_code'):
+            raise RuntimeError('Unsupported account login mode')
         if self.enabled:
             from membership_auth import OIDCClient
             self.oidc = oidc or OIDCClient.from_env()
@@ -108,6 +111,10 @@ class MembershipGateway:
                 raise MembershipError("invalid_host", "访问地址不正确", 400)
             if not write and path in ("/api/auth/me", "/api/auth/login", "/api/auth/callback"):
                 return self.auth_get(handler, path)
+            if path == '/api/auth/code-login':
+                if not write or self.login_mode != 'access_code':
+                    raise MembershipError('not_found', '接口不存在', 404)
+                return self.code_login(handler)
             session = self.session(handler)
             if not session:
                 raise MembershipError("login_required", "请先登录工作台", 401)
@@ -132,7 +139,7 @@ class MembershipGateway:
                 self.store.require_access(user['id'], 'favorites')
             if path == "/api/auth/logout" and write:
                 self.store.revoke_session(self.cookie(handler, self.COOKIE))
-                logout_url = self.oidc.issuer + '/api/logout?' + urllib.parse.urlencode({
+                logout_url = '' if self.login_mode == 'access_code' else self.oidc.issuer + '/api/logout?' + urllib.parse.urlencode({
                     'client_id': self.oidc.client_id, 'post_logout_redirect_uri': self.origin + '/'})
                 self.reply(handler, 200, {"ok": True, "logout_url": logout_url}, {"Set-Cookie": self.cookie_header(self.COOKIE, "", 0)})
                 return True
@@ -173,10 +180,34 @@ class MembershipGateway:
     def cookie_header(name, value, ttl):
         return f"{name}={value}; Path=/; Max-Age={ttl}; Secure; HttpOnly; SameSite=Lax"
 
+    def code_login(self, handler):
+        # Anonymous authentication still requires a same-origin JSON request.
+        # Never accept the credential in a URL, cookie or form-urlencoded body.
+        if (handler.headers.get('Origin') != self.origin
+                or handler.headers.get('Sec-Fetch-Site', 'same-origin') not in ('same-origin', 'none')):
+            raise MembershipError('invalid_origin', '请求来源不正确，请刷新页面', 403)
+        self.rate(self.peer(handler), 'code_login', 20, 600)
+        if (handler.headers.get('Content-Type', '').split(';', 1)[0].strip().lower() != 'application/json'
+                or urllib.parse.urlsplit(handler.path).query):
+            raise MembershipError('invalid_input', '请求数据格式不正确')
+        body = self.body(handler)
+        if set(body) != {'code'}:
+            raise MembershipError('invalid_input', '请求字段不正确')
+        try:
+            user = self.store.authenticate_access_code(body.get('code'))
+            session = self.store.create_session(user['id'], access_credential_id=user['access_credential_id'])
+        except MembershipError:
+            raise MembershipError('invalid_access_code', '激活码无效或已停用，请核对后重试', 401) from None
+        # The new token is independent of the reusable login credential.
+        self.store.revoke_session(self.cookie(handler, self.COOKIE))
+        self.reply(handler, 200, {'ok': True}, {'Set-Cookie': self.cookie_header(self.COOKIE, session['token'], 43200)})
+        return True
+
     def auth_get(self, handler, path):
         if path == "/api/auth/me":
             session = self.session(handler)
-            payload = {"enabled": True, "authenticated": bool(session), "login_url": "/api/auth/login"}
+            payload = {"enabled": True, "authenticated": bool(session), "login_url": "/api/auth/login",
+                       'login_method': self.login_mode, 'admin_login_available': True}
             if session:
                 payload.update(user=self.public_user(session["user"]), csrf_token=session["csrf"],
                                membership=self.entitlement(session["user"]["id"]))
@@ -195,8 +226,14 @@ class MembershipGateway:
                 raise MembershipError("invalid_login_state", "登录校验失败，请重新登录")
             row = self.store.consume_login_state(state)
             claims = self.oidc.exchange(query.get("code", [""])[0], row["verifier"], row["nonce"])
+            if self.login_mode == 'access_code':
+                existing = self.store.get_user_by_identity(self.oidc.issuer, claims['sub'])
+                if not existing or not existing['is_admin'] or existing['disabled']:
+                    raise MembershipError('access_code_required', '请回到工作台使用管理员发放的激活码登录', 403)
             user = self.store.upsert_identity(self.oidc.issuer, claims["sub"],
                 username=claims.get("name") or claims.get("preferred_username") or "JT 用户", email=claims.get("email") or "")
+            if self.login_mode == 'access_code' and not user['is_admin']:
+                raise MembershipError('access_code_required', '请回到工作台使用管理员发放的激活码登录', 403)
             # Rotate even if the browser had an earlier session.
             self.store.revoke_session(self.cookie(handler, self.COOKIE))
             session = self.store.create_session(user["id"])
@@ -215,6 +252,8 @@ class MembershipGateway:
         schemas = {
             'plans': {'plan_id', 'name', 'duration_days', 'image_units', 'video_units', 'max_concurrent', 'features', 'backends', 'active', 'price_display'},
             'codes': {'plan_id', 'count', 'note'}, 'codes/revoke': {'code_id'},
+            'access-codes': {'plan_id', 'count', 'note'}, 'access-codes/revoke': {'code_id'},
+            'users/rotate-code': {'user_id', 'note'},
             'users/disable': {'user_id', 'disabled'},
             'reservations/settle': {'job_id', 'success', 'note'},
         }
@@ -239,6 +278,13 @@ class MembershipGateway:
                       if write else self.store.list_codes(actor, offset=offset)}
         elif action == "codes/revoke" and write:
             result = self.store.revoke_code(actor, body.get("code_id"))
+        elif action == 'access-codes':
+            result = {'codes': self.store.issue_access_codes(actor, body.get('plan_id'), body.get('count', 1), body.get('note', ''))
+                      if write else self.store.list_access_codes(actor, offset=offset)}
+        elif action == 'access-codes/revoke' and write:
+            result = self.store.revoke_access_code(actor, body.get('code_id'))
+        elif action == 'users/rotate-code' and write:
+            result = {'code': self.store.rotate_access_code(actor, body.get('user_id'), body.get('note', ''))}
         elif action == "users" and not write:
             result = {"users": [self.public_user(u) | {"membership": self.entitlement(u["id"])}
                                  for u in self.store.list_users(actor, offset=offset)]}

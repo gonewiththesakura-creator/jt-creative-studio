@@ -1,6 +1,6 @@
 import {createRouter} from "/static/assets/router.9d20830207ba.js";
-import {initializeAccount} from "/static/assets/account.76becf52272a.js";
-import {initializeLoginScene,revealWorkbenchFromLogin} from "/static/assets/login-scene.e879cf492548.js";
+import {initializeAccount} from "/static/assets/account.c09a0ac9eadc.js";
+import {initializeLoginScene,revealWorkbenchFromLogin} from "/static/assets/login-scene.e6464d51d36a.js";
 const manifest=JSON.parse(document.getElementById('appManifest').textContent);
 window.jtApp={router:null,metrics:{renderers:0,firstFrame:null}};
 initializeLoginScene();

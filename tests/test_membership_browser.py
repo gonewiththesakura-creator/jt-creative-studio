@@ -213,7 +213,7 @@ def test_admin_plan_and_activation_code_flow(browser, tmp_path):
                                          'redeemed_at': None, 'revoked_at': None}] if issue_requests else []})
 
     page.route('**/api/admin/membership/plans', plan_route)
-    page.route('**/api/admin/membership/codes*', code_route)
+    page.route('**/api/admin/membership/access-codes*', code_route)
     try:
         page.goto('http://fixture.test/video')
         page.locator('#membershipAdminOpen').click()
