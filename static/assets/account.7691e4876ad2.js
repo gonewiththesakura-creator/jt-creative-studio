@@ -1,6 +1,6 @@
 import {accountFetch,configureAccountRequests} from "/static/assets/api.1e898baa005a.js";
 import {setStorageAccount} from "/static/assets/account-storage.0c5081b9ad66.js";
-import {initializeMembershipAdmin} from "/static/assets/membership-admin.c42d4c8892e7.js";
+import {initializeMembershipAdmin} from "/static/assets/membership-admin.13190dda8d6c.js";
 import {showLoginScene,markLoginTransition,consumeLoginTransition,prepareLoginEntry,revealWorkbenchImmediately} from "/static/assets/login-scene.e6464d51d36a.js";
 
 const template=`<section class="account-gate" id="accountGate" aria-labelledby="accountGateTitle">
@@ -58,8 +58,8 @@ export async function initializeAccount(){
    const wantsEntry=consumeLoginTransition(),entryTransition=!ready&&wantsEntry;
    if(entryTransition){prepareLoginEntry();el('accountGateStatus').textContent='登录成功，正在进入创作空间…';el('accountCodeLoginForm').hidden=true;el('accountAdminLogin').hidden=true;el('accountRetry').hidden=true}
    else{revealWorkbenchImmediately();el('accountGate').hidden=true;shell.hidden=false;shell.inert=false}
-   if(data.user.is_admin&&!adminUI)adminUI=initializeMembershipAdmin();
-   if(adminUI){adminUI.trigger.hidden=!data.user.is_admin;if(!data.user.is_admin&&adminUI.dialog.open)adminUI.dialog.close()}
+   if(data.user.is_admin&&!adminUI)adminUI=initializeMembershipAdmin({verify:login});
+   if(adminUI)adminUI.setVerification(data.admin_verification_required===true,data.admin_verification_expires_at,!!data.user.is_admin);
    if(!ready){ready=true;initialResolve({...data,entryTransition})}
   }catch(error){
    if(gateOnError)gate('暂时无法验证登录状态，请检查网络后重试。',{retry:true});else el('accountRedeemStatus').textContent='套餐信息暂时无法刷新，请稍后重试。';
@@ -102,6 +102,7 @@ export async function initializeAccount(){
   catch(error){el('accountRedeemStatus').textContent=error.message;button.disabled=false}
  };
  window.addEventListener('jt:auth-expired',()=>gate('登录已过期，请重新登录后继续。',{login:true}));
+ window.addEventListener('jt:admin-verification-required',()=>adminUI?.setVerification(true));
  // Recheck when returning to a background tab, including after another tab logs out.
  document.addEventListener('visibilitychange',()=>{if(!document.hidden&&ready)refresh()});
  window.addEventListener('pageshow',event=>{if(event.persisted)refresh()});

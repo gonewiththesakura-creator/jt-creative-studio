@@ -39,9 +39,9 @@ def test_stream_preserves_range_and_does_not_forward_cookie(monkeypatch):
     chunks = iter([b'media', b''])
     response = SimpleNamespace(status=206, getheader=lambda k,d=None: {
         'Content-Type':'video/mp4', 'Content-Length':'5', 'Content-Range':'bytes 5-9/10'}.get(k,d),
-        read=lambda n: next(chunks))
+        read1=lambda n: next(chunks))
     closed=[]
-    def opened(url, byte_range):
+    def opened(url, byte_range, **kwargs):
         assert byte_range=='bytes=5-9'
         return SimpleNamespace(close=lambda: closed.append(True)), response
     monkeypatch.setattr(media, 'open_media', opened)

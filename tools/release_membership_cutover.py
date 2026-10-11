@@ -41,7 +41,7 @@ def queue(client):
 j=json.loads(pathlib.Path({DATA+'/jobs.json'!r}).read_text())
 print(json.dumps({{'active':[v['id'] for v in j.values() if v.get('status') in ('running','recovering') or v.get('queue_hold')],
                   'waiting':[v['id'] for v in j.values() if v.get('status')=='queued']}}))
-''')
+''', root=True)
 
 
 def preflight(client):

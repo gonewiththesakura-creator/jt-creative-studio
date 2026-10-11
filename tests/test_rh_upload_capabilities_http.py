@@ -382,7 +382,7 @@ def test_provider_upload_errors_are_not_reflected_to_public_clients(monkeypatch)
         "/api/workflow-upload", "image_fixture", "source_image", "safe.png", PNG
     )
     assert status == 502
-    assert result["error"] == "RunningHub上传失败，请稍后重试"
+    assert result["error"] == "云端上传失败，请稍后重试"
     raw = json.dumps(result)
     assert "private.internal" not in raw and "super-secret" not in raw and "node 123" not in raw
 

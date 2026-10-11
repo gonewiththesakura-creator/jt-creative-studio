@@ -15,6 +15,9 @@ from membership_store import MembershipError, MembershipStore
 class MembershipGateway:
     COOKIE = "__Host-jt_account"
     STATE_COOKIE = "__Host-jt_login"
+    # Flush private media cached by older releases before changing/using an
+    # account. Do not clear storage or cookies: appearance and sessions survive.
+    CACHE_BOUNDARY_HEADERS = {"Clear-Site-Data": '"cache"'}
 
     def __init__(self, data_dir, store=None, oidc=None):
         self.enabled = os.environ.get("JT_MEMBERSHIP_ENABLED", "0") == "1"
@@ -141,7 +144,8 @@ class MembershipGateway:
                 self.store.revoke_session(self.cookie(handler, self.COOKIE))
                 logout_url = '' if self.login_mode == 'access_code' else self.oidc.issuer + '/api/logout?' + urllib.parse.urlencode({
                     'client_id': self.oidc.client_id, 'post_logout_redirect_uri': self.origin + '/'})
-                self.reply(handler, 200, {"ok": True, "logout_url": logout_url}, {"Set-Cookie": self.cookie_header(self.COOKIE, "", 0)})
+                self.reply(handler, 200, {"ok": True, "logout_url": logout_url}, {
+                    **self.CACHE_BOUNDARY_HEADERS, "Set-Cookie": self.cookie_header(self.COOKIE, "", 0)})
                 return True
             if path == "/api/membership/redeem" and write:
                 self.rate(user["id"], "redeem", 10, 600)
@@ -154,6 +158,8 @@ class MembershipGateway:
             if path.startswith("/api/admin/membership/"):
                 if not user["is_admin"]:
                     raise MembershipError("admin_required", "需要管理员权限", 403)
+                if not session.get("admin_verified_until"):
+                    raise MembershipError("admin_verification_required", "管理操作需要重新验证管理员身份，请点击管理员验证", 403)
                 self.rate(user["id"], "admin", 60)
                 return self.admin(handler, path, write, user["id"])
             if path == "/api/health":
@@ -200,7 +206,8 @@ class MembershipGateway:
             raise MembershipError('invalid_access_code', '激活码无效或已停用，请核对后重试', 401) from None
         # The new token is independent of the reusable login credential.
         self.store.revoke_session(self.cookie(handler, self.COOKIE))
-        self.reply(handler, 200, {'ok': True}, {'Set-Cookie': self.cookie_header(self.COOKIE, session['token'], 43200)})
+        self.reply(handler, 200, {'ok': True}, {
+            **self.CACHE_BOUNDARY_HEADERS, 'Set-Cookie': self.cookie_header(self.COOKIE, session['token'], 43200)})
         return True
 
     def auth_get(self, handler, path):
@@ -211,7 +218,12 @@ class MembershipGateway:
             if session:
                 payload.update(user=self.public_user(session["user"]), csrf_token=session["csrf"],
                                membership=self.entitlement(session["user"]["id"]))
-            self.reply(handler, 200, payload)
+                if session["user"]["is_admin"]:
+                    expires = session.get("admin_verified_until", 0)
+                    payload.update(admin_verification_required=not bool(expires),
+                                   admin_verification_expires_at=expires,
+                                   admin_verify_url="/api/auth/login?return_to=%2F")
+            self.reply(handler, 200, payload, self.CACHE_BOUNDARY_HEADERS)
             return True
         self.rate(self.peer(handler), "login", 20, 600)
         query = urllib.parse.parse_qs(urllib.parse.urlsplit(handler.path).query)
@@ -236,10 +248,11 @@ class MembershipGateway:
                 raise MembershipError('access_code_required', '请回到工作台使用管理员发放的激活码登录', 403)
             # Rotate even if the browser had an earlier session.
             self.store.revoke_session(self.cookie(handler, self.COOKIE))
-            session = self.store.create_session(user["id"])
+            session = self.store.create_session(user["id"], oidc_verified=True)
             handler.send_response(302)
             handler.send_header("Content-Length", "0")
             handler.send_header("Cache-Control", "no-store")
+            handler.send_header("Clear-Site-Data", self.CACHE_BOUNDARY_HEADERS["Clear-Site-Data"])
             handler.send_header("Location", row["return_to"])
             handler.send_header("Set-Cookie", self.cookie_header(self.COOKIE, session["token"], 43200))
             handler.send_header("Set-Cookie", self.cookie_header(self.STATE_COOKIE, "", 0))

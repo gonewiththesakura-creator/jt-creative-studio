@@ -18,7 +18,7 @@ from media_library import MediaLibrary
 import direct_uploads
 from membership_http import MembershipGateway
 from membership_store import MembershipError
-from membership_media import stream_media
+from membership_media import stream_media, download_media, MediaOwnerSlots, acquire_media_slot, release_media_slot
 _video_upload_staging = UploadStaging()
 
 BASE = pathlib.Path(__file__).resolve().parent
@@ -873,39 +873,16 @@ def http_bytes(url, timeout=60, retries=3):
 
 
 def download_file_resilient(url, dest, timeout=900):
-    """Download a large RunningHub result directly to disk.
+    """Archive trusted results using the same pinned HTTPS boundary as playback."""
+    return download_media(url, dest, timeout=timeout, validator=downloaded_media_content_type)
 
-    curl is substantially more reliable than urllib against the RH COS CDN:
-    it supports IPv4, low-speed detection, connect timeout and retry without
-    holding a multi-MB image in Python memory. The old urllib path caused
-    500–1000s tails and sometimes saved partial-looking files.
-    """
-    dest = pathlib.Path(dest)
-    part = dest.with_suffix(dest.suffix + ".part")
-    cmd = [
-        "curl", "-4", "-fL", "--silent", "--show-error",
-        "--connect-timeout", "5", "--max-time", str(int(timeout)),
-        "--retry", "0",
-        "--speed-time", "30", "--speed-limit", "1024",
-        "-o", str(part), url,
-    ]
-    try:
-        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout + 30)
-    except subprocess.TimeoutExpired:
-        raise RuntimeError(f"result download hard timeout after {timeout}s")
-    if p.returncode != 0:
-        part.unlink(missing_ok=True)
-        raise RuntimeError(f"curl exit {p.returncode}: {(p.stderr or p.stdout).strip()[:300]}")
-    if not part.exists() or part.stat().st_size < 8:
-        part.unlink(missing_ok=True)
-        raise RuntimeError("downloaded result is empty")
-    with part.open("rb") as f:
-        magic = f.read(16)
-    if not downloaded_media_content_type(magic, dest.name):
-        part.unlink(missing_ok=True)
-        raise RuntimeError("downloaded result is not a supported media file")
-    part.replace(dest)
-    return dest.stat().st_size
+
+class _NoProviderRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        # Credentials can be in headers OR JSON bodies. Avoid replaying them,
+        # even to a different path on the same host; configured endpoints must
+        # answer directly rather than change the method or destination.
+        return None
 
 
 def _urlopen_bounded(url, data, timeout):
@@ -920,7 +897,8 @@ def _urlopen_bounded(url, data, timeout):
 
     def _worker():
         try:
-            box["resp"] = urllib.request.urlopen(url, data, timeout=timeout)
+            opener = urllib.request.build_opener(_NoProviderRedirect())
+            box["resp"] = opener.open(url, data, timeout=timeout)
         except Exception as e:
             box["err"] = e
 
@@ -3140,7 +3118,8 @@ def rh_run_video(job, w):
 
 def _video_waiting():
     return sorted((j for j in _jobs.values() if j.get('video_queued') and j.get('status') == 'queued'),
-                  key=lambda j: (j.get('queue_order', j['created']), j['created'], j['id']))
+                  key=lambda j: (j.get('queue_order', j['created']),
+                                 j.get('queue_slot_created', j['created']), j.get('queue_slot_id', j['id'])))
 
 
 def normalize_video_thumbnail(value):
@@ -3406,12 +3385,20 @@ def edit_video_queue(session_id, body):
         if action == 'cancel':
             job.update(status='cancelled', provider_status='CANCELLED', error=None)
         elif action in ('top', 'up', 'down'):
-            rows = _video_waiting()
+            # Reassign only this owner's existing slots, leaving every other
+            # account's position and optimistic revision untouched.
+            rows = [row for row in _video_waiting() if session_owns_record(session_id, row)]
+            slots = [(row.get('queue_order', row['created']), row.get('queue_slot_created', row['created']),
+                      row.get('queue_slot_id', row['id'])) for row in rows]
             index = rows.index(job)
             target = 0 if action == 'top' else max(0, index-1) if action == 'up' else min(len(rows)-1, index+1)
             rows.insert(target, rows.pop(index))
-            for order, row in enumerate(rows):
-                row['queue_order'] = order
+            for slot, row in zip(slots, rows):
+                previous_slot = (row.get('queue_order', row['created']), row.get('queue_slot_created', row['created']),
+                                 row.get('queue_slot_id', row['id']))
+                if previous_slot == slot:
+                    continue
+                row['queue_order'], row['queue_slot_created'], row['queue_slot_id'] = slot
                 if row is not job:
                     row['queue_revision'] = row.get('queue_revision', 0) + 1
         elif action == 'edit':
@@ -3562,6 +3549,7 @@ class BoundedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
         self._worker_slots = threading.BoundedSemaphore(self.max_workers)
         self._rejection_slots = threading.BoundedSemaphore(MAX_REJECTION_WORKERS)
         self._large_response_slots = threading.BoundedSemaphore(MAX_LARGE_RESPONSE_WORKERS)
+        self._media_owner_slots = MediaOwnerSlots(limit=2)
         self._large_request_slots = threading.BoundedSemaphore(MAX_LARGE_REQUESTS)
         self._metrics_lock = threading.Lock()
         self._active_workers = 0
@@ -3856,10 +3844,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     self.server._large_response_slots.release()
 
     def _send(self, code, body=b"", ctype="application/json; charset=utf-8", headers=None):
+        if _membership.enabled and urllib.parse.urlsplit(self.path).path.startswith('/api/'):
+            headers = dict(headers or {})
+            headers['Cache-Control'] = 'private, no-store'
+            vary = [item.strip() for item in headers.get('Vary', '').split(',') if item.strip()]
+            if not any(item.lower() == 'cookie' for item in vary):
+                vary.append('Cookie')
+            headers['Vary'] = ', '.join(vary)
         is_large = len(body) >= LARGE_RESPONSE_THRESHOLD
         large_slot_acquired = False
         if is_large:
-            large_slot_acquired = self.server._large_response_slots.acquire(blocking=False)
+            large_slot_acquired = acquire_media_slot(self)
         if is_large and not large_slot_acquired:
             payload = b'{"error":"large response capacity busy"}'
             self.send_response(503)
@@ -3879,9 +3874,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._write_body(body, large_slot_acquired=large_slot_acquired)
         finally:
             if large_slot_acquired:
-                self.server._large_response_slots.release()
+                release_media_slot(large_slot_acquired)
 
-    def _write_stream(self, path, ctype, download_name=None, cache_control="private, max-age=3600", allow_range=False):
+    def _write_stream(self, path, ctype, download_name=None, cache_control="private, no-store", allow_range=False):
         path = pathlib.Path(path)
         # Open first so a stat/open race cannot produce a 200 header followed
         # by a second 404 response.
@@ -3910,7 +3905,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             is_large = length >= LARGE_RESPONSE_THRESHOLD
             slot = False
             if is_large:
-                slot = self.server._large_response_slots.acquire(blocking=False)
+                slot = acquire_media_slot(self)
             if is_large and not slot:
                 return self._send(503, b'{"error":"large response capacity busy"}', headers={"Retry-After": "2"})
             deadline = None
@@ -3928,6 +3923,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 if download_name:
                     self.send_header("Content-Disposition", f'inline; filename="{download_name}"')
                 self.send_header("Cache-Control", cache_control)
+                self.send_header("Vary", "Cookie")
                 self.end_headers()
                 if is_large:
                     self.connection.settimeout(RESPONSE_SOCKET_TIMEOUT)
@@ -3947,10 +3943,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             finally:
                 self._cancel_absolute_deadline(deadline)
                 if is_large:
-                    self.connection.settimeout(CLIENT_SOCKET_TIMEOUT)
-                    with self.server._metrics_lock:
-                        self.server._active_large_responses -= 1
-                    self.server._large_response_slots.release()
+                    try:
+                        self.connection.settimeout(CLIENT_SOCKET_TIMEOUT)
+                    finally:
+                        with self.server._metrics_lock:
+                            self.server._active_large_responses -= 1
+                        release_media_slot(slot)
 
     def _send_static(self, fp, ctype):
         """Serve text assets with validator caching and bounded gzip."""
@@ -4140,7 +4138,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             target = JOBS_DIR / jid / ('input-thumb-'+digest+'.jpg')
             if not allowed or not target.is_file(): return self._send(404)
             return self._send(200, target.read_bytes(), 'image/jpeg',
-                              {'Cache-Control': 'private, max-age=3600', 'Vary': 'Cookie', 'X-Content-Type-Options': 'nosniff'})
+                              {'Cache-Control': 'private, no-store', 'Vary': 'Cookie', 'X-Content-Type-Options': 'nosniff'})
         if path == '/api/video-queue':
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
             session_id, _ = self._upload_session(create=False)
@@ -4204,7 +4202,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     im = im.convert("RGB"); im.thumbnail((640, 640))
                     im.save(tmp, "JPEG", quality=72, optimize=True, progressive=True)
                 tmp.replace(preview)
-            self._send(200, preview.read_bytes(), "image/jpeg", {"Cache-Control": "private, max-age=86400"})
+            self._send(200, preview.read_bytes(), "image/jpeg", {"Cache-Control": "private, no-store", "Vary": "Cookie"})
         elif path.startswith("/api/favorite-image/"):
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
             fid = path.split("/api/favorite-image/", 1)[1]
@@ -4220,7 +4218,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             with p.open('rb') as source:
                 data = source.read(64)
             ctype = fav.get("favorite_media_type") or image_content_type(data, p.name) or "application/octet-stream"
-            self._write_stream(p, ctype, cache_control="private, max-age=86400", allow_range=ctype.startswith('video/'))
+            self._write_stream(p, ctype, allow_range=ctype.startswith('video/'))
         elif path.startswith("/api/job/"):
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
             jid = path.split("/api/job/", 1)[1]
@@ -4322,7 +4320,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     return self._send(404, b'{"error":"preview not found"}')
                 p = safe_child_path(JOBS_DIR / jobid, fname)
                 data = p.read_bytes()
-                self._send(200, data, "image/webp", {"Cache-Control": "private, max-age=86400"})
+                self._send(200, data, "image/webp", {"Cache-Control": "private, no-store", "Vary": "Cookie"})
             except ValueError:
                 self._send(403, b'{"error":"bad path"}')
             except FileNotFoundError:
@@ -4356,7 +4354,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         im.save(tmp, "JPEG", quality=72, optimize=True, progressive=True)
                     tmp.replace(preview)
                 data = preview.read_bytes()
-                self._send(200, data, "image/jpeg", {"Cache-Control": "private, max-age=86400"})
+                self._send(200, data, "image/jpeg", {"Cache-Control": "private, no-store", "Vary": "Cookie"})
             except ValueError:
                 self._send(403, b'{"error":"bad path"}')
             except ImportError:
@@ -4397,7 +4395,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     tmp.replace(preview)
                     src.unlink(missing_ok=True)
                 data = preview.read_bytes()
-                self._send(200, data, "image/jpeg", {"Cache-Control": "private, max-age=86400"})
+                self._send(200, data, "image/jpeg", {"Cache-Control": "private, no-store", "Vary": "Cookie"})
             except (BrokenPipeError, ConnectionResetError):
                 return
             except Exception as e:
@@ -4453,6 +4451,19 @@ class Handler(http.server.BaseHTTPRequestHandler):
             root = BASE / "static"
             if path in ("/", "/realism", "/video"):
                 return self._send_static(root / "app.html", "text/html; charset=utf-8")
+            if _membership.enabled:
+                # The directory also holds archived standalone prototypes and
+                # past hashed builds. Only the current release is public.
+                public_paths = {'/static/app.html', '/static/app-manifest.json', '/static/favicon.png'}
+                try:
+                    manifest = json.loads((root / 'app-manifest.json').read_text(encoding='utf-8'))
+                    public_paths.update(item for item in manifest['assets']
+                                        if isinstance(item, str) and re.fullmatch(
+                                            r'/static/assets/[\w-]+\.[0-9a-f]{12}\.[a-z0-9]+', item))
+                except (OSError, ValueError, KeyError, TypeError):
+                    return self._send(503, b'{"error":"release assets unavailable"}')
+                if path not in public_paths:
+                    return self._send(404, b'not found')
             clean_pages = {"/promptgen": "promptgen.html", "/realism": "realism.html"}
             if path in clean_pages:
                 rel = clean_pages[path]

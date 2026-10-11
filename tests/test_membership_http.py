@@ -42,7 +42,9 @@ def membership_env(panel, tmp_path, monkeypatch):
     gateway.reservations_callback = panel.membership_reservations
     users = {name: store.upsert_identity(oidc.issuer, name, name.title()) for name in ("admin", "alice", "bob")}
     users["admin"] = store.bootstrap_admin(users["admin"]["id"])
-    sessions = {name: store.create_session(user["id"]) for name, user in users.items()}
+    # Management fixtures represent a fresh, trusted administrator OIDC login.
+    # Dedicated adversarial tests exercise unverified legacy/code sessions.
+    sessions = {name: store.create_session(user["id"], oidc_verified=name == "admin") for name, user in users.items()}
     monkeypatch.setattr(panel, "_membership", gateway)
     provider_calls = []
 

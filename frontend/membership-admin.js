@@ -1,7 +1,8 @@
 import {accountFetch} from './api.js';
 
-export function initializeMembershipAdmin(){
+export function initializeMembershipAdmin({verify}={}){
  const trigger=document.createElement('button');trigger.type='button';trigger.id='membershipAdminOpen';trigger.className='topbar-action';trigger.textContent='管理后台';document.querySelector('.topbar-tools').append(trigger);
+ const verifyButton=document.createElement('button');verifyButton.type='button';verifyButton.id='membershipAdminVerify';verifyButton.className='topbar-action';verifyButton.textContent='管理员验证';verifyButton.title='验证管理员身份后，可管理用户和套餐。验证有效期为 15 分钟。';verifyButton.hidden=true;verifyButton.onclick=()=>verify?.();trigger.before(verifyButton);
  const dialog=document.createElement('dialog');dialog.className='account-dialog membership-admin';dialog.id='membershipAdmin';dialog.setAttribute('aria-labelledby','membershipAdminTitle');
  dialog.innerHTML=`<div class="account-dialog-head"><div><p class="account-eyebrow">JT ADMIN</p><h2 id="membershipAdminTitle">用户与套餐管理</h2></div><button type="button" class="account-close" id="membershipAdminClose" aria-label="关闭管理后台">×</button></div>
  <p id="membershipAdminStatus" role="status" aria-live="polite"></p><nav class="admin-tabs" aria-label="管理功能"><button type="button" data-admin-tab="plans" aria-pressed="true">套餐设置</button><button type="button" data-admin-tab="codes" aria-pressed="false">登录激活码</button><button type="button" data-admin-tab="renewals" aria-pressed="false">续费码</button><button type="button" data-admin-tab="users" aria-pressed="false">用户</button><button type="button" data-admin-tab="reservations" aria-pressed="false">额度核对</button></nav>
@@ -10,7 +11,13 @@ export function initializeMembershipAdmin(){
  <section data-admin-panel="users" hidden><p class="account-help">停用用户会立即使其会话失效。换码后旧登录码与会话失效，新码仍进入原账号，套餐、历史和收藏保留。</p><div class="admin-table-wrap"><table><thead><tr><th>用户</th><th>账号状态</th><th>操作</th></tr></thead><tbody id="adminUsersRows"></tbody></table></div></section>
  <section data-admin-panel="reservations" hidden><p class="account-help">先核对生成服务中的实际结果，再处理未结算额度。进行中、排队中或仍在恢复核对的任务不可操作。</p><button type="button" class="account-secondary" id="adminReservationsRefresh">刷新待核对列表</button><form id="adminSettleForm" class="admin-issued admin-form" hidden><h3 id="adminSettleTitle" class="admin-full"></h3><p id="adminSettleTarget" class="account-help admin-full"></p><label class="admin-full">核对依据（至少 10 字）<textarea id="adminSettleNote" name="note" minlength="10" maxlength="500" rows="3" required placeholder="填写核对时间、实际结果及处理依据"></textarea></label><div class="admin-settle-actions admin-full"><button type="submit" id="adminSettleSubmit" class="account-primary">确认处理</button><button type="button" id="adminSettleCancel" class="account-secondary">返回列表</button></div></form><div class="admin-table-wrap"><table><thead><tr><th>任务 / 用户</th><th>额度占用</th><th>任务状态 / 原因</th><th>处理</th></tr></thead><tbody id="adminReservationsRows"></tbody></table></div></section>`;
  document.body.append(dialog);
- const el=id=>dialog.querySelector('#'+id),status=el('membershipAdminStatus');let plans=[],tab='plans',busy=false,settlement=null;
+ const el=id=>dialog.querySelector('#'+id),status=el('membershipAdminStatus');let plans=[],tab='plans',busy=false,settlement=null,verificationTimer;
+ function clearSensitive(){el('adminIssuedCodes').value='';el('adminIssued').hidden=true;el('adminSettleNote').value='';el('adminSettleForm').hidden=true;settlement=null}
+ function setVerification(required,expires=0,admin=true){
+  clearTimeout(verificationTimer);trigger.hidden=!admin||required;verifyButton.hidden=!admin||!required;
+  if(required||!admin){if(dialog.open)dialog.close();clearSensitive();for(const id of ['adminCodesRows','adminUsersRows','adminReservationsRows'])el(id).replaceChildren()}
+  else if(Number(expires)>0)verificationTimer=setTimeout(()=>{window.dispatchEvent(new CustomEvent('jt:admin-verification-required'))},Math.max(0,Number(expires)*1000-Date.now()));
+ }
  dialog.querySelector('.admin-tabs').after(el('adminIssued'));
  const offsets={codes:0,renewals:0,users:0},codeTab=()=>tab==='renewals'?'renewals':'codes',codePath=()=>tab==='renewals'?'codes':'access-codes',codeName=()=>tab==='renewals'?'续费码':'登录激活码';
  for(const kind of ['codes','users']){
@@ -20,7 +27,7 @@ export function initializeMembershipAdmin(){
   for(const [selector,difference] of [['[data-prev]',-100],['[data-next]',100]])nav.querySelector(selector).onclick=()=>action(async()=>{const key=kind==='codes'?codeTab():kind;offsets[key]=Math.max(0,offsets[key]+difference);await(kind==='codes'?loadCodes():loadUsers());status.textContent=''});
  }
  function pageInfo(kind,count){const nav=dialog.querySelector('[data-pagination="'+kind+'"]'),offset=offsets[kind==='codes'?codeTab():kind];nav.querySelector('span').textContent='第 '+(offset/100+1)+' 页';nav.querySelector('[data-prev]').disabled=offset===0;nav.querySelector('[data-next]').disabled=count<100}
- async function request(path,body){const response=await accountFetch('/api/admin/membership/'+path,{...(body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}),cache:'no-store',signal:AbortSignal.timeout(20000)});const data=await response.json();if(!response.ok)throw Error(data.error||'操作未完成，请重试');return data}
+ async function request(path,body){const response=await accountFetch('/api/admin/membership/'+path,{...(body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}),cache:'no-store',signal:AbortSignal.timeout(20000)});const data=await response.json();if(response.status===403&&data.code==='admin_verification_required')window.dispatchEvent(new CustomEvent('jt:admin-verification-required'));if(!response.ok)throw Error(data.error||'操作未完成，请重试');return data}
  async function action(callback){if(busy)return;busy=true;dialog.querySelectorAll('button[type=submit]').forEach(button=>button.disabled=true);status.textContent='处理中…';try{await callback()}catch(error){status.textContent=error.name==='TimeoutError'?'请求暂未完成，请刷新列表确认结果。':error.message}finally{busy=false;dialog.querySelectorAll('button[type=submit]').forEach(button=>button.disabled=false)}}
  function option(value,label){const node=document.createElement('option');node.value=value;node.textContent=label;return node}
  function fillPlan(plan){const form=el('adminPlanForm');form.reset();form.elements.plan_id.value=plan?.id||'';if(!plan)return;for(const key of ['name','price_display','duration_days','max_concurrent','image_units','video_units'])form.elements[key].value=plan[key]??'';form.elements.active.checked=!!plan.active;form.querySelectorAll('[name=feature]').forEach(input=>input.checked=(plan.features||[]).includes(input.value));form.querySelectorAll('[name=backend]').forEach(input=>input.checked=(plan.backends||[]).includes(input.value))}
@@ -41,7 +48,7 @@ export function initializeMembershipAdmin(){
  });el('adminReservationsRows').replaceChildren(...(rows.length?rows:[row('暂无待核对额度','','','')]))}
  async function loadTab(){await loadPlans();if(tab==='codes'||tab==='renewals')await loadCodes();if(tab==='users')await loadUsers();if(tab==='reservations')await loadReservations()}
  trigger.onclick=()=>{dialog.showModal();action(async()=>{await loadTab();status.textContent=''})};el('membershipAdminClose').onclick=()=>dialog.close();
- dialog.addEventListener('close',()=>{el('adminIssuedCodes').value='';el('adminIssued').hidden=true;el('adminSettleForm').hidden=true;settlement=null});
+ dialog.addEventListener('close',clearSensitive);
  window.addEventListener('jt:auth-expired',()=>{if(dialog.open)dialog.close()});
  dialog.querySelectorAll('[data-admin-tab]').forEach(button=>button.onclick=()=>{if(busy)return;tab=button.dataset.adminTab;dialog.querySelectorAll('[data-admin-tab]').forEach(item=>item.setAttribute('aria-pressed',String(item===button)));dialog.querySelectorAll('[data-admin-panel]').forEach(panel=>panel.hidden=panel.dataset.adminPanel!==(tab==='renewals'?'codes':tab));action(async()=>{await loadTab();status.textContent=''})});
  el('adminPlanSelect').onchange=()=>fillPlan(plans.find(plan=>plan.id===el('adminPlanSelect').value));
@@ -51,5 +58,5 @@ export function initializeMembershipAdmin(){
  el('adminReservationsRefresh').onclick=()=>action(async()=>{await loadReservations();status.textContent='待核对列表已更新。'});
  el('adminSettleCancel').onclick=()=>{el('adminSettleForm').hidden=true;settlement=null};
  el('adminSettleForm').onsubmit=event=>{event.preventDefault();if(!settlement||busy)return;const note=el('adminSettleNote').value.trim();if(note.length<10){status.textContent='请填写至少 10 字的核对依据。';el('adminSettleNote').focus();return}const payload={...settlement,note};const message=payload.success?'已核实此任务确实产出结果，确认结算所占额度？':'已核实此任务没有产出结果，确认退回所占额度？';if(!confirm(message))return;action(async()=>{await request('reservations/settle',payload);settlement=null;el('adminSettleForm').hidden=true;await loadReservations();status.textContent=payload.success?'额度已结算。':'额度已退回。'})};
- return {dialog,trigger};
+ return {dialog,trigger,verifyButton,setVerification};
 }

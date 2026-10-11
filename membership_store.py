@@ -18,6 +18,8 @@ import re
 import secrets
 import sqlite3
 import time
+import unicodedata
+import urllib.parse
 import uuid
 
 
@@ -30,6 +32,39 @@ class MembershipError(ValueError):
 
 def _hash(value):
     return hashlib.sha256(str(value).encode("utf-8")).hexdigest()
+
+
+def _login_return_to(value):
+    """Only application pages may be a login destination, never arbitrary URLs.
+
+    Validate before URL parsing (which strips some controls), including encoded
+    controls from nested query encodings. Keep valid query/fragment bytes intact.
+    """
+    def unsafe(text):
+        return "\\" in text or any(unicodedata.category(ch).startswith("C") for ch in text)
+
+    if (not isinstance(value, str) or not 1 <= len(value) <= 500 or not value.startswith("/") or unsafe(value)
+            or re.search(r"%(?![0-9A-Fa-f]{2})", value)):
+        raise MembershipError("invalid_return_to", "登录返回地址不正确")
+    try:
+        parts = urllib.parse.urlsplit(value)
+        if parts.scheme or parts.netloc or parts.path not in ("/", "/promptgen", "/realism", "/video"):
+            raise ValueError("Unknown application page")
+        decoded = value
+        # Each changing iteration consumes at least one percent-escape. This
+        # catches double/nested encoded TAB/CR/LF/backslashes without truncation.
+        for _ in range(len(value)):
+            if unsafe(decoded):
+                raise ValueError("Control character in return URL")
+            after = urllib.parse.unquote(decoded, errors="strict")
+            if after == decoded:
+                break
+            decoded = after
+        # HTTP Location is ASCII; preserve already encoded query data and URL
+        # delimiters while safely serializing a valid Unicode query/fragment.
+        return urllib.parse.quote(value, safe="/?#%&=:+,;@!$'()*-._~")
+    except (ValueError, UnicodeError):
+        raise MembershipError("invalid_return_to", "登录返回地址不正确") from None
 
 
 def _text(value, name, maximum=200, required=True):
@@ -115,6 +150,10 @@ class MembershipStore:
                     csrf TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL
                 );
                 CREATE INDEX IF NOT EXISTS session_user ON auth_sessions(user_id);
+                CREATE TABLE IF NOT EXISTS admin_session_verifications (
+                    token_hash TEXT PRIMARY KEY REFERENCES auth_sessions(token_hash) ON DELETE CASCADE,
+                    verified_at INTEGER NOT NULL, expires_at INTEGER NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS login_states (
                     state_hash TEXT PRIMARY KEY, nonce TEXT NOT NULL, verifier TEXT NOT NULL,
                     return_to TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL
@@ -670,7 +709,7 @@ class MembershipStore:
                 "SELECT * FROM reservations WHERE state IN('reserved','running') AND job_id>? ORDER BY job_id LIMIT ?",
                 (after_job_id, limit))]
 
-    def create_session(self, user_id, ttl=43200, access_credential_id=None):
+    def create_session(self, user_id, ttl=43200, access_credential_id=None, *, oidc_verified=False):
         ttl = _integer(ttl, "登录期限", 60, 604800)
         token, csrf, now = secrets.token_urlsafe(48), secrets.token_urlsafe(32), self._now()
         with self._connection(True) as db:
@@ -683,6 +722,11 @@ class MembershipStore:
             db.execute("DELETE FROM auth_sessions WHERE expires_at<=?", (now,))
             db.execute("INSERT INTO auth_sessions(token_hash,user_id,csrf,created_at,expires_at) VALUES(?,?,?,?,?)",
                        (_hash(token), user_id, csrf, now, now + ttl))
+            # This trusted flag is set only by a verified OIDC callback. A login
+            # code grants normal account access, never management assurance.
+            if oidc_verified and user["is_admin"] and access_credential_id is None:
+                db.execute("INSERT INTO admin_session_verifications(token_hash,verified_at,expires_at) VALUES(?,?,?)",
+                           (_hash(token), now, min(now + ttl, now + 900)))
             db.execute("""DELETE FROM auth_sessions WHERE user_id=? AND token_hash NOT IN
                 (SELECT token_hash FROM auth_sessions WHERE user_id=? ORDER BY created_at DESC,rowid DESC LIMIT 10)""", (user_id, user_id))
             self._audit(db, user_id, "session_create", user_id)
@@ -698,7 +742,10 @@ class MembershipStore:
             user = _public_user(self._user(db, row["user_id"], False))
             if user["disabled"]:
                 return None
-            return {"csrf": row["csrf"], "created_at": row["created_at"], "expires_at": row["expires_at"], "user": user}
+            assurance = db.execute("SELECT expires_at FROM admin_session_verifications WHERE token_hash=? AND expires_at>?",
+                                   (_hash(token), self._now())).fetchone()
+            return {"csrf": row["csrf"], "created_at": row["created_at"], "expires_at": row["expires_at"], "user": user,
+                    "admin_verified_until": assurance["expires_at"] if assurance and user["is_admin"] else 0}
 
     def verify_csrf(self, token, csrf):
         session = self.get_session(token)
@@ -715,9 +762,7 @@ class MembershipStore:
 
     def create_login_state(self, return_to="/", ttl=300):
         ttl = _integer(ttl, "登录请求期限", 30, 600)
-        if (not isinstance(return_to, str) or len(return_to) > 500 or not return_to.startswith("/")
-                or return_to.startswith("//") or any(ch in return_to for ch in ("\\", "\r", "\n", "\x00"))):
-            raise MembershipError("invalid_return_to", "登录返回地址不正确")
+        return_to = _login_return_to(return_to)
         state, nonce, verifier = secrets.token_urlsafe(32), secrets.token_urlsafe(32), secrets.token_urlsafe(48)
         now = self._now()
         with self._connection(True) as db:
@@ -734,7 +779,10 @@ class MembershipStore:
             if row is None or row["expires_at"] <= self._now():
                 raise MembershipError("invalid_login_state", "登录请求已过期，请重新登录", 400)
             db.execute("DELETE FROM login_states WHERE state_hash=?", (_hash(state),))
-            return {key: row[key] for key in ("nonce", "verifier", "return_to", "expires_at")}
+            result = {key: row[key] for key in ("nonce", "verifier", "return_to", "expires_at")}
+            # Also reject unsafe states created before this validation shipped.
+            result["return_to"] = _login_return_to(result["return_to"])
+            return result
 
     def take_rate_limit(self, subject, action, limit, window_seconds):
         """Persistent fixed window counter; opaque hashes avoid storing raw IPs."""

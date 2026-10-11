@@ -147,8 +147,6 @@
   .topbar,.creation-pane,.preview-stage,.library-panel,.api-popover,.api-settings-popover,.api-drawer {background:var(--surface);-webkit-backdrop-filter:none;backdrop-filter:none}
 }
 
-.personal-upload{border:1px solid #aa855344;border-radius:10px;padding:10px 12px;margin:0 0 12px;background:#ba955b08;font-size:12px;color:#d6c2a5}.personal-upload summary{cursor:pointer;display:list-item}.personal-upload summary span{float:right;color:#a59b8e;font-size:11px}.personal-upload p{color:#aaa;font-size:11px;line-height:1.6}.personal-upload input[type=password]{width:100%;border:1px solid #66543e;border-radius:7px;background:#101114;color:#eee;padding:9px}.personal-upload label{display:flex;gap:6px;align-items:center;font-size:11px;margin:10px 0}.personal-upload button{border:1px solid #aa855355;border-radius:7px;background:#ba955b12;color:#dfc59f;padding:6px 14px;margin-right:8px;cursor:pointer}.personal-upload input:focus-visible,.personal-upload button:focus-visible{outline:2px solid #c6a16a;outline-offset:2px}.personal-upload .personal-upload-note{color:#dfc59f}
-
 .lora-settings{margin-top:18px;border:1px solid #b18a524d;border-radius:12px;background:rgba(177,138,82,.045);overflow:hidden}
 .lora-settings summary{padding:13px 12px;cursor:pointer;color:#dfc296;font-size:13px;font-weight:600;list-style:none;display:flex;justify-content:space-between;align-items:center;gap:10px}
 .lora-settings summary::after{content:'＋';font-size:17px;font-weight:400;color:#bfa37a}

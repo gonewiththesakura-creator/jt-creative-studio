@@ -28,7 +28,16 @@ def external_images(text):
         mime, data = match.groups()
         suffix = {'jpeg': 'jpg', 'svg+xml': 'svg'}.get(mime, mime)
         return asset('preview', base64.b64decode(data), suffix)
-    return re.sub(r'data:image/(png|jpeg|webp|gif|svg\+xml);base64,([A-Za-z0-9+/=]+)', replace, text)
+    text = re.sub(r'data:image/(png|jpeg|webp|gif|svg\+xml);base64,([A-Za-z0-9+/=]+)', replace, text)
+    def local_preview(match):
+        relative = match.group(1)
+        path = ROOT / 'static' / 'previews' / relative
+        if not path.is_file():
+            raise RuntimeError('Missing packaged preview: ' + relative)
+        return asset('preview', path.read_bytes(), path.suffix.lstrip('.'))
+    # The public allowlist contains only this manifest; package ordinary image
+    # URLs as well as former inline images so it need not expose a whole folder.
+    return re.sub(r'/static/previews/([A-Za-z0-9_-]+\.(?:webp|png|jpg))(?:\?v=[0-9a-f]+)?', local_preview, text)
 
 
 def scoped_css(css):
@@ -94,6 +103,14 @@ def build():
         }
     shell = (FRONT / 'index.html').read_text(encoding='utf8').replace('__APP_CSS__', styles).replace('__APP_MAIN__', manifest['main']).replace('__APP_MANIFEST__', json.dumps(manifest,ensure_ascii=False).replace('<','\\u003c'))
     shell = shell.replace('</head>', '<link rel="icon" type="image/png" sizes="64x64" href="/static/favicon.png?v=jt1"></head>', 1)
+    # Personal credentials and upstream connection details must never return in
+    # a future public bundle after an unrelated UI rebuild.
+    for name in USED:
+        if not name.endswith(('.js', '.html', '.json')):
+            continue
+        content = (OUT / name).read_text(encoding='utf8')
+        if re.search(r'runninghub|openapi/v2/media/upload|personalRhKey|sha256\.hmac', content, re.I):
+            raise RuntimeError('Private upload implementation in public asset: ' + name)
     (ROOT/'static/app.html').write_text(shell,encoding='utf8')
     manifest['assets'] = ['/static/assets/'+name for name in sorted(USED)]
     (ROOT/'static/app-manifest.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2),encoding='utf8')
