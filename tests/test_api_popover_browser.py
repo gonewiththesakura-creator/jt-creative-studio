@@ -155,6 +155,9 @@ def test_rejected_api_submission_keeps_previous_image_and_other_channels_availab
     submissions = []
     def serve(route):
         path = unquote(urlparse(route.request.url).path)
+        if path == '/static/previous.png':
+            import base64
+            return route.fulfill(content_type='image/png', body=base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='))
         if path == '/api/generate':
             submissions.append(route.request.post_data_json)
             return route.fulfill(status=429, json={'error':'API生成次数已达上限，请稍后重试','code':'billable_quota_exceeded','backend':'api','retry_after':30})
@@ -175,7 +178,9 @@ def test_rejected_api_submission_keeps_previous_image_and_other_channels_availab
         page.locator('#genApiBtn').click()
         expect(page.locator('#apiActionError')).to_have_text('API生成次数已达上限，请稍后重试')
         expect(page.locator('#genApiBtn')).to_contain_text('生成失败')
-        expect(page.locator('#genApiResult .gallery-main img')).to_have_attribute('src','/static/previous.png')
+        expect(page.locator('#genApiResult .gallery-main img')).to_be_visible()
+        expect(page.locator('#genApiResult .gallery-main img')).to_have_attribute('data-media-url','http://fixture.test/static/previous.png')
+        expect(page.locator('#genApiResult .gallery-actions a')).to_have_attribute('href','/static/previous.png')
         expect(page.locator('#genCloudBtn')).to_be_enabled()
         expect(page.locator('#genLocalBtn')).to_be_enabled()
         expect(page.locator('#genApiBtn')).to_be_enabled()

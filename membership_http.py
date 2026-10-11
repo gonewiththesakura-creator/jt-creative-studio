@@ -15,9 +15,11 @@ from membership_store import MembershipError, MembershipStore
 class MembershipGateway:
     COOKIE = "__Host-jt_account"
     STATE_COOKIE = "__Host-jt_login"
-    # Flush private media cached by older releases before changing/using an
-    # account. Do not clear storage or cookies: appearance and sessions survive.
+    # Flush private media from legacy releases once per browser session and
+    # whenever accounts change, not on every account-panel refresh.
     CACHE_BOUNDARY_HEADERS = {"Clear-Site-Data": '"cache"'}
+    CACHE_MIGRATION_COOKIE = "__Host-jt_cache_epoch"
+    CACHE_MIGRATION_VERSION = "20261012"
 
     def __init__(self, data_dir, store=None, oidc=None):
         self.enabled = os.environ.get("JT_MEMBERSHIP_ENABLED", "0") == "1"
@@ -41,6 +43,17 @@ class MembershipGateway:
             return jar[name].value if name in jar else ""
         except http.cookies.CookieError:
             return ""
+
+    def cache_migration_headers(self, handler):
+        # This marker grants no authorization. Binding it to the session token
+        # ensures an old browser or another account still clears legacy cache.
+        token = self.cookie(handler, self.COOKIE) or "anonymous"
+        marker = self.CACHE_MIGRATION_VERSION + "." + hashlib.sha256(token.encode()).hexdigest()[:24]
+        candidate = self.cookie(handler, self.CACHE_MIGRATION_COOKIE)
+        if len(candidate) == len(marker) and candidate.isascii() and hmac.compare_digest(candidate, marker):
+            return {}
+        return {**self.CACHE_BOUNDARY_HEADERS,
+                "Set-Cookie": self.cookie_header(self.CACHE_MIGRATION_COOKIE, marker, 43200)}
 
     def session(self, handler):
         if not self.enabled:
@@ -223,7 +236,7 @@ class MembershipGateway:
                     payload.update(admin_verification_required=not bool(expires),
                                    admin_verification_expires_at=expires,
                                    admin_verify_url="/api/auth/login?return_to=%2F")
-            self.reply(handler, 200, payload, self.CACHE_BOUNDARY_HEADERS)
+            self.reply(handler, 200, payload, self.cache_migration_headers(handler))
             return True
         self.rate(self.peer(handler), "login", 20, 600)
         query = urllib.parse.parse_qs(urllib.parse.urlsplit(handler.path).query)

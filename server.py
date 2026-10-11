@@ -19,6 +19,7 @@ import direct_uploads
 from membership_http import MembershipGateway
 from membership_store import MembershipError
 from membership_media import stream_media, download_media, MediaOwnerSlots, acquire_media_slot, release_media_slot
+from result_image_cache import ResultImageCache, PreviewError
 _video_upload_staging = UploadStaging()
 
 BASE = pathlib.Path(__file__).resolve().parent
@@ -34,6 +35,7 @@ DATA_DIR = pathlib.Path(os.environ.get("PANEL_DIR", str(BASE / "panel_data")))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 _membership = MembershipGateway(DATA_DIR)
 _media_library = MediaLibrary(DATA_DIR / 'media_library')
+_result_image_cache = ResultImageCache(DATA_DIR / 'result_image_cache')
 JOBS_DIR = DATA_DIR / "jobs"; JOBS_DIR.mkdir(exist_ok=True)
 JOBS_FILE = DATA_DIR / "jobs.json"
 FAVORITES_DIR = DATA_DIR / "favorites"; FAVORITES_DIR.mkdir(exist_ok=True)
@@ -1348,6 +1350,17 @@ def public_job_media(media):
     return result
 
 
+def remote_output_is_image(item):
+    raw_type = str(item.get('file_type') or '').lower()
+    if raw_type.startswith('video/') or raw_type in {'mp4', 'mov', 'webm', 'avi', 'mkv'}:
+        return False
+    extensions = {'png', 'jpg', 'jpeg', 'webp', 'gif', 'avif'}
+    filename = str(item.get('file') or '')
+    url_path = urllib.parse.urlsplit(str(item.get('url') or '')).path
+    return (raw_type.startswith('image/') or raw_type in extensions
+            or pathlib.PurePosixPath(filename or url_path).suffix.lower().lstrip('.') in extensions)
+
+
 def public_job_images(job):
     images = job.get('images') or []
     if not _membership.enabled:
@@ -1358,7 +1371,14 @@ def public_job_images(job):
                 if key in ('url', 'preview_url', 'file', 'file_type', 'remote', 'size', 'stage_id', 'stage_label', 'archive_status')}
         if source.get('remote'):
             item['url'] = f"/api/result-media/{job['id']}/{index}"
-            item['preview_url'] = item['url']
+            # Remote images use small authenticated derivatives for gallery
+            # loading. The original remains available only through the result
+            # proxy and is never downloaded by the thumbnail request.
+            if remote_output_is_image(source):
+                item['thumb_url'] = f"/api/rh-preview/{job['id']}/{index}?size=thumb"
+                item['preview_url'] = f"/api/rh-preview/{job['id']}/{index}?size=view"
+            else:
+                item['preview_url'] = item['url']
         result.append(item)
     return result
 
@@ -3843,7 +3863,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 if acquired_here:
                     self.server._large_response_slots.release()
 
-    def _send(self, code, body=b"", ctype="application/json; charset=utf-8", headers=None):
+    def _send(self, code, body=b"", ctype="application/json; charset=utf-8", headers=None, *, media_lease=None):
         if _membership.enabled and urllib.parse.urlsplit(self.path).path.startswith('/api/'):
             headers = dict(headers or {})
             headers['Cache-Control'] = 'private, no-store'
@@ -3853,9 +3873,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             headers['Vary'] = ', '.join(vary)
         is_large = len(body) >= LARGE_RESPONSE_THRESHOLD
         large_slot_acquired = False
-        if is_large:
+        if is_large and not media_lease:
             large_slot_acquired = acquire_media_slot(self)
-        if is_large and not large_slot_acquired:
+        if is_large and not (large_slot_acquired or media_lease):
             payload = b'{"error":"large response capacity busy"}'
             self.send_response(503)
             self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -3871,7 +3891,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if headers:
                 for k, v in headers.items(): self.send_header(k, v)
             self.end_headers()
-            self._write_body(body, large_slot_acquired=large_slot_acquired)
+            self._write_body(body, large_slot_acquired=large_slot_acquired or media_lease)
         finally:
             if large_slot_acquired:
                 release_media_slot(large_slot_acquired)
@@ -4365,41 +4385,64 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self._send(500, b'{"error":"preview temporarily unavailable"}')
         elif path.startswith("/api/rh-preview/"):
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
-            # On-demand thumbnail for remote RunningHub result. It is NOT part
-            # of job completion and never holds the generation lock.
+            lease = None
+            sending = False
             try:
-                rest = path.split("/api/rh-preview/", 1)[1]
-                jobid, idx_s = rest.split("/", 1)
-                idx = int(idx_s)
+                match = re.fullmatch(r'/api/rh-preview/([0-9a-f]{12})/(\d{1,4})', path)
+                if not match:
+                    return self._send(404, b'{"error":"remote image not found"}')
+                query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query, keep_blank_values=True)
+                if set(query) - {'size'} or len(query.get('size', ['view'])) != 1:
+                    return self._send(400, b'{"error":"invalid preview size"}')
+                size = query.get('size', ['view'])[0]
+                if size not in {'thumb', 'view'}:
+                    return self._send(400, b'{"error":"invalid preview size"}')
+                jobid, idx = match[1], int(match[2])
                 session_id, _ = self._upload_session(create=False)
                 with _lock_jobs:
                     job = _jobs.get(jobid)
-                    images = list((job or {}).get("images") or [])
-                if (not session_owns_record(session_id, job)
-                        or idx < 0 or idx >= len(images) or not images[idx].get("remote")):
-                    return self._send(404, b'{"error":"remote image not found"}')
-                jobroot = (JOBS_DIR / jobid).resolve(); jobroot.mkdir(parents=True, exist_ok=True)
-                preview = jobroot / f"remote_preview_{idx}.jpg"
-                if not preview.exists():
-                    src = jobroot / f"remote_source_{idx}.png"
-                    # Thumbnail generation is opportunistic and must never tie
-                    # up the panel for minutes. Give the CDN 12s; if it is slow,
-                    # the endpoint fails quickly and the UI still offers the
-                    # direct original download URL.
-                    download_file_resilient(images[idx]["url"], src, timeout=12)
-                    from PIL import Image
-                    tmp = preview.with_suffix(".tmp.jpg")
-                    with Image.open(src) as im:
-                        im = im.convert("RGB"); im.thumbnail((640, 640))
-                        im.save(tmp, "JPEG", quality=72, optimize=True, progressive=True)
-                    tmp.replace(preview)
-                    src.unlink(missing_ok=True)
-                data = preview.read_bytes()
-                self._send(200, data, "image/jpeg", {"Cache-Control": "private, no-store", "Vary": "Cookie"})
-            except (BrokenPipeError, ConnectionResetError):
+                    images = (job or {}).get("images") or []
+                    if (not job or not session_owns_record(session_id, job) or idx >= len(images)
+                            or not images[idx].get("remote") or not remote_output_is_image(images[idx])):
+                        return self._send(404, b'{"error":"remote image not found"}')
+                    item = dict(images[idx])
+                owner = _session_hash(session_id)
+                data = _result_image_cache.lookup(owner, jobid, idx, item['url'], size)
+                if data is not None:
+                    # Small cached images follow the existing ordinary HTTP
+                    # budget, so slow video/original streams cannot block the
+                    # gallery. _send still leases a media slot for large views.
+                    sending = True
+                    return self._send(200, data, 'image/jpeg', {'Cache-Control': 'private, no-store', 'Vary': 'Cookie'})
+                # Cache misses share the original-media transfer budget. Every
+                # hit and miss is authenticated and owner-checked above.
+                lease = acquire_media_slot(self)
+                if lease is None:
+                    return self._send(503, b'{"error":"media capacity busy"}', headers={'Retry-After': '2'})
+                def fetch_source(max_bytes):
+                    suffix = pathlib.PurePosixPath(str(item.get('file') or urllib.parse.urlsplit(item['url']).path)).suffix.lower()
+                    suffix = suffix if suffix in {'.png', '.jpg', '.jpeg', '.webp', '.gif', '.avif'} else '.png'
+                    descriptor, name = tempfile.mkstemp(prefix='source-', suffix=suffix, dir=_result_image_cache.root)
+                    os.close(descriptor)
+                    source = pathlib.Path(name)
+                    try:
+                        download_media(item['url'], source, timeout=25, max_bytes=max_bytes)
+                        return source.read_bytes()
+                    finally:
+                        source.unlink(missing_ok=True)
+                data = _result_image_cache.get_or_create(owner, jobid, idx, item['url'], fetch_source)[size]
+                sending = True
+                self._send(200, data, 'image/jpeg', {'Cache-Control': 'private, no-store', 'Vary': 'Cookie'}, media_lease=lease)
+            except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
                 return
-            except Exception as e:
-                self._send(500, b'{"error":"preview temporarily unavailable"}')
+            except (PreviewError, ValueError):
+                self._send(415, b'{"error":"image preview unavailable"}')
+            except Exception:
+                if not sending:
+                    self._send(502, b'{"error":"preview temporarily unavailable"}', headers={'Retry-After': '2'})
+            finally:
+                if lease:
+                    release_media_slot(lease)
         elif path.startswith("/api/image/"):
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
             try:

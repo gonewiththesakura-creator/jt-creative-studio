@@ -17,9 +17,10 @@ export async function initializeAccount(){
  const root=document.createElement('div');root.id='accountRoot';root.innerHTML=template;document.body.append(root);
  const el=id=>document.getElementById(id),shell=document.querySelector('body > .app-shell'),dialog=el('accountDialog');
  const accountButton=document.createElement('button');accountButton.id='accountOpen';accountButton.type='button';accountButton.className='topbar-action';accountButton.textContent='我的账号';accountButton.hidden=true;document.querySelector('.topbar-tools').append(accountButton);
- let mountedAccount=null,initialResolve,ready=false,requesting=false,loggingIn=false,loginMethod='oidc',adminAvailable=false,adminUI=null;
+ let mountedAccount=null,initialResolve,ready=false,requesting=false,loggingIn=false,loginMethod='oidc',adminAvailable=false,adminUI=null,mediaIdentityExpired=false;
  const initial=new Promise(resolve=>initialResolve=resolve);
  const gate=(message,{login=false,retry=false}={})=>{
+  if(login){window.dispatchEvent(new CustomEvent('jt:media-clear'));mediaIdentityExpired=mountedAccount!==null}
   showLoginScene();
   shell.hidden=true;shell.inert=true;el('accountGate').hidden=false;el('accountGateStatus').textContent=message;
   const codeLogin=loginMethod==='access_code';
@@ -53,7 +54,7 @@ export async function initializeAccount(){
    root.querySelector('.account-intro').textContent=loginMethod==='access_code'?'一个激活码，就是你的专属创作账号。':'登录你的账号，继续创作与管理专属作品。';
    if(data.authenticated!==true||!data.user?.id){gate(loginMethod==='access_code'?'线下开通后，使用激活码登录即可开始创作。':'登录后可使用你的套餐、任务与收藏。',{login:true});return}
    // A different identity requires a clean document, so old timers and media cannot survive an account switch.
-   if(mountedAccount!==null&&mountedAccount!==String(data.user.id)){location.reload();return}
+   if(mountedAccount!==null&&(mediaIdentityExpired||mountedAccount!==String(data.user.id))){window.dispatchEvent(new CustomEvent('jt:media-clear'));location.reload();return}
    mountedAccount=String(data.user.id);window.jtAccountEnabled=true;setStorageAccount(data.user.id);configureAccountRequests(data.csrf_token||'');render(data);accountButton.hidden=false;
    const wantsEntry=consumeLoginTransition(),entryTransition=!ready&&wantsEntry;
    if(entryTransition){prepareLoginEntry();el('accountGateStatus').textContent='登录成功，正在进入创作空间…';el('accountCodeLoginForm').hidden=true;el('accountAdminLogin').hidden=true;el('accountRetry').hidden=true}
@@ -93,6 +94,7 @@ export async function initializeAccount(){
   try{
    const response=await accountFetch('/api/auth/logout',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}',signal:AbortSignal.timeout(15000)});
    if(!response.ok&&response.status!==401)throw Error('退出未完成，请重试');
+   window.dispatchEvent(new CustomEvent('jt:media-clear'));
    if(response.ok){
     const result=await response.json().catch(()=>({}));
     try{const target=new URL(result.logout_url);if(target.protocol==='https:'&&target.host==='auth.dreamapi.club'&&target.pathname==='/api/logout'&&!target.username&&!target.password){location.assign(target.href);return}}catch{}

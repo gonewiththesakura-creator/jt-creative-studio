@@ -1,6 +1,6 @@
 import "/static/assets/retired-upload-storage.04c0ee0da954.js";
 import {createRouter} from "/static/assets/router.9d20830207ba.js";
-import {initializeAccount} from "/static/assets/account.7691e4876ad2.js";
+import {initializeAccount} from "/static/assets/account.f6b85b9536dd.js";
 import {initializeLoginScene,revealWorkbenchFromLogin} from "/static/assets/login-scene.e6464d51d36a.js";
 const manifest=JSON.parse(document.getElementById('appManifest').textContent);
 window.jtApp={router:null,metrics:{renderers:0,firstFrame:null}};
