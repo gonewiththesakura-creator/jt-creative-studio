@@ -3,7 +3,7 @@
     "/": {
       "module": "/static/assets/index.3e292c5d440a.js",
       "markup": "/static/assets/index.12d80087d3c2.html",
-      "css": "/static/assets/index.11455b21e38b.css",
+      "css": "/static/assets/index.f680b61b2992.css",
       "title": "JT 灵感工作台"
     },
     "/realism": {
@@ -37,9 +37,9 @@
     "/static/assets/api.1e898baa005a.js",
     "/static/assets/app.509733d104e9.css",
     "/static/assets/appearance.6cffb92f339e.js",
-    "/static/assets/index.11455b21e38b.css",
     "/static/assets/index.12d80087d3c2.html",
     "/static/assets/index.3e292c5d440a.js",
+    "/static/assets/index.f680b61b2992.css",
     "/static/assets/login-scene.e6464d51d36a.js",
     "/static/assets/main.de1f20399ab9.js",
     "/static/assets/membership-admin.13190dda8d6c.js",
