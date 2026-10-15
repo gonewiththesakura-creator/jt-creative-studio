@@ -41,7 +41,7 @@ def test_code_login_reveals_same_document_without_persisting_secret(browser, wid
         page.goto('http://fixture.test/video')
         expect(page.locator('#accountLoginCode')).to_be_visible()
         expect(page.locator('#accountLoginCode')).to_have_attribute('type', 'password')
-        expect(page.locator('#accountAdminLogin')).to_have_text('管理员登录')
+        expect(page.locator('#accountAdminLogin')).to_have_text('工作台管理员登录')
         assert page.locator('.page-host').count() == 0
         assert not [r for r in requests if r[1] in ('/api/workflows', '/api/video-queue')]
         page.evaluate('window.sameDocumentMarker = 12345')

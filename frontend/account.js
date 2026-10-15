@@ -5,7 +5,7 @@ import {showLoginScene,markLoginTransition,consumeLoginTransition,prepareLoginEn
 
 const template=`<section class="account-gate" id="accountGate" aria-labelledby="accountGateTitle">
  <div class="account-gate-card"><span class="account-monogram" aria-hidden="true">JT</span><p class="account-eyebrow">YOUR CREATIVE SPACE</p><h1 id="accountGateTitle">欢迎来到 JT 创作台</h1><p class="account-intro">一个激活码，就是你的专属创作账号。</p>
- <p id="accountGateStatus" role="status" aria-live="polite">正在安全连接…</p><form id="accountCodeLoginForm" class="account-login-form" hidden><label for="accountLoginCode">登录激活码</label><input id="accountLoginCode" name="code" type="password" autocomplete="current-password" autocapitalize="none" spellcheck="false" maxlength="160" required placeholder="输入管理员提供的激活码" aria-describedby="accountLoginHelp accountGateStatus"><button type="submit" class="account-primary" id="accountLogin">进入创作台</button><p id="accountLoginHelp" class="account-help">以后继续使用同一个激活码登录，套餐、历史与收藏都会保留。请妥善保管，不要分享。</p></form><button type="button" class="account-secondary" id="accountRetry" hidden>重新连接</button><button type="button" class="account-admin-login" id="accountAdminLogin" hidden>管理员登录</button></div>
+ <p id="accountGateStatus" role="status" aria-live="polite">正在安全连接…</p><form id="accountCodeLoginForm" class="account-login-form" hidden><label for="accountLoginCode">登录激活码</label><input id="accountLoginCode" name="code" type="password" autocomplete="current-password" autocapitalize="none" spellcheck="false" maxlength="160" required placeholder="输入管理员提供的激活码" aria-describedby="accountLoginHelp accountGateStatus"><button type="submit" class="account-primary" id="accountLogin">进入创作台</button><p id="accountLoginHelp" class="account-help">以后继续使用同一个激活码登录，套餐、历史与收藏都会保留。请妥善保管，不要分享。</p></form><button type="button" class="account-secondary" id="accountRetry" hidden>重新连接</button><button type="button" class="account-admin-login" id="accountAdminLogin" hidden>工作台管理员登录</button></div>
 </section>
 <dialog class="account-dialog" id="accountDialog" aria-labelledby="accountTitle"><div class="account-dialog-head"><div><p class="account-eyebrow">JT ACCOUNT</p><h2 id="accountTitle">我的账号</h2></div><button type="button" class="account-close" id="accountClose" aria-label="关闭账号面板">×</button></div>
  <p class="account-identity" id="accountIdentity"></p><section class="account-membership" aria-label="当前套餐"><div class="account-plan-line"><h3 id="accountPlan">暂未开通套餐</h3><span class="account-plan-badge" id="accountPlanStatus"></span></div><p id="accountExpiry"></p><dl class="account-quota" id="accountQuota"></dl></section>
@@ -18,6 +18,7 @@ export async function initializeAccount(){
  const el=id=>document.getElementById(id),shell=document.querySelector('body > .app-shell'),dialog=el('accountDialog');
  const accountButton=document.createElement('button');accountButton.id='accountOpen';accountButton.type='button';accountButton.className='topbar-action';accountButton.textContent='我的账号';accountButton.hidden=true;document.querySelector('.topbar-tools').append(accountButton);
  let mountedAccount=null,initialResolve,ready=false,requesting=false,loggingIn=false,loginMethod='oidc',adminAvailable=false,adminUI=null,mediaIdentityExpired=false;
+ const adminTabs=new Set(['plans','codes','renewals','users','reservations']);
  const initial=new Promise(resolve=>initialResolve=resolve);
  const gate=(message,{login=false,retry=false}={})=>{
   if(login){window.dispatchEvent(new CustomEvent('jt:media-clear'));mediaIdentityExpired=mountedAccount!==null}
@@ -26,14 +27,15 @@ export async function initializeAccount(){
   const codeLogin=loginMethod==='access_code';
   el('accountCodeLoginForm').hidden=!login;el('accountLoginCode').hidden=!codeLogin;el('accountLoginCode').required=codeLogin;root.querySelector('label[for=accountLoginCode]').hidden=!codeLogin;el('accountLoginHelp').hidden=!codeLogin;el('accountLogin').textContent=codeLogin?'进入创作台':'登录创作台';el('accountAdminLogin').hidden=!login||!adminAvailable||!codeLogin;el('accountRetry').hidden=!retry;accountButton.hidden=true;if(dialog.open)dialog.close();if(adminUI?.dialog.open)adminUI.dialog.close();
  };
- function login(){
+ function login(adminTab){
   markLoginTransition();
-  const destination=new URL('/api/auth/login',location.origin);destination.searchParams.set('return_to',location.pathname+location.search);location.assign(destination.href);
+  const returnTo=new URL(location.href);returnTo.searchParams.delete('admin');if(adminTabs.has(adminTab))returnTo.searchParams.set('admin',adminTab);
+  const destination=new URL('/api/auth/login',location.origin);destination.searchParams.set('return_to',returnTo.pathname+returnTo.search);location.assign(destination.href);
  }
  const finiteText=value=>Number.isFinite(Number(value))&&value!==null?String(value):'—';
  function render(data){
   const user=data.user||{},membership=data.membership||{},plan=membership.plan||{},name=user.display_name||user.name||user.username||user.email||'我的账号';
-  accountButton.textContent=name.length>14?name.slice(0,14)+'…':name;accountButton.title='管理账号与套餐';
+  accountButton.textContent=user.is_admin?'我的账号':name.length>14?name.slice(0,14)+'…':name;accountButton.title='查看我的账号与套餐';
   el('accountIdentity').textContent=name+(user.email&&user.email!==name?' · '+user.email:'');
   el('accountPlan').textContent=membership.plan_name||plan.name||membership.name||'暂未开通套餐';
   el('accountPlanStatus').textContent=membership.active?'使用中':membership.plan_name||plan.name?'已到期':'未开通';
@@ -61,12 +63,14 @@ export async function initializeAccount(){
    else{revealWorkbenchImmediately();el('accountGate').hidden=true;shell.hidden=false;shell.inert=false}
    if(data.user.is_admin&&!adminUI)adminUI=initializeMembershipAdmin({verify:login});
    if(adminUI)adminUI.setVerification(data.admin_verification_required===true,data.admin_verification_expires_at,!!data.user.is_admin);
+   const returnTo=new URL(location.href),adminTab=returnTo.searchParams.get('admin');
+   if(returnTo.searchParams.has('admin')){returnTo.searchParams.delete('admin');history.replaceState(history.state,'',returnTo.pathname+returnTo.search+returnTo.hash);if(data.user.is_admin&&adminTabs.has(adminTab))adminUI.open(adminTab)}
    if(!ready){ready=true;initialResolve({...data,entryTransition})}
   }catch(error){
    if(gateOnError)gate('暂时无法验证登录状态，请检查网络后重试。',{retry:true});else el('accountRedeemStatus').textContent='套餐信息暂时无法刷新，请稍后重试。';
   }finally{requesting=false;el('accountRetry').disabled=false;el('accountRefresh').disabled=false}
  }
- el('accountAdminLogin').onclick=login;el('accountRetry').onclick=()=>refresh();
+ el('accountAdminLogin').onclick=()=>login('plans');el('accountRetry').onclick=()=>refresh();
  el('accountCodeLoginForm').onsubmit=async event=>{
   event.preventDefault();if(loginMethod!=='access_code'){login();return}const input=el('accountLoginCode'),button=el('accountLogin'),code=input.value.trim();if(loggingIn||requesting||!code)return;
   loggingIn=true;button.disabled=true;input.disabled=true;el('accountAdminLogin').disabled=true;el('accountGateStatus').textContent='正在核验激活码…';
