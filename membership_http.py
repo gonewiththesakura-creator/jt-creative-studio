@@ -276,7 +276,7 @@ class MembershipGateway:
         action = path.removeprefix("/api/admin/membership/")
         body = self.body(handler) if write else {}
         schemas = {
-            'plans': {'plan_id', 'name', 'duration_days', 'image_units', 'video_units', 'max_concurrent', 'features', 'backends', 'active', 'price_display'},
+            'plans': {'plan_id', 'name', 'duration_days', 'image_units', 'video_units', 'max_concurrent', 'max_video_queued', 'features', 'backends', 'active', 'price_display'},
             'codes': {'plan_id', 'count', 'note'}, 'codes/revoke': {'code_id'},
             'access-codes': {'plan_id', 'count', 'note'}, 'access-codes/revoke': {'code_id'},
             'users/rotate-code': {'user_id', 'note'},

@@ -92,7 +92,15 @@ def _public_plan(row):
     if row is None:
         return None
     return {**dict(row), "features": json.loads(row["features"]),
-            "backends": json.loads(row["backends"]), "active": bool(row["active"])}
+            "backends": json.loads(row["backends"]), "active": bool(row["active"]),
+            "max_video_queued": _integer(row["max_video_queued"], "视频排队数", 1, 100)}
+
+
+def _plan_snapshot(snapshot):
+    """Normalize legacy purchased terms for reading without rewriting them."""
+    plan = json.loads(snapshot)
+    plan["max_video_queued"] = _integer(plan.get("max_video_queued", 100), "视频排队数", 1, 100)
+    return plan
 
 
 class MembershipStore:
@@ -123,6 +131,7 @@ class MembershipStore:
                     id TEXT PRIMARY KEY, name TEXT NOT NULL, duration_days INTEGER NOT NULL,
                     image_units INTEGER NOT NULL, video_units INTEGER NOT NULL,
                     max_concurrent INTEGER NOT NULL, features TEXT NOT NULL, backends TEXT NOT NULL,
+                    max_video_queued INTEGER NOT NULL DEFAULT 100,
                     active INTEGER NOT NULL CHECK(active IN(0,1)), price_display TEXT NOT NULL,
                     created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
                 );
@@ -185,9 +194,13 @@ class MembershipStore:
                 );
                 CREATE UNIQUE INDEX IF NOT EXISTS login_credential_active_user ON login_credentials(user_id)
                     WHERE user_id IS NOT NULL AND revoked_at IS NULL;
-                PRAGMA user_version=2;
-                COMMIT;
             """)
+            # Additive, backward-compatible migration: keep v2 readable by the
+            # previous server for rollback; purchased snapshots stay untouched.
+            if "max_video_queued" not in {row["name"] for row in db.execute("PRAGMA table_info(plans)")}:
+                db.execute("ALTER TABLE plans ADD COLUMN max_video_queued INTEGER NOT NULL DEFAULT 100")
+            db.execute(f"PRAGMA user_version={self.SCHEMA_VERSION}")
+            db.commit()
         self._restrict_files()
 
     def _now(self):
@@ -315,7 +328,7 @@ class MembershipStore:
             return _public_user(self._user(db, user_id, False))
 
     def _plan_values(self, values):
-        allowed = {"name", "duration_days", "image_units", "video_units", "max_concurrent", "features", "backends", "active", "price_display"}
+        allowed = {"name", "duration_days", "image_units", "video_units", "max_concurrent", "max_video_queued", "features", "backends", "active", "price_display"}
         if not isinstance(values, dict) or set(values) - allowed:
             raise MembershipError("invalid_plan", "套餐字段不正确")
         result = {"name": _text(values.get("name"), "套餐名称", 100),
@@ -323,6 +336,7 @@ class MembershipStore:
                   "image_units": _integer(values.get("image_units", 0), "图片额度", 0, 1000000),
                   "video_units": _integer(values.get("video_units", 0), "视频额度", 0, 1000000),
                   "max_concurrent": _integer(values.get("max_concurrent", 1), "并发数", 1, 20),
+                  "max_video_queued": _integer(values.get("max_video_queued", 100), "视频排队数", 1, 100),
                   "price_display": _text(values.get("price_display", ""), "价格说明", 100, False)}
         for field, choices, default in (("features", self.FEATURES, ["image", "video", "upload", "history", "favorites"]),
                                         ("backends", self.BACKENDS, ["cloud"])):
@@ -337,19 +351,25 @@ class MembershipStore:
         return result
 
     def save_plan(self, actor_id, values, plan_id=None):
+        queue_limit_supplied = isinstance(values, dict) and "max_video_queued" in values
         values = self._plan_values(values)
         now = self._now()
         with self._connection(True) as db:
             self._admin(db, actor_id)
-            if plan_id is not None and not db.execute("SELECT 1 FROM plans WHERE id=?", (plan_id,)).fetchone():
-                raise MembershipError("plan_not_found", "套餐不存在", 404)
+            if plan_id is not None:
+                existing = db.execute("SELECT max_video_queued FROM plans WHERE id=?", (plan_id,)).fetchone()
+                if existing is None:
+                    raise MembershipError("plan_not_found", "套餐不存在", 404)
+                if not queue_limit_supplied:
+                    # Older admin clients must not reset a configured limit.
+                    values["max_video_queued"] = existing["max_video_queued"]
             plan_id = plan_id or uuid.uuid4().hex
-            db.execute("""INSERT INTO plans(id,name,duration_days,image_units,video_units,max_concurrent,features,backends,active,price_display,created_at,updated_at)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,duration_days=excluded.duration_days,
-                image_units=excluded.image_units,video_units=excluded.video_units,max_concurrent=excluded.max_concurrent,
+            db.execute("""INSERT INTO plans(id,name,duration_days,image_units,video_units,max_concurrent,max_video_queued,features,backends,active,price_display,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,duration_days=excluded.duration_days,
+                image_units=excluded.image_units,video_units=excluded.video_units,max_concurrent=excluded.max_concurrent,max_video_queued=excluded.max_video_queued,
                 features=excluded.features,backends=excluded.backends,active=excluded.active,price_display=excluded.price_display,updated_at=excluded.updated_at""",
                        (plan_id, values["name"], values["duration_days"], values["image_units"], values["video_units"],
-                        values["max_concurrent"], json.dumps(values["features"]), json.dumps(values["backends"]),
+                        values["max_concurrent"], values["max_video_queued"], json.dumps(values["features"]), json.dumps(values["backends"]),
                         int(values["active"]), values["price_display"], now, now))
             self._audit(db, actor_id, "plan_save", plan_id, values)
             return _public_plan(db.execute("SELECT * FROM plans WHERE id=?", (plan_id,)).fetchone())
@@ -525,24 +545,26 @@ class MembershipStore:
         if row is None:
             return None
         result = dict(row)
-        result["plan"] = json.loads(result.pop("plan_snapshot"))
+        result["plan"] = _plan_snapshot(result.pop("plan_snapshot"))
         user = self._user(db, user_id, False)
         result["active"] = not user["disabled"] and row["expires_at"] > self._now()
         counts = {item["state"]: item["n"] for item in db.execute(
             "SELECT state,COUNT(*) AS n FROM reservations WHERE user_id=? AND state IN('reserved','running') GROUP BY state", (user_id,))}
         result["reserved_jobs"] = counts.get("reserved", 0)
         result["running_jobs"] = counts.get("running", 0)
+        result["video_queued_jobs"] = db.execute(
+            "SELECT COUNT(*) FROM reservations WHERE user_id=? AND kind='video' AND state='reserved'", (user_id,)).fetchone()[0]
         return result
 
     def _grant_entitlement(self, db, user_id, plan_id, snapshot, now):
         """Apply frozen purchased terms in the caller's immediate transaction."""
-        plan = json.loads(snapshot)
+        plan = _plan_snapshot(snapshot)
         current = self._entitlement(db, user_id)
         if current is not None and current["expires_at"] > now:
             if current["plan_id"] != plan_id:
                 raise MembershipError("active_plan_conflict", "当前套餐尚未到期，请到期后兑换其他套餐", 409)
-            old_plan = json.loads(current["plan_snapshot"])
-            if any(old_plan[key] != plan[key] for key in ("max_concurrent", "features", "backends")):
+            old_plan = _plan_snapshot(current["plan_snapshot"])
+            if any(old_plan[key] != plan[key] for key in ("max_concurrent", "max_video_queued", "features", "backends")):
                 raise MembershipError("active_plan_conflict", "此激活码的套餐功能已调整，请当前套餐到期后兑换", 409)
             entitlement_id = current["id"]
             if (current["image_granted"] + plan["image_units"] > 100000000 or
@@ -586,7 +608,7 @@ class MembershipStore:
         row = self._entitlement(db, user_id)
         if row is None or row["expires_at"] <= self._now():
             raise MembershipError("plan_required", "套餐未开通或已到期，请兑换激活码", 403)
-        plan = json.loads(row["plan_snapshot"])
+        plan = _plan_snapshot(row["plan_snapshot"])
         if feature not in plan["features"] or (backend is not None and backend not in plan["backends"]):
             raise MembershipError("feature_forbidden", "当前套餐未开通此功能", 403)
         return row, plan
@@ -615,7 +637,12 @@ class MembershipStore:
                 if any(existing[key] != value for key, value in (("user_id", user_id), ("kind", kind), ("units", units), ("backend", backend))):
                     raise MembershipError("reservation_conflict", "任务额度记录冲突", 409)
                 return dict(existing)
-            row, _ = self._access(db, user_id, kind, backend)
+            row, plan = self._access(db, user_id, kind, backend)
+            if kind == "video":
+                queued = db.execute("SELECT COUNT(*) FROM reservations WHERE user_id=? AND kind='video' AND state='reserved'",
+                                    (user_id,)).fetchone()[0]
+                if queued >= plan["max_video_queued"]:
+                    raise MembershipError("video_queue_limit", f"当前套餐最多允许 {plan['max_video_queued']} 个视频等待，排队已满，请等待任务开始或取消排队任务后重试", 409)
             column = kind + "_available"
             if row[column] < units:
                 raise MembershipError("quota_exhausted", "当前套餐剩余额度不足", 403)

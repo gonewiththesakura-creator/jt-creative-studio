@@ -8,7 +8,7 @@ const template=`<section class="account-gate" id="accountGate" aria-labelledby="
  <p id="accountGateStatus" role="status" aria-live="polite">正在安全连接…</p><form id="accountCodeLoginForm" class="account-login-form" hidden><label for="accountLoginCode">登录激活码</label><input id="accountLoginCode" name="code" type="password" autocomplete="current-password" autocapitalize="none" spellcheck="false" maxlength="160" required placeholder="输入管理员提供的激活码" aria-describedby="accountLoginHelp accountGateStatus"><button type="submit" class="account-primary" id="accountLogin">进入创作台</button><p id="accountLoginHelp" class="account-help">以后继续使用同一个激活码登录，套餐、历史与收藏都会保留。请妥善保管，不要分享。</p></form><button type="button" class="account-secondary" id="accountRetry" hidden>重新连接</button><button type="button" class="account-admin-login" id="accountAdminLogin" hidden>工作台管理员登录</button></div>
 </section>
 <dialog class="account-dialog" id="accountDialog" aria-labelledby="accountTitle"><div class="account-dialog-head"><div><p class="account-eyebrow">JT ACCOUNT</p><h2 id="accountTitle">我的账号</h2></div><button type="button" class="account-close" id="accountClose" aria-label="关闭账号面板">×</button></div>
- <p class="account-identity" id="accountIdentity"></p><section class="account-membership" aria-label="当前套餐"><div class="account-plan-line"><h3 id="accountPlan">暂未开通套餐</h3><span class="account-plan-badge" id="accountPlanStatus"></span></div><p id="accountExpiry"></p><dl class="account-quota" id="accountQuota"></dl></section>
+ <p class="account-identity" id="accountIdentity"></p><section class="account-membership" aria-label="当前套餐"><div class="account-plan-line"><h3 id="accountPlan">暂未开通套餐</h3><span class="account-plan-badge" id="accountPlanStatus"></span></div><p id="accountExpiry"></p><dl class="account-quota" id="accountQuota"></dl><p id="accountVideoQueueHelp" class="account-help" hidden>视频排队只计算等待中的视频，不含生成中任务；每个账号单独计算。</p></section>
  <form id="accountRedeemForm"><label for="accountCode">兑换套餐续费码</label><p class="account-help">续费时填写管理员提供的一次性续费码。原来的登录激活码继续使用，历史与收藏保留。</p><div class="account-redeem-row"><input id="accountCode" name="code" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="160" required placeholder="输入一次性续费码"><button type="submit" class="account-primary" id="accountRedeem">兑换套餐</button></div><p id="accountRedeemStatus" role="status" aria-live="polite"></p></form>
  <div class="account-dialog-footer"><button type="button" class="account-secondary" id="accountRefresh">刷新套餐</button><button type="button" class="account-secondary" id="accountLogout">退出登录</button></div>
 </dialog>`;
@@ -42,8 +42,9 @@ export async function initializeAccount(){
   const expires=membership.expires_at;
   const date=expires?new Date(typeof expires==='number'?expires*1000:expires):null;
   el('accountExpiry').textContent=date&&!Number.isNaN(date.valueOf())?'有效期至 '+date.toLocaleString('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}):'兑换续费码后即可使用套餐权益';
-  const quotas=[['图片剩余额度',membership.image_remaining??membership.image_available],['视频剩余额度',membership.video_remaining??membership.video_available],['同时运行任务',membership.max_concurrency??plan.max_concurrent]];
+  const quotas=[['图片剩余额度',membership.image_remaining??membership.image_available],['视频剩余额度',membership.video_remaining??membership.video_available],['同时运行任务',membership.max_concurrency??plan.max_concurrent],['视频排队上限',plan.max_video_queued??(membership.plan?100:null)]];
   el('accountQuota').replaceChildren(...quotas.map(([label,value])=>{const item=document.createElement('div'),dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=label;dd.textContent=finiteText(value);item.append(dt,dd);return item}));
+  el('accountVideoQueueHelp').hidden=!membership.plan;
  }
  async function refresh({gateOnError=true}={}){
   if(requesting)return;requesting=true;el('accountRetry').disabled=true;el('accountRefresh').disabled=true;

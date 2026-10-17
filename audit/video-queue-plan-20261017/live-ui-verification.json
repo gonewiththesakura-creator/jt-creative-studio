@@ -1,0 +1,30 @@
+{
+  "owner_oidc_verified": true,
+  "existing_plan_count": 4,
+  "api_queue_limits": [
+    100,
+    100,
+    100,
+    100
+  ],
+  "unverified_admin_api_denied": true,
+  "login_post_paths": [
+    "/api/login",
+    "/api/auth/code-login"
+  ],
+  "success": true,
+  "ui_queue_limits": [
+    100,
+    100,
+    100,
+    100
+  ],
+  "mobile_no_horizontal_overflow": true,
+  "unverified_admin_ui_guard": true,
+  "business_post_count": 0,
+  "browser_post_count": 0,
+  "only_own_sessions_logged_out": {
+    "owner": true,
+    "guard": true
+  }
+}
