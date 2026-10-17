@@ -1327,16 +1327,25 @@
      "required": true
     },
     "reference_image_2": {
-     "node": "294", "field": "image", "type": "image",
-     "label": "参考图2", "required": false
+     "node": "294",
+     "field": "image",
+     "type": "image",
+     "label": "参考图2",
+     "required": false
     },
     "reference_image_3": {
-     "node": "295", "field": "image", "type": "image",
-     "label": "参考图3", "required": false
+     "node": "295",
+     "field": "image",
+     "type": "image",
+     "label": "参考图3",
+     "required": false
     },
     "reference_image_4": {
-     "node": "296", "field": "image", "type": "image",
-     "label": "参考图4", "required": false
+     "node": "296",
+     "field": "image",
+     "type": "image",
+     "label": "参考图4",
+     "required": false
     },
     "source_video": {
      "node": "275",
@@ -1392,31 +1401,145 @@
      "group": "advanced"
     },
     "lora_1_model": {
-     "type": "select", "label": "LoRA 1", "group": "lora",
-     "default": "minimax-n6", "required": true,
-     "options": [{"value":"none","label":"不加载"},{"value":"minimax-n1","label":"dog"},{"value":"minimax-n2","label":"un"},{"value":"minimax-n3","label":"fig"},{"value":"minimax-n4","label":"v4"},{"value":"minimax-n5","label":"aio"},{"value":"minimax-n6","label":"hp"}]
+     "type": "select",
+     "label": "LoRA 1",
+     "group": "lora",
+     "default": "minimax-n6",
+     "required": true,
+     "options": [
+      {
+       "value": "none",
+       "label": "不加载"
+      },
+      {
+       "value": "minimax-n1",
+       "label": "dog"
+      },
+      {
+       "value": "minimax-n2",
+       "label": "un"
+      },
+      {
+       "value": "minimax-n3",
+       "label": "fig"
+      },
+      {
+       "value": "minimax-n4",
+       "label": "v4"
+      },
+      {
+       "value": "minimax-n5",
+       "label": "aio"
+      },
+      {
+       "value": "minimax-n6",
+       "label": "hp"
+      }
+     ]
     },
     "lora_1_strength": {
-     "type": "float", "label": "LoRA 1 强度", "group": "lora",
-     "default": 0.6, "required": true, "min": 0, "max": 2, "step": 0.01
+     "type": "float",
+     "label": "LoRA 1 强度",
+     "group": "lora",
+     "default": 0.6,
+     "required": true,
+     "min": 0,
+     "max": 2,
+     "step": 0.01
     },
     "lora_2_model": {
-     "type": "select", "label": "LoRA 2", "group": "lora",
-     "default": "minimax-n5", "required": true,
-     "options": [{"value":"none","label":"不加载"},{"value":"minimax-n1","label":"dog"},{"value":"minimax-n2","label":"un"},{"value":"minimax-n3","label":"fig"},{"value":"minimax-n4","label":"v4"},{"value":"minimax-n5","label":"aio"},{"value":"minimax-n6","label":"hp"}]
+     "type": "select",
+     "label": "LoRA 2",
+     "group": "lora",
+     "default": "minimax-n5",
+     "required": true,
+     "options": [
+      {
+       "value": "none",
+       "label": "不加载"
+      },
+      {
+       "value": "minimax-n1",
+       "label": "dog"
+      },
+      {
+       "value": "minimax-n2",
+       "label": "un"
+      },
+      {
+       "value": "minimax-n3",
+       "label": "fig"
+      },
+      {
+       "value": "minimax-n4",
+       "label": "v4"
+      },
+      {
+       "value": "minimax-n5",
+       "label": "aio"
+      },
+      {
+       "value": "minimax-n6",
+       "label": "hp"
+      }
+     ]
     },
     "lora_2_strength": {
-     "type": "float", "label": "LoRA 2 强度", "group": "lora",
-     "default": 0.6, "required": true, "min": 0, "max": 2, "step": 0.01
+     "type": "float",
+     "label": "LoRA 2 强度",
+     "group": "lora",
+     "default": 0.6,
+     "required": true,
+     "min": 0,
+     "max": 2,
+     "step": 0.01
     },
     "lora_3_model": {
-     "type": "select", "label": "LoRA 3", "group": "lora",
-     "default": "minimax-n4", "required": true,
-     "options": [{"value":"none","label":"不加载"},{"value":"minimax-n1","label":"dog"},{"value":"minimax-n2","label":"un"},{"value":"minimax-n3","label":"fig"},{"value":"minimax-n4","label":"v4"},{"value":"minimax-n5","label":"aio"},{"value":"minimax-n6","label":"hp"}]
+     "type": "select",
+     "label": "LoRA 3",
+     "group": "lora",
+     "default": "minimax-n4",
+     "required": true,
+     "options": [
+      {
+       "value": "none",
+       "label": "不加载"
+      },
+      {
+       "value": "minimax-n1",
+       "label": "dog"
+      },
+      {
+       "value": "minimax-n2",
+       "label": "un"
+      },
+      {
+       "value": "minimax-n3",
+       "label": "fig"
+      },
+      {
+       "value": "minimax-n4",
+       "label": "v4"
+      },
+      {
+       "value": "minimax-n5",
+       "label": "aio"
+      },
+      {
+       "value": "minimax-n6",
+       "label": "hp"
+      }
+     ]
     },
     "lora_3_strength": {
-     "type": "float", "label": "LoRA 3 强度", "group": "lora",
-     "default": 0.7, "required": true, "min": 0, "max": 2, "step": 0.01
+     "type": "float",
+     "label": "LoRA 3 强度",
+     "group": "lora",
+     "default": 0.7,
+     "required": true,
+     "min": 0,
+     "max": 2,
+     "step": 0.01
     }
    },
    "params_defaults": {},
@@ -1886,6 +2009,98 @@
    "rh_result_labels": [
     "动作迁移主视频",
     "输入 / 参考 / 结果对比"
+   ]
+  },
+  {
+   "id": "qwen21_wardrobe",
+   "name": "Qwen 2.1 · 固定人物换装",
+   "kind": "rh_workflow",
+   "backend": "runninghub",
+   "desc": "上传人物图与服装参考图，按提示词替换服装，保持人物身份、姿态与背景。",
+   "section": "换装与图片编辑",
+   "rh_workflow_id": "2111378115142823938",
+   "source_editor_workflow_id": "2111383542247743489",
+   "source_editor_json_sha256": "5c0ce212b103ca3dcdd8adc9ef42637538034a5caadb49012c264942be39b710",
+   "source_api_json_sha256": "9603bf4b7ac5480f977d68bec3e939f16541e7258a6987e893ef5e7a0ae4455d",
+   "rh_media": {
+    "person": {
+     "node": "470",
+     "field": "image",
+     "label": "人物参考图",
+     "type": "image",
+     "required": true
+    },
+    "clothing": {
+     "node": "475",
+     "field": "image",
+     "label": "服装参考图",
+     "type": "image",
+     "required": true
+    }
+   },
+   "rh_params": {
+    "prompt": {
+     "node": "484",
+     "field": "prompt",
+     "label": "换装要求",
+     "type": "text",
+     "default": "将 <image1> 中人物的服装替换为 <image2> 中的服装，只参考服装的颜色、材质与款式，不转移衣架或人台。保持人物面容、发型、姿态、身形、光线和背景不变。",
+     "required": true,
+     "max_length": 10000
+    },
+    "seed": {
+     "node": "481",
+     "field": "seed",
+     "label": "随机种子",
+     "type": "int",
+     "default": 0,
+     "min": 0,
+     "max": 9007199254740991,
+     "group": "advanced"
+    },
+    "resolution": {
+     "node": "484",
+     "field": "resolution",
+     "label": "输出分辨率",
+     "type": "select",
+     "default": 1024,
+     "vtype": "int",
+     "options": [
+      {
+       "value": 1024,
+       "label": "1024 · 标准"
+      },
+      {
+       "value": 0,
+       "label": "原图尺寸 · 更耗显存"
+      }
+     ],
+     "group": "common"
+    },
+    "steps": {
+     "node": "481",
+     "field": "steps",
+     "label": "采样步数",
+     "type": "int",
+     "default": 40,
+     "min": 1,
+     "max": 60,
+     "group": "advanced"
+    },
+    "cfg": {
+     "node": "481",
+     "field": "cfg",
+     "label": "提示词引导",
+     "type": "float",
+     "default": 1,
+     "min": 0,
+     "max": 10,
+     "step": 0.1,
+     "group": "advanced"
+    }
+   },
+   "rh_result_labels": [
+    "换装结果"
    ]
   }
  ],

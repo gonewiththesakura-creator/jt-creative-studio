@@ -215,7 +215,7 @@ def download_media(url, dest, *, timeout=900, max_bytes=MAX_MEDIA_BYTES, validat
             part.unlink(missing_ok=True)
 
 
-def stream_media(handler, url, filename):
+def stream_media(handler, url, filename, *, cache_control='private, no-store', etag=None):
     lease = acquire_media_slot(handler)
     if lease is None:
         handler._send(503, b'{"error":"media capacity busy"}', headers={'Retry-After':'3'})
@@ -236,7 +236,9 @@ def stream_media(handler, url, filename):
             return
         handler.send_response(response.status)
         handler.send_header('Content-Type', content_type)
-        handler.send_header('Cache-Control', 'private, no-store')
+        handler.send_header('Cache-Control', cache_control)
+        if etag:
+            handler.send_header('ETag', etag)
         handler.send_header('Vary', 'Cookie')
         if length:
             handler.send_header('Content-Length', length)

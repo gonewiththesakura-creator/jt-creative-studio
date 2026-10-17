@@ -19,4 +19,4 @@ def apply_workbench_theme(html):
             '"three/addons/":"/static/singularity/vendor/examples/jsm/"}}</script>'
             f'<script type="module" src="/static/singularity/workbench.js?v={version}"></script>'
             '<!-- singularity:end -->')
-    return html.replace('</head>', head + '</head>').replace('<body>', '<body class="singularity">')
+    return html.replace('href="/realism">真人化</a>', 'href="/realism">图片编辑</a>').replace('</head>', head + '</head>').replace('<body>', '<body class="singularity">')

@@ -1299,12 +1299,14 @@ def realism_history_jobs(jobs):
 
 
 def scoped_history_jobs(jobs, scope=None, style=None, limit=12, before=None):
-    if scope == "realism":
-        return realism_history_jobs(jobs)
     ordered = sorted(jobs, key=lambda row: (row.get("created", 0), row.get('id','')), reverse=True)
     if before is not None:
         ordered = [j for j in ordered if (j.get('created',0),j.get('id','')) < before]
-    if scope == "video":
+    if scope == 'realism':
+        ids = {key for key, workflow in WORKFLOWS.items()
+               if workflow.get('kind') in ('rh_workflow', 'ai_app')} | set(RETIRED_REALISM_WORKFLOW_IDS)
+        ordered = [job for job in ordered if job.get('style_id') == 'realism' or job.get('workflow') in ids]
+    elif scope == "video":
         ids = {key for key, workflow in WORKFLOWS.items() if workflow.get("kind") == "video"}
         ordered = [job for job in ordered if job.get('style_id') == 'video' or job.get("workflow") in ids]
     elif scope == "creator":
@@ -3313,10 +3315,10 @@ def video_ui_terminal(job):
 
 
 def video_redoable(job):
-    return job.get('style_id') == 'video' and video_ui_terminal(job)
+    return job.get('style_id') in ('video', 'realism') and video_ui_terminal(job)
 
 
-def clear_video_ui(session_id, scope):
+def clear_video_ui(session_id, scope, page='video'):
     """Persist display-only clearing, retaining job inputs, outputs and favorites."""
     flags = {
         'history': ('history_cleared', 'task_cleared', 'gallery_cleared'),
@@ -3327,7 +3329,7 @@ def clear_video_ui(session_id, scope):
         raise ValueError('未知的清除范围')
     with _lock_jobs:
         matching = [job for job in _jobs.values()
-                    if job.get('style_id') == 'video'
+                    if job.get('style_id') == page
                     and session_owns_record(session_id, job) and video_ui_terminal(job)
                     and (scope != 'errors' or job.get('status') in ('error', 'cancelled'))
                     and (scope != 'gallery' or job.get('status') == 'done')]
@@ -3346,11 +3348,11 @@ def clear_video_ui(session_id, scope):
         return {'ok': True, 'scope': scope, 'cleared_ids': [job['id'] for job in matching]}
 
 
-def video_queue_snapshot(session_id):
+def video_queue_snapshot(session_id, page='video'):
     with _lock_jobs:
         waiting = _video_waiting()
         positions = {j['id']: i + 1 for i, j in enumerate(waiting)}
-        own = [j for j in _jobs.values() if j.get('style_id') == 'video' and session_owns_record(session_id, j)
+        own = [j for j in _jobs.values() if j.get('style_id') == page and session_owns_record(session_id, j)
                and not (j.get('task_cleared') and video_ui_terminal(j))]
         active = sorted((j for j in own if j.get('status') in ('queued', 'running', 'recovering')),
                         key=lambda j: (j.get('status') == 'queued', positions.get(j['id'], 0), j['created']))
@@ -3373,11 +3375,11 @@ def video_queue_snapshot(session_id):
                 'waiting': len(waiting), 'limit': VIDEO_MAX_CONCURRENT, 'draining': bool(_release_draining)}
 
 
-def edit_video_queue(session_id, body):
+def edit_video_queue(session_id, body, page='video'):
     """Only the owner can edit a not-yet-dispatched job; races fail closed."""
     with _admission_lock, _lock_jobs:
         job = _jobs.get(str(body.get('job_id', '')))
-        if not job or not job.get('video_queued') or not session_owns_record(session_id, job):
+        if not job or not job.get('video_queued') or job.get('style_id') != page or not session_owns_record(session_id, job):
             raise LookupError('任务不存在')
         if body.get('action') == 'cancel_running':
             if job.get('generation_backend') != 'cloud' or job.get('status') not in ('running','recovering'):
@@ -3407,7 +3409,7 @@ def edit_video_queue(session_id, body):
         elif action in ('top', 'up', 'down'):
             # Reassign only this owner's existing slots, leaving every other
             # account's position and optimistic revision untouched.
-            rows = [row for row in _video_waiting() if session_owns_record(session_id, row)]
+            rows = [row for row in _video_waiting() if row.get('style_id') == page and session_owns_record(session_id, row)]
             slots = [(row.get('queue_order', row['created']), row.get('queue_slot_created', row['created']),
                       row.get('queue_slot_id', row['id'])) for row in rows]
             index = rows.index(job)
@@ -3427,11 +3429,12 @@ def edit_video_queue(session_id, body):
             if not isinstance(proposed, dict):
                 raise ValueError('参数必须是对象')
             _, params = normalize_rh_workflow_inputs(w, job['media'], proposed)
-            prompt = str(params.get('prompt', body.get('prompt', job['prompt']))).strip()
-            if not prompt:
+            prompt = str(next((params[key] for key in ('prompt', 'instruction', 'requirements', 'text', 'positive')
+                               if params.get(key) not in (None, '')), body.get('prompt', job['prompt']))).strip()
+            if not prompt and page == 'video':
                 raise ValueError('提示词不能为空')
             job.update(params=params, prompt=prompt, negative_prompt=str(params.get('negative', job.get('negative_prompt', ''))))
-            job['selection_snapshot'] = upload_bound_snapshot(w, job['media'], params, None, 'video')
+            job['selection_snapshot'] = upload_bound_snapshot(w, job['media'], params, None, page)
         else:
             raise ValueError('未知的队列操作')
         job['queue_revision'] = job.get('queue_revision', 0) + 1
@@ -4143,7 +4146,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 if not job or not session_owns_record(session_id, job) or index >= len(images) or not images[index].get('remote'):
                     return self._send(404, b'{"error":"not found"}')
                 item = dict(images[index])
-            return stream_media(self, item['url'], safe_output_filename(item.get('file') or 'result.mp4'))
+            filename = safe_output_filename(item.get('file') or 'result.mp4')
+            # Vary by the session cookie; login/logout also clear the browser cache.
+            # Keep originals intact and allow Chromium to reuse completed byte ranges.
+            is_video = pathlib.Path(filename).suffix.lower() in ('.mp4', '.webm', '.mov', '.mkv')
+            if is_video:
+                etag = '"' + hashlib.sha256((job['id'] + ':' + str(index) + ':' + item['url']).encode()).hexdigest() + '"'
+                cache = 'private, max-age=3600'
+                if self.headers.get('If-None-Match') == etag:
+                    return self._send(304, b'', headers={'ETag': etag, 'Cache-Control': cache, 'Vary': 'Cookie'})
+                return stream_media(self, item['url'], filename, cache_control=cache, etag=etag)
+            return stream_media(self, item['url'], filename)
         if path == '/api/media-library':
             return self._send(410, json.dumps({'error': '临时素材库已取消，请刷新页面使用个人直传'}, ensure_ascii=False).encode())
         if path.startswith('/api/video-thumbnail/'):
@@ -4159,10 +4172,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if not allowed or not target.is_file(): return self._send(404)
             return self._send(200, target.read_bytes(), 'image/jpeg',
                               {'Cache-Control': 'private, no-store', 'Vary': 'Cookie', 'X-Content-Type-Options': 'nosniff'})
-        if path == '/api/video-queue':
+        if path in ('/api/video-queue', '/api/image-edit-queue'):
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
             session_id, _ = self._upload_session(create=False)
-            return self._send(200, json.dumps(video_queue_snapshot(session_id), ensure_ascii=False).encode())
+            page = 'realism' if path == '/api/image-edit-queue' else 'video'
+            return self._send(200, json.dumps(video_queue_snapshot(session_id, page), ensure_ascii=False).encode())
         if path == "/api/live":
             payload = {"ok": True, "service": "comfy-panel", **self.server.liveness_snapshot()}
             self._send(200, json.dumps(payload, separators=(",", ":")).encode())
@@ -4238,7 +4252,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             with p.open('rb') as source:
                 data = source.read(64)
             ctype = fav.get("favorite_media_type") or image_content_type(data, p.name) or "application/octet-stream"
-            self._write_stream(p, ctype, allow_range=ctype.startswith('video/'))
+            self._write_stream(p, ctype, allow_range=ctype.startswith('video/'),
+                               cache_control='private, max-age=3600' if ctype.startswith('video/') else 'private, no-store')
         elif path.startswith("/api/job/"):
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
             jid = path.split("/api/job/", 1)[1]
@@ -4287,10 +4302,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 session_id, _ = self._upload_session(create=False)
                 owned_sources = [src for src in _jobs.values()
                                  if session_owns_record(session_id, src)
-                                 and not (src.get('style_id') == 'video' and src.get('history_cleared')
+                                 and not (src.get('style_id') in ('video', 'realism') and src.get('history_cleared')
                                           and video_ui_terminal(src))]
                 limit, before = 12, None
-                if scope == 'video':
+                if scope in ('video', 'realism'):
                     try:
                         limit = max(1, min(30, int((query.get('limit') or ['12'])[0])))
                         if query.get('before'):
@@ -4324,7 +4339,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     j["error"] = public_job_error(src)
                     j["media"] = public_job_media(src.get("media"))
                     j["selection_snapshot"] = public_job_selection_snapshot(src.get("selection_snapshot"))
-                    if scope == 'video':
+                    if scope in ('video', 'realism'):
                         j['thumbnails'] = public_video_thumbnails(src)
                     items.append(j)
             self._send(200, json.dumps(items, ensure_ascii=False).encode())
@@ -4936,7 +4951,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     if not job or not re.fullmatch(r'[0-9a-f]{12}', jid) or not session_owns_record(session_id, job):
                         return self._send(404)
                     mapping = WORKFLOWS.get(job.get('workflow'), {}).get('rh_media', {}).get(key, {})
-                    if job.get('style_id') != 'video' or key not in job.get('media', {}) or mapping.get('type') != 'video':
+                    if job.get('style_id') not in ('video', 'realism') or key not in job.get('media', {}) or mapping.get('type') not in ('video', 'image'):
                         return self._send(400, b'{"error":"invalid video slot"}')
                     if key in job.get('input_thumbnails', {}): return self._send(200, b'{"ok":true}')
                 data = normalize_video_thumbnail(body.get('data'))
@@ -4954,7 +4969,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._send(200, b'{"ok":true}')
             except (ValueError, TypeError, OSError):
                 return self._send(400, b'{"error":"invalid thumbnail"}')
-        if path == '/api/video-clear':
+        if path in ('/api/video-clear', '/api/image-edit-clear'):
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
             session_id = self._require_session()
             if not session_id: return
@@ -4967,27 +4982,28 @@ class Handler(http.server.BaseHTTPRequestHandler):
             try:
                 body = self._read_json(1024)
                 if not isinstance(body, dict): raise ValueError('bad json')
-                result = clear_video_ui(session_id, body.get('scope'))
+                result = clear_video_ui(session_id, body.get('scope'), 'realism' if path == '/api/image-edit-clear' else 'video')
             except (ValueError, TypeError, OverflowError) as error:
                 return self._send(400, json.dumps({'error': str(error)}, ensure_ascii=False).encode())
             except Exception:
                 return self._send(503, json.dumps({'error': '清除未保存，请稍后重试'}, ensure_ascii=False).encode())
             return self._send(200, json.dumps(result, ensure_ascii=False).encode(),
                               headers={'Cache-Control': 'no-store'})
-        if path == '/api/video-queue':
+        if path in ('/api/video-queue', '/api/image-edit-queue'):
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
             session_id = self._require_session()
             if not session_id: return
             try:
                 body = self._read_json()
                 if not isinstance(body, dict): raise ValueError('bad json')
-                edit_video_queue(session_id, body)
+                edit_video_queue(session_id, body, 'realism' if path == '/api/image-edit-queue' else 'video')
             except LookupError as error:
                 return self._send(404, json.dumps({'error': str(error)}, ensure_ascii=False).encode())
             except (ValueError, TypeError) as error:
                 return self._send(409, json.dumps({'error': str(error)}, ensure_ascii=False).encode())
             return self._send(200, b'{"ok":true}')
-        if path == "/api/video-generate":
+        if path in ("/api/video-generate", "/api/image-edit-generate"):
+            task_page = 'realism' if path == '/api/image-edit-generate' else 'video'
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
             try: body = self._read_json()
             except Exception: return self._send(400, b'{"error":"bad json"}')
@@ -5003,8 +5019,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     original = _jobs.get(str(body['redo_job_id']))
                     if not original or not session_owns_record(session_id, original):
                         return self._send(404, b'{"error":"job not found"}')
-                    if original.get('style_id') != 'video':
-                        return self._send(409, json.dumps({'error':'仅视频任务支持重做'},ensure_ascii=False).encode())
+                    if original.get('style_id') != task_page:
+                        return self._send(409, json.dumps({'error':'请在原任务所属工作台重做'},ensure_ascii=False).encode())
                     if not video_redoable(original):
                         return self._send(409, json.dumps({'error':'正在运行或核对中的任务暂不能重做'},ensure_ascii=False).encode())
                     redo = dict(original)
@@ -5027,10 +5043,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if wf not in WORKFLOWS:
                 return self._send(400, b'{"error":"unknown workflow"}')
             w = WORKFLOWS[wf]
-            if w.get("kind") != "video" or w.get("backend") != "runninghub":
+            allowed_kinds = ('rh_workflow', 'ai_app') if task_page == 'realism' else ('video',)
+            if w.get("kind") not in allowed_kinds or w.get("backend") != "runninghub":
                 return self._send(400, b'{"error":"not a video workflow"}')
             prompt = str(body.get("prompt", "")).strip()
-            if not prompt:
+            if not prompt and task_page == 'video':
                 return self._send(400, b'{"error":"prompt empty"}')
             negative_prompt = str(body.get("negative_prompt", "")).strip()
             submitted_media = body.get("media") or {}
@@ -5055,7 +5072,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 _, params = normalize_rh_workflow_inputs(w, public_media, schema_params)
             except ValueError as error:
                 return self._send(400, json.dumps({"error": str(error)}, ensure_ascii=False).encode())
-            prompt = str(params.get("prompt", prompt)).strip()
+            prompt = str(next((params[key] for key in ('prompt', 'instruction', 'requirements', 'text', 'positive')
+                               if params.get(key) not in (None, '')), prompt)).strip()
             negative_prompt = str(params.get("negative", negative_prompt)).strip()
             request_sha256 = effective_request_sha256({
                 "workflow": wf, "generation_backend": "cloud",
@@ -5076,7 +5094,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     return self._send(409, json.dumps({
                         "error": "client_request_id already used with different request payload",
                     }).encode())
-                if redo and public_media and time.time() >= redo.get('queue_media_expires', 0):
+                original_expires = (redo.get('queue_media_expires', redo.get('created', 0) + UPLOAD_CAPABILITY_TTL)
+                                    if redo else None)
+                if redo and public_media and time.time() >= original_expires:
                     return self._send(410, json.dumps({'error':'原素材已过期，请重新上传素材后生成；原提示词和 LoRA 配置仍可查看'},ensure_ascii=False).encode())
                 with _lock_jobs:
                     waiting = _video_waiting()
@@ -5087,7 +5107,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         "error": "等待队列已满，请完成或取消部分任务后再提交",
                     }, ensure_ascii=False).encode())
                 if redo:
-                    media_expires = redo.get('queue_media_expires', time.time()+UPLOAD_CAPABILITY_TTL) if public_media else time.time()+UPLOAD_CAPABILITY_TTL
+                    media_expires = original_expires if public_media else time.time()+UPLOAD_CAPABILITY_TTL
                 else:
                     with _upload_capabilities_lock:
                         media_expires = min((_upload_capabilities.get(
@@ -5097,7 +5117,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                    "negative_prompt": negative_prompt, "prompt_mode": "manual",
                    "media": public_media, "provider_media": provider_media,
                    "params": params,
-                   "width": 0, "height": 0, "batch": 1, "hd": 0,
+                   "width": 0, "height": 0, "batch": max(1, int(params.get('batch') or 1)) if task_page == 'realism' else 1, "hd": 0,
                    "seed": 0, "seed_mode": "random", "loras": {}, "lora_strengths": {},
                    "trigger": None, "translate": False,
                    "status": "queued", "provider_status": "QUEUED", "video_queued": True,
@@ -5107,10 +5127,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                    "created": time.time(), "wf_name": w["name"],
                    "submit_started": None, "provider_started": None,
                    "provider_finished": None, "download_started": None,
-                   "download_finished": None, "style_id": "video", "mode": "original",
+                   "download_finished": None, "style_id": task_page, "mode": "original",
                    "generation_backend": "cloud",
                    "sequence_mode": "off", "selection_snapshot": upload_bound_snapshot(
-                       w, public_media, params, body.get("selection_snapshot"), "video"),
+                       w, public_media, params, body.get("selection_snapshot"), task_page),
                    "client_request_id": client_request_id,
                    "request_session_hash": session_hash,
                    "effective_request_sha256": request_sha256}

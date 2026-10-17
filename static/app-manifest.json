@@ -7,14 +7,14 @@
       "title": "JT 灵感工作台"
     },
     "/realism": {
-      "module": "/static/assets/realism.cd399e3a3cde.js",
-      "markup": "/static/assets/realism.86a9e1b9285b.html",
-      "css": "/static/assets/realism.436d28acb3d2.css",
-      "title": "真人化工作流 · JT 灵感工作台"
+      "module": "/static/assets/realism.7e8805d479a3.js",
+      "markup": "/static/assets/realism.34ed1d9f90d8.html",
+      "css": "/static/assets/realism.a1a034e030d2.css",
+      "title": "图片编辑 · JT 灵感工作台"
     },
     "/video": {
-      "module": "/static/assets/video.7823a09031a3.js",
-      "markup": "/static/assets/video.c86fafe6b99e.html",
+      "module": "/static/assets/video.24a2f9e4feea.js",
+      "markup": "/static/assets/video.2795d23060ae.html",
       "css": "/static/assets/video.42254fb04f6d.css",
       "title": "JT 视频工作台"
     }
@@ -72,9 +72,9 @@
     "/static/assets/preview.de1d1cf19403.webp",
     "/static/assets/preview.ed7e8d525912.webp",
     "/static/assets/preview.f3423c1c4545.webp",
-    "/static/assets/realism.436d28acb3d2.css",
-    "/static/assets/realism.86a9e1b9285b.html",
-    "/static/assets/realism.cd399e3a3cde.js",
+    "/static/assets/realism.34ed1d9f90d8.html",
+    "/static/assets/realism.7e8805d479a3.js",
+    "/static/assets/realism.a1a034e030d2.css",
     "/static/assets/retired-upload-storage.04c0ee0da954.js",
     "/static/assets/router.9d20830207ba.js",
     "/static/assets/shaders.96809084e5fe.js",
@@ -91,9 +91,9 @@
     "/static/assets/three-LICENSE.8b378ebe60e2.txt",
     "/static/assets/three-core.9edde002b066.js",
     "/static/assets/three-module.71e909ad3fc6.js",
+    "/static/assets/video.24a2f9e4feea.js",
+    "/static/assets/video.2795d23060ae.html",
     "/static/assets/video.42254fb04f6d.css",
-    "/static/assets/video.7823a09031a3.js",
-    "/static/assets/video.c86fafe6b99e.html",
     "/static/assets/workbench.b4e4fe3d3eac.js"
   ]
 }

@@ -56,7 +56,7 @@ def membership_env(panel, tmp_path, monkeypatch):
         monkeypatch.setattr(panel, name, forbidden_provider)
     media_calls = []
 
-    def fake_stream(handler, url, filename):
+    def fake_stream(handler, url, filename, **kwargs):
         media_calls.append((url, filename))
         return handler._send(200, b"private-output-bytes", "video/mp4")
 
@@ -98,7 +98,15 @@ def request(env, method, path, payload=None, user=None, headers=None, raw=None):
             request_headers[key] = value
     connection = http.client.HTTPConnection("127.0.0.1", env.httpd.server_port, timeout=10)
     try:
+        # Avoid a Windows TCP reset when an early denial closes the connection
+        # between http.client's separate header and body writes. Assertions and
+        # server authentication remain unchanged; send the fixture atomically.
+        send = connection.send
+        packet = bytearray()
+        connection.send = packet.extend
         connection.request(method, path, body, request_headers)
+        connection.send = send
+        connection.send(packet)
         response = connection.getresponse()
         result = response.status, response.read(), response.getheaders()
         return result
