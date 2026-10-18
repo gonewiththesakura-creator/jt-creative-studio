@@ -23,17 +23,22 @@ def scope(baseline,manifest,data):
     old_workflow=next(w for w in previous['workflows'] if w['id']=='h3_remix_full')
     new_workflow=next(w for w in candidate['workflows'] if w['id']=='h3_remix_full')
     assert 'prompt_optimizer_enabled' not in new_workflow['rh_params']
-    old_workflow['rh_params'].pop('prompt_optimizer_enabled')
+    old_workflow['rh_params'].pop('prompt_optimizer_enabled',None)
     old_workflow['desc']=new_workflow['desc']
     old_workflow['rh_graph']['295']['inputs']['prompt_optimizer_enabled']=False
     assert previous==candidate, 'Unexpected workflow configuration change'
 
 
 def checks():
-    previous_release.checks()
+    backend_changed=any((BASE/path).read_bytes().replace(b'\r\n',b'\n')!=
+                        subprocess.check_output(['git','show','HEAD:'+path],cwd=BASE).replace(b'\r\n',b'\n')
+                        for path in ('server.py','config.json'))
+    if backend_changed:previous_release.checks()
+    tests=['tests/test_compact_workflow_forms.py']
+    if not backend_changed:tests+=['tests/test_h3_remix_browser.py','tests/test_image_edit_browser.py','tests/test_app_shell.py']
     with tempfile.TemporaryDirectory(prefix='jt-compact-release-') as directory:
         subprocess.run([previous_release.sys.executable,'-m','pytest','-q',
-                        'tests/test_compact_workflow_forms.py','--basetemp',str(Path(directory)/'pytest')],cwd=BASE,check=True)
+                        *tests,'--basetemp',str(Path(directory)/'pytest')],cwd=BASE,check=True)
 
 
 if __name__=='__main__':

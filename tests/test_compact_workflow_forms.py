@@ -164,3 +164,18 @@ def test_failed_upload_stays_visible_until_successful_retry(browser,route,first,
         expect(host.locator('.drop:visible')).to_have_count(1)
         assert len(attempts)==2 and not errors
     finally:page.close()
+
+
+def test_independent_face_reference_does_not_require_filling_nine_optional_slots(browser):
+    page=browser.new_page(reduced_motion='reduce');errors,uploads,_=setup(page)
+    try:
+        page.goto('http://fixture.test/video');host=current(page)
+        host.locator('button[data-wf=h3_remix_full]').click()
+        host.locator('.remix-group[data-group="人脸精修设置"] > summary').click()
+        host.locator('[data-toggle-for=param_use_face_reference]').click()
+        host.locator('.compact-media-slot[data-slot=face_reference]').click()
+        expect(host.locator('.drop:visible')).to_have_count(1)
+        paste(host.locator('.drop[data-media-key=face_reference]'))
+        expect(host.locator('.drop[data-media-key=reference_image]')).to_be_visible()
+        assert uploads[0]['input_key']=='face_reference' and not errors
+    finally:page.close()

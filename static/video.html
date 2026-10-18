@@ -310,7 +310,7 @@ function installCompactUploads(root,items,options={}){
       button.setAttribute('aria-label',(labels[type]||'素材')+'，已上传 '+done+'，最多 '+candidates.length);
     }
     for(const item of items){
-      const button=slotButtons.get(item.key),available=rows.includes(item),filled=!!item.filled(),show=available&&(filled||item.hasFile?.()||item===next);
+      const button=slotButtons.get(item.key),available=rows.includes(item),filled=!!item.filled(),show=available&&(filled||item.hasFile?.()||item===next||item.shortcut);
       hidden(item.box,item.key!==selected||!available);hidden(button,!show);
       button.setAttribute('aria-pressed',String(item.key===selected));button.title=item.label;button.setAttribute('aria-label',(filled?'查看':'上传')+item.label);
       const preview=item.drop.querySelector('img'),src=preview?.getAttribute('src')||'',signature=src+'|'+filled+'|'+item.label;
@@ -411,6 +411,7 @@ function installVideoCompactForm(form,workflow,state){
     let box=drop.closest('.remix-field');
     if(!box){box=document.createElement('div');box.className='compact-upload-field';const label=drop.previousElementSibling;drop.before(box);if(label?.tagName==='LABEL')box.append(label);box.append(drop)}
     return {key,type:mapping.type,label:mapping.label||key,box,drop,
+      shortcut:workflow.id==='h3_remix_full'&&key==='face_reference',
       filled:()=>!!state.tokens[key],hasFile:()=>!!state.files[key],
       enabled:()=>videoInputEnabled(workflow,mapping,Object.fromEntries(Object.entries(workflow.rh_params||{}).map(([key,p])=>[key,document.getElementById('param_'+key)?readParamValue(document.getElementById('param_'+key)):p.default])))};
   });
