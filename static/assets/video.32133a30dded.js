@@ -91,10 +91,10 @@ function enhanceRemixForm(form,workflow,state){
   form.classList.add('remix-form');
   const groups=new Map(),fields=[];
   function group(name){
-    if(groups.has(name))return groups.get(name);
-    const box=document.createElement('details'),heading=document.createElement('summary');
+    if(groups.has(name))return groups.get(name).querySelector('.remix-fields');
+    const box=document.createElement('details'),heading=document.createElement('summary'),body=document.createElement('div');
     box.className='remix-group';box.dataset.group=name;box.open=['基本设置','参考素材'].includes(name);
-    heading.textContent=name;box.append(heading);groups.set(name,box);return box;
+    heading.textContent=name;body.className='remix-fields';box.append(heading,body);groups.set(name,box);return body;
   }
   // Detach each field as one unit, so hidden dependencies never leave orphan labels.
   for(const [key,mapping] of Object.entries(workflow.rh_media||{})){
@@ -131,7 +131,7 @@ function enhanceRemixForm(form,workflow,state){
       field.box.hidden=!enabled;
       // Keep values when switching off; hidden branches are excluded server-side.
     }
-    for(const box of groups.values())box.hidden=![...box.querySelectorAll(':scope > .remix-field')].some(field=>!field.hidden);
+    for(const box of groups.values())box.hidden=![...box.querySelectorAll(':scope > .remix-fields > .remix-field')].some(field=>!field.hidden);
     state.formParams={...params};
   };
   form.onchange=update;update();

@@ -46,6 +46,14 @@ def test_video_progressive_slots_buttons_and_restore(browser,tmp_path,width):
         expect(host.locator('.compact-media-tab[data-media-type=image] .compact-count')).to_have_text('0 / 9')
         expect(host.locator('#param_prompt_optimizer_enabled')).to_have_count(0)
         expect(host.locator('#wfForm input[type=checkbox]:visible')).to_have_count(0)
+        # Native details content must not become a single half-width grid cell.
+        fields=host.locator('.remix-group[data-group="基本设置"] .remix-fields')
+        prompt=host.locator('.remix-field[data-control=prompt]')
+        assert prompt.bounding_box()['width']>=fields.bounding_box()['width']-2
+        left=host.locator('.remix-field[data-control=second_pass]').bounding_box()
+        right=host.locator('.remix-field[data-control=face_refine]').bounding_box()
+        assert fields.bounding_box()['width']/2-10 < left['width'] < fields.bounding_box()['width']/2
+        assert abs(right['x']-left['x'])>left['width']
         toggle=host.locator('[data-toggle-for=param_second_pass]');expect(toggle).to_have_attribute('aria-pressed','true')
         toggle.click();expect(toggle).to_have_attribute('aria-pressed','false')
         expect(host.locator('.remix-group[data-group="二次采样设置"]')).to_be_hidden()
@@ -83,6 +91,7 @@ def test_video_progressive_slots_buttons_and_restore(browser,tmp_path,width):
         expect(host.locator('.compact-media-tab[data-media-type=image] .compact-count')).to_have_text('2 / 2')
         expect(host.locator('[data-toggle-for=param_face_refine]')).to_have_attribute('aria-pressed','false')
         host.locator('.compact-uploads').scroll_into_view_if_needed();page.screenshot(path=str(tmp_path/f'compact-video-{width}.png'))
+        host.locator('[data-toggle-for=param_second_pass]').scroll_into_view_if_needed();page.screenshot(path=str(tmp_path/f'compact-buttons-{width}.png'))
         assert not errors
     finally:page.close()
 
