@@ -1,5 +1,6 @@
 """Install the verified two-image Qwen 2.1 schema; never submit provider work."""
 import hashlib
+import copy
 import json
 from pathlib import Path
 
@@ -19,21 +20,32 @@ def install(config, graph, editor_sha):
         assert all(field in graph[node]['inputs'] for field in fields)
     assert graph['484']['inputs']['images.image_1'] == ['470', 0]
     assert graph['484']['inputs']['images.image_2'] == ['475', 0]
+    single = copy.deepcopy(graph)
+    del single['475']
+    del single['484']['inputs']['images.image_2']
+    single['470']['inputs']['image'] = ''
+    single['484']['inputs']['prompt'] = ''
+    for node in single.values():
+        node.pop('_meta', None)
     def control(node, field, label, type, default, **kwargs):
         return dict(node=node, field=field, label=label, type=type, default=default, **kwargs)
     item = dict(
         id='qwen21_wardrobe', name='Qwen 2.1 · 固定人物换装', kind='rh_workflow', backend='runninghub',
-        desc='上传人物图与服装参考图，按提示词替换服装，保持人物身份、姿态与背景。',
+        desc='上传人物图，按提示词编辑服装；可开启图二，使用服装参考图。保持人物身份、姿态与背景。',
         section='换装与图片编辑', rh_workflow_id=RUN_ID, source_editor_workflow_id=EDITOR_ID,
         source_editor_json_sha256=editor_sha,
         source_api_json_sha256=hashlib.sha256(json.dumps(graph, ensure_ascii=False, indent=2).encode()).hexdigest(),
+        rh_optional_reference=dict(param='use_clothing', media='clothing', single_image_graph=single),
         rh_media={
             'person': dict(node='470', field='image', label='人物参考图', type='image', required=True),
-            'clothing': dict(node='475', field='image', label='服装参考图', type='image', required=True),
+            'clothing': dict(node='475', field='image', label='图二 · 服装参考图', type='image', required=True,
+                depends_on=dict(key='use_clothing', value=True)),
         },
         rh_params={
+            'use_clothing': dict(type='boolean', label='使用图二参考图', default=True, client_only=True,
+                group='common', description='开启：参考图二的服装；关闭：只用人物图和提示词。'),
             'prompt': control('484', 'prompt', '换装要求', 'text',
-                '将 <image1> 中人物的服装替换为 <image2> 中的服装，只参考服装的颜色、材质与款式，不转移衣架或人台。保持人物面容、发型、姿态、身形、光线和背景不变。', required=True, max_length=10000),
+                '按文字要求编辑 <image1> 中人物的服装。有图二时参考其服装的颜色、材质与款式，不转移衣架或人台；没有图二时按文字描述修改。保持人物面容、发型、姿态、身形、光线和背景不变。', required=True, max_length=10000),
             'seed': control('481', 'seed', '随机种子', 'int', 0, min=0, max=2**53-1, group='advanced'),
             'resolution': control('484', 'resolution', '输出分辨率', 'select', 1024, vtype='int',
                 options=[dict(value=1024, label='1024 · 标准'), dict(value=0, label='原图尺寸 · 更耗显存')], group='common'),

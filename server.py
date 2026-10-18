@@ -772,13 +772,17 @@ def issue_upload_capability(provider_name, workflow_id, input_key, media_type,
     return token
 
 
-def resolve_upload_capabilities(workflow, submitted_media, session_id):
+def resolve_upload_capabilities(workflow, submitted_media, session_id, params=None):
     if not isinstance(submitted_media, dict):
         raise ValueError("media must be an object")
+    if params is not None and not isinstance(params, dict):
+        raise ValueError('params must be an object')
     provider_media, public_media = {}, {}
     now = time.time()
     with _upload_capabilities_lock:
         for key, mapping in (workflow.get("rh_media") or {}).items():
+            if not rh_input_enabled(workflow, mapping, params or {}):
+                continue
             token = submitted_media.get(key)
             if token in (None, ""):
                 if mapping.get("required"):
@@ -2207,12 +2211,23 @@ def _coerce_rh_control(value, mapping):
     return result
 
 
+def rh_input_enabled(w, mapping, params):
+    rule = mapping.get('depends_on')
+    if not rule:
+        return True
+    control = (w.get('rh_params') or {}).get(rule['key'], {})
+    value = params.get(rule['key'], control.get('default'))
+    return _coerce_rh_control(value, control) == rule['value']
+
+
 def normalize_rh_workflow_inputs(w, media, params):
     """Whitelist and type-check inputs using one trusted workflow schema."""
     if not isinstance(media, dict) or not isinstance(params, dict):
         raise ValueError("media and params must be objects")
     trusted_media = {}
     for key, mapping in (w.get("rh_media") or {}).items():
+        if not rh_input_enabled(w, mapping, params):
+            continue
         value = media.get(key)
         if value in (None, ""):
             if mapping.get("required"):
@@ -2249,11 +2264,15 @@ def rh_build_generic_node_info(job, w):
     """Serialize every declared generic control, including explicit false/0."""
     nodes = []
     for key, mapping in (w.get("rh_media") or {}).items():
+        if not rh_input_enabled(w, mapping, job.get('params') or {}):
+            continue
         value = (job.get("provider_media") or {}).get(key)
         if value not in (None, ""):
             nodes.append({"nodeId": str(mapping["node"]),
                           "fieldName": mapping["field"], "fieldValue": value})
     for key, mapping in (w.get("rh_params") or {}).items():
+        if mapping.get('client_only'):
+            continue
         params = job.get("params") or {}
         if key not in params:
             continue
@@ -2268,6 +2287,43 @@ def rh_build_generic_node_info(job, w):
     return nodes
 
 
+def rh_build_single_image_graph(job, w):
+    """Only a server-owned graph may change wiring; browser graphs are ignored."""
+    graph = json.loads(json.dumps(w['rh_optional_reference']['single_image_graph']))
+    for row in rh_build_generic_node_info(job, w):
+        graph[row['nodeId']]['inputs'][row['fieldName']] = row['fieldValue']
+    return graph
+
+
+def rh_submit_single_image_graph(job, w):
+    # The documented advanced API accepts a full API-format workflow string.
+    # Submit once: a lost response must never create a duplicate billed task.
+    body = {'apiKey': RH_KEY, 'workflowId': w['rh_workflow_id'],
+            'workflow': json.dumps(rh_build_single_image_graph(job, w), ensure_ascii=False),
+            'addMetadata': False, 'instanceType': w.get('rh_instance_type', 'default'),
+            'usePersonalQueue': False}
+    req = urllib.request.Request('https://www.runninghub.ai/task/openapi/create',
+        data=json.dumps(body).encode(), headers={'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + RH_KEY}, method='POST')
+    try:
+        response = _provider_json_request(req, timeout=min(RH_TIMEOUT_SUBMIT, RH_SUBMIT_HARD_TIMEOUT))
+    except Exception as error:
+        raise RuntimeError('RH submit outcome unknown after transport failure; not retried to avoid duplicate charge') from error
+    data = response.get('data') or {}
+    if not isinstance(data, dict):
+        data = {}
+    task_id = data.get('taskId')
+    if response.get('code') == 0 and task_id and data.get('taskStatus') in ('QUEUED', 'RUNNING'):
+        return task_id
+    # Do not echo a provider payload: it can include the graph or credentials.
+    if task_id:
+        raise RuntimeError('RH graph submit rejected for taskId ' + str(task_id))
+    rejection = 'RH graph submit rejected: code=' + str(response.get('code'))
+    if _rh_balance_rejection(str(response.get('msg') or '')):
+        raise ProviderTaskFailed(rejection)
+    raise RuntimeError(rejection)
+
+
 def rh_run_generic(job, w):
     """Run one trusted schema-driven RunningHub workflow."""
     workflow_id = w.get("rh_workflow_id")
@@ -2275,8 +2331,12 @@ def rh_run_generic(job, w):
         raise RuntimeError("workflow has no trusted rh_workflow_id")
     job["submit_started"] = time.time()
     job["provider_status"] = "SUBMITTING"
-    task_id = rh_submit(workflow_id, rh_build_generic_node_info(job, w),
-                        instance_type=w.get("rh_instance_type", "default"))
+    optional = w.get('rh_optional_reference')
+    if optional and not rh_input_enabled(w, (w.get('rh_media') or {})[optional['media']], job.get('params') or {}):
+        task_id = rh_submit_single_image_graph(job, w)
+    else:
+        task_id = rh_submit(workflow_id, rh_build_generic_node_info(job, w),
+                            instance_type=w.get("rh_instance_type", "default"))
     persist_provider_task(job, task_id)
     job["progress_pct"] = 5
     results = _rh_wait_task(job, task_id, time.time() + 2400, 12, 88)
@@ -4638,7 +4698,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return
             try:
                 provider_media, public_media = resolve_upload_capabilities(
-                    w, body.get("media") or {}, session_id)
+                    w, body.get("media") or {}, session_id, body.get('params') or {})
                 _, trusted_params = normalize_rh_workflow_inputs(
                     w, public_media, body.get("params") or {})
             except ValueError as error:
@@ -4756,7 +4816,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return
             try:
                 provider_media, public_media = resolve_upload_capabilities(
-                    w, submitted_media, session_id)
+                    w, submitted_media, session_id, params)
                 _, trusted_params = normalize_rh_workflow_inputs(w, public_media, params)
             except ValueError as error:
                 return self._send(400, json.dumps({"error": str(error)}, ensure_ascii=False).encode())
@@ -5068,7 +5128,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     provider_media, _ = normalize_rh_workflow_inputs(w, redo.get('provider_media') or {}, schema_params)
                     public_media, _ = normalize_rh_workflow_inputs(w, redo.get('media') or {}, schema_params)
                 else:
-                    provider_media, public_media = resolve_upload_capabilities(w, submitted_media, session_id)
+                    provider_media, public_media = resolve_upload_capabilities(w, submitted_media, session_id, schema_params)
                 _, params = normalize_rh_workflow_inputs(w, public_media, schema_params)
             except ValueError as error:
                 return self._send(400, json.dumps({"error": str(error)}, ensure_ascii=False).encode())

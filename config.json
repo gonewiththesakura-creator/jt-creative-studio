@@ -2016,12 +2016,126 @@
    "name": "Qwen 2.1 · 固定人物换装",
    "kind": "rh_workflow",
    "backend": "runninghub",
-   "desc": "上传人物图与服装参考图，按提示词替换服装，保持人物身份、姿态与背景。",
+   "desc": "上传人物图，按提示词编辑服装；可开启图二，使用服装参考图。保持人物身份、姿态与背景。",
    "section": "换装与图片编辑",
    "rh_workflow_id": "2111378115142823938",
    "source_editor_workflow_id": "2111383542247743489",
    "source_editor_json_sha256": "5c0ce212b103ca3dcdd8adc9ef42637538034a5caadb49012c264942be39b710",
    "source_api_json_sha256": "9603bf4b7ac5480f977d68bec3e939f16541e7258a6987e893ef5e7a0ae4455d",
+   "rh_optional_reference": {
+    "param": "use_clothing",
+    "media": "clothing",
+    "single_image_graph": {
+     "484": {
+      "class_type": "TextEncodeQwenImage21",
+      "inputs": {
+       "negative_prompt": "",
+       "vae": [
+        "478",
+        0
+       ],
+       "prompt": "",
+       "resolution": 1024,
+       "clip": [
+        "477",
+        0
+       ],
+       "images.image_1": [
+        "470",
+        0
+       ]
+      }
+     },
+     "476": {
+      "class_type": "UNETLoader",
+      "inputs": {
+       "weight_dtype": "default",
+       "unet_name": "qwen_image_2.1_int8_convrot.safetensors"
+      }
+     },
+     "477": {
+      "class_type": "CLIPLoader",
+      "inputs": {
+       "clip_name": "qwen3vl_8b_fp8_scaled.safetensors",
+       "type": "qwen_image",
+       "device": "default"
+      }
+     },
+     "499": {
+      "class_type": "SaveImage",
+      "inputs": {
+       "filename_prefix": "ComfyUI",
+       "images": [
+        "480",
+        0
+       ]
+      }
+     },
+     "478": {
+      "class_type": "VAELoader",
+      "inputs": {
+       "vae_name": "qwen_image_2.1_vae_bf16.safetensors"
+      }
+     },
+     "480": {
+      "class_type": "VAEDecode",
+      "inputs": {
+       "vae": [
+        "478",
+        0
+       ],
+       "samples": [
+        "481",
+        0
+       ]
+      }
+     },
+     "470": {
+      "class_type": "LoadImage",
+      "inputs": {
+       "image": ""
+      }
+     },
+     "481": {
+      "class_type": "KSampler",
+      "inputs": {
+       "scheduler": "simple",
+       "negative": [
+        "484",
+        1
+       ],
+       "denoise": 1,
+       "latent_image": [
+        "484",
+        2
+       ],
+       "seed": 527978730201164,
+       "cfg": 1,
+       "sampler_name": "euler",
+       "model": [
+        "483",
+        0
+       ],
+       "positive": [
+        "484",
+        0
+       ],
+       "steps": 40
+      }
+     },
+     "483": {
+      "class_type": "QwenImage21Cache",
+      "inputs": {
+       "dtype": "default",
+       "model": [
+        "476",
+        0
+       ],
+       "device": "auto"
+      }
+     }
+    }
+   },
    "rh_media": {
     "person": {
      "node": "470",
@@ -2033,18 +2147,30 @@
     "clothing": {
      "node": "475",
      "field": "image",
-     "label": "服装参考图",
+     "label": "图二 · 服装参考图",
      "type": "image",
-     "required": true
+     "required": true,
+     "depends_on": {
+      "key": "use_clothing",
+      "value": true
+     }
     }
    },
    "rh_params": {
+    "use_clothing": {
+     "type": "boolean",
+     "label": "使用图二参考图",
+     "default": true,
+     "client_only": true,
+     "group": "common",
+     "description": "开启：参考图二的服装；关闭：只用人物图和提示词。"
+    },
     "prompt": {
      "node": "484",
      "field": "prompt",
      "label": "换装要求",
      "type": "text",
-     "default": "将 <image1> 中人物的服装替换为 <image2> 中的服装，只参考服装的颜色、材质与款式，不转移衣架或人台。保持人物面容、发型、姿态、身形、光线和背景不变。",
+     "default": "按文字要求编辑 <image1> 中人物的服装。有图二时参考其服装的颜色、材质与款式，不转移衣架或人台；没有图二时按文字描述修改。保持人物面容、发型、姿态、身形、光线和背景不变。",
      "required": true,
      "max_length": 10000
     },

@@ -10,7 +10,8 @@ if isinstance(WORKFLOWS, dict): WORKFLOWS=list(WORKFLOWS.values())
 
 
 @pytest.mark.parametrize('width', [390,1440])
-def test_image_editor_upload_paste_queue_redo_and_remove(browser, tmp_path, width):
+@pytest.mark.parametrize('use_clothing', [True,False])
+def test_image_editor_upload_paste_queue_redo_and_remove(browser, tmp_path, width, use_clothing):
     page=browser.new_page(viewport={'width':width,'height':1000}, reduced_motion='reduce')
     errors=[];page.on('pageerror',lambda error:errors.append(str(error)))
     serve_page(page,block_scene=True)
@@ -39,6 +40,14 @@ def test_image_editor_upload_paste_queue_redo_and_remove(browser, tmp_path, widt
         image=base64.b64decode(page.evaluate('window.testPng'))
         host.locator('.drop[data-media-key="person"] input[type=file]').set_input_files({'name':'person.png','mimeType':'image/png','buffer':image})
         expect(host.locator('.upload-status.ok')).to_have_count(1)
+        toggle=host.get_by_role('checkbox',name='使用图二参考图',exact=True)
+        expect(toggle).to_be_checked()
+        toggle.uncheck()
+        expect(host.locator('.drop[data-media-key="clothing"]')).to_be_hidden()
+        expect(host.locator('#generateBtn')).to_be_enabled()
+        toggle.check()
+        expect(host.locator('.drop[data-media-key="clothing"]')).to_be_visible()
+        expect(host.locator('#generateBtn')).to_be_disabled()
         host.locator('.drop[data-media-key="clothing"] .paste-target').click()
         host.locator('.drop[data-media-key="clothing"]').evaluate("""(el,base64) => {const file=new File([Uint8Array.from(atob(base64),c=>c.charCodeAt(0))],'dress.png',{type:'image/png'});const dt=new DataTransfer();dt.items.add(file);el.dispatchEvent(new ClipboardEvent('paste',{clipboardData:dt,bubbles:true,cancelable:true}))}""",page.evaluate('window.testPng'))
         expect(host.locator('.upload-status.ok')).to_have_count(2)
@@ -49,9 +58,16 @@ def test_image_editor_upload_paste_queue_redo_and_remove(browser, tmp_path, widt
         expect(host.locator('#generateBtn')).to_be_disabled()
         host.locator('.drop[data-media-key="person"] input[type=file]').set_input_files({'name':'person.png','mimeType':'image/png','buffer':image})
         expect(host.locator('#generateBtn')).to_be_enabled()
+        toggle.uncheck()
+        expect(host.locator('.drop[data-media-key="clothing"]')).to_be_hidden()
+        toggle.check()
+        expect(host.locator('.drop[data-media-key="clothing"] .local-image-preview')).to_be_visible()
+        expect(host.locator('#generateBtn')).to_be_enabled()
+        if not use_clothing:toggle.uncheck()
         host.locator('#generateBtn').click()
         expect(host.locator('.task-card')).to_have_count(1)
-        assert submitted[0]['media']=={'person':'token-3','clothing':'token-2'}
+        assert submitted[0]['media']==({'person':'token-3','clothing':'token-2'} if use_clothing else {'person':'token-3'})
+        assert submitted[0]['params']['use_clothing'] is use_clothing
         expect(host.locator('.task-badge')).to_contain_text('排队')
         jobs[0].update(status='error',editable=False,redoable=True,provider_status='FAILED',error='offline failure')
         page.reload()

@@ -23,7 +23,10 @@ def test_packaging_preserves_business_functions_and_backend_contracts():
         tree=ast.parse(source)
         queue_functions={'normalize_video_thumbnail','_video_waiting','_cloud_slot_used','dispatch_video_queue',
                          'video_queue_loop','video_queue_snapshot','edit_video_queue',
-                         'load_jobs','run_job','main','video_redoable','clear_video_ui','scoped_history_jobs'}
+                         'load_jobs','run_job','main','video_redoable','clear_video_ui','scoped_history_jobs',
+                         # Optional reference wiring and capability checks have dedicated HTTP/runtime tests.
+                         'rh_input_enabled','resolve_upload_capabilities','normalize_rh_workflow_inputs',
+                         'rh_build_generic_node_info','rh_build_single_image_graph','rh_submit_single_image_graph','rh_run_generic'}
         tree.body=[n for n in tree.body if not (
             isinstance(n,ast.FunctionDef) and n.name in queue_functions) and not (
             isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id in
