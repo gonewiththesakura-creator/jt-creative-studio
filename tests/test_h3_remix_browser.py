@@ -39,9 +39,9 @@ def test_remix_controls_upload_queue_and_redo(browser,tmp_path,width):
         expect(host.locator('#param_second_pass')).to_be_checked()
         expect(host.locator('#param_face_refine')).to_be_checked()
         expect(host.locator('.remix-group')).to_have_count(10)
-        host.locator('#param_second_pass').uncheck()
+        host.locator('[data-toggle-for=param_second_pass]').click()
         expect(host.locator('.remix-group[data-group="二次采样设置"]')).to_be_hidden()
-        host.locator('#param_face_refine').uncheck()
+        host.locator('[data-toggle-for=param_face_refine]').click()
         expect(host.locator('.remix-group[data-group="人脸精修设置"]')).to_be_hidden()
         host.locator('#param_mode').select_option('image')
         expect(host.locator('[data-media-key=source_video]')).to_be_hidden()
@@ -51,7 +51,7 @@ def test_remix_controls_upload_queue_and_redo(browser,tmp_path,width):
         expect(drop.locator('.fn')).to_contain_text('已上传')
         assert uploads[0]['input_key']=='reference_image'
         host.locator('.remix-group[data-group="LoRA 设置"] > summary').click()
-        host.locator('#param_lora_1_enabled').uncheck()
+        host.locator('[data-toggle-for=param_lora_1_enabled]').click()
         host.locator('#param_lora_2_strength').fill('0.3')
         host.locator('#param_lora_2_strength').dispatch_event('change')
         # A round-trip to another workflow must retain switches and selected media.

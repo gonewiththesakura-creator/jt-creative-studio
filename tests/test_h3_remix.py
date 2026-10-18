@@ -41,7 +41,7 @@ def test_media_toggles_loras_trims_and_security(panel):
                   lora_2_strength=.3,lora_3_bypass=False,source_video_start=1.2,source_video_end=3.4,
                   use_face_reference=True,face_refine=False)
     j['provider_media']['face_reference']='api/unused.png'
-    j['params'].update(prompt_optimizer_api_key='attacker',prompt_optimizer_api_url='http://127.0.0.1',workflow={'evil':True})
+    j['params'].update(prompt_optimizer_enabled=True,prompt_optimizer_api_key='attacker',prompt_optimizer_api_url='http://127.0.0.1',workflow={'evil':True})
     g=panel.rh_build_h3_remix_graph(j,w);setup=g['295']['inputs']
     assert '339' not in g and '327' not in g and '283' not in g
     assert g['298']['inputs']['audio']==['287',7]
@@ -49,6 +49,7 @@ def test_media_toggles_loras_trims_and_security(panel):
     assert g['342']['inputs']['lora_1']['strength']==.3
     assert g['342']['inputs']['lora_2']['bypass'] is False
     assert setup['prompt_optimizer_api_key']==setup['prompt_optimizer_api_url']==''
+    assert setup['prompt_optimizer_enabled'] is False
     rows=json.loads(setup['embedded_media_json'])
     assert [r['filename'] for r in rows]==['api/person.png','api/motion.mp4','api/music.wav']
     assert rows[1]['audio_trim']=='00:01:200-00:03:400'

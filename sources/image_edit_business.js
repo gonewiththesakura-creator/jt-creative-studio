@@ -1,5 +1,16 @@
 // Image form keeps its native schema controls; task UI comes from the video runtime.
 const imagePreviewUrls=new Map();
+function installImageCompactForm(){
+ const root=document.querySelector('.creation-scroll'),state=ensureState(current),items=[];
+ const options=document.createElement('div');options.className='compact-upload-options';operateControls.prepend(options);
+ for(const [key,ref] of controlRefs){
+  if(ref.type!=='image')continue;
+  for(const toggle of ref.box.querySelectorAll('.reference-toggle'))options.append(toggle);
+  items.push({key,type:'image',label:ref.mapping.label||key,box:ref.box,drop:ref.drop,
+   filled:()=>!!state.media[key],hasFile:()=>!!state.files?.[key],enabled:()=>isInputEnabled(ref.mapping,state)});
+ }
+ installCompactUploads(root,items,{before:options});installWorkflowToggleButtons(root);
+}
 function renderImageControl(key,mapping,state,version){
  const box=controlShell(key,mapping),workflow=current,drop=document.createElement('div'),button=document.createElement('button'),input=document.createElement('input'),status=document.createElement('div'),remove=document.createElement('button'),paste=document.createElement('button');
  const dependency=mapping.depends_on,toggle=dependency&&workflow.rh_params?.[dependency.key];if(toggle?.type==='boolean'){const toggleBox=renderBooleanControl(dependency.key,toggle,state);toggleBox.classList.add('reference-toggle');box.append(toggleBox)}
@@ -25,7 +36,7 @@ function renderImageControl(key,mapping,state,version){
 function pasteImageEditReference(event){
  if(!current||document.body.closest('.page-host')?.hidden||document.getElementById('queueEditor')||histOverlay.classList.contains('open')||favOverlay.classList.contains('open'))return;
  const item=Array.from(event.clipboardData?.items||[]).find(item=>item.kind==='file'&&item.type.startsWith('image/')),file=item?.getAsFile();if(!file)return;
- const refs=Array.from(controlRefs.values()).filter(ref=>ref.type==='image'&&isInputEnabled(ref.mapping,ensureState(current))),focused=refs.find(ref=>ref.drop===document.activeElement||ref.drop.contains(document.activeElement)),target=focused||(refs.length===1?refs[0]:null);if(!target){if(refs.length){event.preventDefault();generateStatus.textContent='请先点击对应图片框的“粘贴到这里”，再按 Ctrl＋V'}return}
+ const refs=Array.from(controlRefs.values()).filter(ref=>ref.type==='image'&&ref.drop.getClientRects().length&&isInputEnabled(ref.mapping,ensureState(current))),focused=refs.find(ref=>ref.drop===document.activeElement||ref.drop.contains(document.activeElement)),target=focused||(refs.length===1?refs[0]:null);if(!target){if(refs.length){event.preventDefault();generateStatus.textContent='请先点击对应图片框的“粘贴到这里”，再按 Ctrl＋V'}return}
  event.preventDefault();target.acceptFile(file);
 }
 function readParamValue(input){if(input.type==='checkbox')return input.checked;return input.value}

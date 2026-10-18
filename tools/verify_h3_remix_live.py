@@ -10,7 +10,7 @@ from PIL import Image
 from playwright.sync_api import sync_playwright,expect
 from verify_image_edit_playback_live import login_session,BASE
 
-OUTPUT=BASE/'audit/h3-remix-20261018'
+OUTPUT=BASE/'audit/compact-workflow-20261018'
 
 
 def main():
@@ -39,37 +39,66 @@ def main():
             button=host.locator('button[data-wf=h3_remix_full]');expect(button).to_be_visible(timeout=30000);button.click()
             catalog=context.request.get(session['origin']+'/api/workflows').json()
             workflow=next(w for w in catalog if w['id']=='h3_remix_full')
-            assert len(workflow['rh_params'])==77 and len(workflow['rh_media'])==16
+            assert len(workflow['rh_params'])==76 and len(workflow['rh_media'])==16
+            assert 'prompt_optimizer_enabled' not in workflow['rh_params']
+            expect(host.locator('.drop:visible')).to_have_count(1)
+            expect(host.locator('#wfForm input[type=checkbox]:visible')).to_have_count(0)
+            expect(host.locator('.compact-media-tab[data-media-type=image] .compact-count')).to_have_text('0 / 9')
             public=json.dumps(workflow)
             assert all(value not in public for value in ('rh_graph','rh_workflow_id','safetensors','prompt_optimizer_api_key'))
             report['public_schema_and_secret_boundary']=True
-            expect(host.locator('#param_second_pass')).to_be_checked();host.locator('#param_second_pass').uncheck()
+            expect(host.locator('#param_second_pass')).to_be_checked();host.locator('[data-toggle-for=param_second_pass]').click()
             expect(host.locator('.remix-group[data-group="二次采样设置"]')).to_be_hidden()
-            host.locator('#param_second_pass').check()
-            host.locator('#param_face_refine').uncheck()
+            host.locator('[data-toggle-for=param_second_pass]').click()
+            host.locator('[data-toggle-for=param_face_refine]').click()
             expect(host.locator('.remix-group[data-group="人脸精修设置"]')).to_be_hidden()
-            host.locator('#param_face_refine').check();report['branch_switches_live']=True
+            host.locator('[data-toggle-for=param_face_refine]').click();report['branch_switches_live']=True
             page.evaluate("""async data=>{const raw=Uint8Array.from(atob(data),c=>c.charCodeAt(0));await navigator.clipboard.write([new ClipboardItem({'image/png':new Blob([raw],{type:'image/png'})})])}""",base64.b64encode(png).decode())
             drop=host.locator('.drop[data-media-key=reference_image]');drop.locator('.paste-target').click();page.keyboard.press('Control+V')
             expect(drop.locator('.fn')).to_contain_text('已上传',timeout=180000);report['clipboard_image_uploaded']=True
+            expect(host.locator('.drop[data-media-key=reference_image_2]')).to_be_visible()
+            expect(host.locator('.compact-media-tab[data-media-type=image] .compact-count')).to_have_text('1 / 9')
+            host.locator('.compact-media-tab[data-media-type=video]').click()
             drop=host.locator('.drop[data-media-key=source_video]')
             drop.locator('input[type=file]').set_input_files({'name':'jt-remix-check.mp4','mimeType':'video/mp4','buffer':video})
             expect(drop.locator('.fn')).to_contain_text('已上传',timeout=180000);report['video_uploaded']=True
-            host.locator('.remix-group[data-group="更多参考素材"] > summary').click()
+            expect(host.locator('.drop[data-media-key=source_video_2]')).to_be_visible()
+            expect(host.locator('.compact-media-tab[data-media-type=video] .compact-count')).to_have_text('1 / 3')
+            host.locator('.compact-media-tab[data-media-type=audio]').click()
             drop=host.locator('.drop[data-media-key=reference_audio]')
             drop.locator('input[type=file]').set_input_files({'name':'jt-remix-check.wav','mimeType':'audio/wav','buffer':wav})
             expect(drop.locator('.fn')).to_contain_text('已上传',timeout=180000)
             expect(drop.locator('audio')).to_be_attached();report['audio_uploaded']=True
+            expect(host.locator('.drop[data-media-key=reference_audio_2]')).to_be_visible()
+            expect(host.locator('.drop:visible')).to_have_count(1)
+            expect(host.locator('.compact-media-tab[data-media-type=audio] .compact-count')).to_have_text('1 / 3')
             host.locator('#param_mode').select_option('image')
             expect(host.locator('.drop[data-media-key=source_video]')).to_be_hidden()
             expect(drop).to_be_hidden();host.locator('#param_mode').select_option('reference')
-            host.locator('.remix-group[data-group="更多参考素材"] > summary').click()
+            host.locator('.compact-media-tab[data-media-type=image]').click()
+            host.locator('.compact-uploads').scroll_into_view_if_needed()
+            host.locator('.compact-uploads').screenshot(path=str(OUTPUT/'live-upload-panel.png'))
             host.locator('.remix-group[data-group="基本设置"]').scroll_into_view_if_needed()
             page.screenshot(path=str(OUTPUT/'live-desktop.png'))
             page.set_viewport_size({'width':390,'height':844})
             assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
             host.locator('.remix-group[data-group="基本设置"]').scroll_into_view_if_needed()
             page.screenshot(path=str(OUTPUT/'live-mobile.png'));report['mobile_layout']=True
+            page.goto(session['origin']+'/realism',wait_until='domcontentloaded',timeout=60000)
+            host=page.locator('.page-host:not([hidden])')
+            expect(host.locator('#workflowSelect')).to_have_value('qwen21_wardrobe',timeout=30000)
+            expect(host.locator('.drop:visible')).to_have_count(1)
+            expect(host.locator('.creation-scroll input[type=checkbox]:visible')).to_have_count(0)
+            for key in ('person','clothing'):
+                drop=host.locator('.drop[data-media-key='+key+']');expect(drop).to_be_visible()
+                drop.locator('input[type=file]').set_input_files({'name':'jt-layout-check.png','mimeType':'image/png','buffer':png})
+                expect(drop.locator('..').locator('.upload-status')).to_contain_text('已上传',timeout=180000)
+            expect(host.locator('.compact-count')).to_have_text('2 / 2')
+            host.get_by_role('button',name='使用图二参考图',exact=True).click()
+            expect(host.locator('.compact-count')).to_have_text('1 / 1')
+            expect(host.locator('.drop[data-media-key=person]')).to_be_visible()
+            host.locator('.compact-uploads').screenshot(path=str(OUTPUT/'live-image-upload-panel.png'))
+            report['image_editor_progression_and_buttons']=True
             assert not generation and not errors
             assert responses and all(row['status']==200 for row in responses)
             report.update(success=True,controls=len(workflow['rh_params']),generation_requests=0,upload_responses=responses)

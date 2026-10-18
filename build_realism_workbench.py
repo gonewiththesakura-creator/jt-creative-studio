@@ -101,10 +101,13 @@ from workbench_task_runtime import image_edit_task_runtime
 # same maintained task/gallery interactions as every video workflow.
 form_js = JS[:JS.index('function createTaskCard(')]
 form_js = form_js.replace('const tasks=new Map();', '')
+form_js = form_js.replace('function renderForm(){renderVersion++;', "function renderForm(){document.querySelector('.creation-scroll')._compactUploads?.destroy();renderVersion++;")
+form_js = form_js.replace("workflowNote.textContent=current.desc||'';updateDependencies();updateGenerateAvailability()}", "workflowNote.textContent=current.desc||'';updateDependencies();updateGenerateAvailability();installImageCompactForm()}")
 form_js = '\n'.join(line for line in form_js.splitlines()
                     if not line.startswith(('function renderImageControl(', 'function fmtTime(')))
 image_js = (ROOT / 'sources/image_edit_business.js').read_text(encoding='utf-8')
 JS = (ROOT / 'sources/direct_upload.js').read_text(encoding='utf-8') + '\n' + (ROOT / 'sources/video_prompt_presets.js').read_text(encoding='utf-8') + '\n' + form_js + '\n' + image_edit_task_runtime() + '\n' + image_js
+JS = (ROOT / 'sources/compact_workflow_form.js').read_text(encoding='utf-8') + '\n' + JS
 JS = JS.replace("generateBtn.disabled=missing.length>0;", "generateBtn.disabled=missing.length>0||Object.values(state.uploading||{}).some(Boolean);")
 JS = JS.replace("workflows[0].id)", "(workflows.find(w=>w.id==='qwen21_wardrobe')||workflows[0]).id)")
 JS = JS.replace('真人化', '图片编辑')
@@ -112,6 +115,7 @@ BODY = BODY.replace('真人化', '图片编辑').replace('REALISM', 'IMAGE EDIT'
 CSS += '\n' + (ROOT / 'sources/video_gallery.css').read_text(encoding='utf-8')
 CSS += '\n' + (ROOT / 'sources/image_edit.css').read_text(encoding='utf-8')
 CSS += '\n' + (ROOT / 'sources/video_prompt_presets.css').read_text(encoding='utf-8')
+CSS += '\n' + (ROOT / 'sources/compact_workflow_form.css').read_text(encoding='utf-8')
 html = '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>图片编辑 · JT 灵感工作台</title><style>'+CSS+'</style></head><body>'+BODY+'<script>'+JS+'</script></body></html>'
 html = html.replace('__WORKFLOW_PREVIEWS__', json.dumps(WORKFLOW_PREVIEWS, ensure_ascii=False, separators=(',', ':'))).replace('__WORKFLOW_PREVIEW_THUMBS__', json.dumps(WORKFLOW_PREVIEW_THUMBS, ensure_ascii=False, separators=(',', ':')))
 from workbench_theme import apply_workbench_theme

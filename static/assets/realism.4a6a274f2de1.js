@@ -19,6 +19,85 @@ const galleryPrev=document.getElementById("galleryPrev");
 const galleryNext=document.getElementById("galleryNext");
 const histOpen=document.getElementById("histOpen");
 const favOpen=document.getElementById("favOpen");
+// One visible upload slot, shared by all image-edit and video workflow forms.
+function installCompactUploads(root,items,options={}){
+  root._compactUploads?.destroy();
+  if(!items.length)return;
+  const panel=document.createElement('section'),tabs=document.createElement('div'),strip=document.createElement('div'),stage=document.createElement('div'),empty=document.createElement('p');
+  panel.className='compact-uploads';panel.setAttribute('aria-label','上传素材');tabs.className='compact-media-tabs';strip.className='compact-media-strip';stage.className='compact-media-stage';
+  empty.className='note';empty.textContent='当前设置无需上传素材';empty.hidden=true;
+  panel.append(tabs,strip,stage,empty);options.before?options.before.before(panel):root.prepend(panel);
+  let selected=null,kind=items[0].type,pendingFrame=0,destroyed=false;
+  const previousFilled=new Map(items.map(item=>[item.key,!!item.filled()])),typeButtons=new Map(),slotButtons=new Map();
+  const text=(el,value)=>{if(el.textContent!==value)el.textContent=value};
+  const hidden=(el,value)=>{if(el.hidden!==value)el.hidden=value};
+  const labels={image:'图片',video:'视频',audio:'音频'};
+  for(const type of [...new Set(items.map(item=>item.type))]){
+    const button=document.createElement('button'),name=document.createElement('span'),count=document.createElement('span');
+    button.type='button';button.className='compact-media-tab';button.dataset.mediaType=type;count.className='compact-count';name.textContent=labels[type]||'素材';button.append(name,count);
+    button.onclick=()=>{kind=type;selected=null;update()};tabs.append(button);typeButtons.set(type,{button,count});
+  }
+  for(const item of items){
+    stage.append(item.box);
+    const button=document.createElement('button');button.type='button';button.className='compact-media-slot';button.dataset.slot=item.key;
+    button.onclick=()=>{kind=item.type;selected=item.key;update()};strip.append(button);slotButtons.set(item.key,button);
+  }
+  const observer=new MutationObserver(()=>{if(!pendingFrame)pendingFrame=requestAnimationFrame(()=>{pendingFrame=0;update()})});
+  const watch=()=>observer.observe(root,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['class','hidden','disabled','src']});
+  function update(){
+    if(destroyed)return;observer.disconnect();
+    const active=items.filter(item=>item.enabled()),types=[...new Set(active.map(item=>item.type))];
+    if(!types.includes(kind))kind=types[0];
+    const rows=active.filter(item=>item.type===kind),next=rows.find(item=>!item.filled());
+    // Advance only when the selected upload actually succeeds, not on preview.
+    const current=rows.find(item=>item.key===selected);
+    if(!current||(current.filled()&&!previousFilled.get(current.key)))selected=(next||rows.at(-1))?.key;
+    for(const item of items)previousFilled.set(item.key,!!item.filled());
+    for(const [type,{button,count}] of typeButtons){
+      const candidates=active.filter(item=>item.type===type),done=candidates.filter(item=>item.filled()).length;
+      hidden(button,!candidates.length);text(count,done+' / '+candidates.length);button.setAttribute('aria-pressed',String(type===kind));
+      button.title='已上传 '+done+'，最多可上传 '+candidates.length+(type==='image'?' 张':' 个');
+      button.setAttribute('aria-label',(labels[type]||'素材')+'，已上传 '+done+'，最多 '+candidates.length);
+    }
+    for(const item of items){
+      const button=slotButtons.get(item.key),available=rows.includes(item),filled=!!item.filled(),show=available&&(filled||item.hasFile?.()||item===next);
+      hidden(item.box,item.key!==selected||!available);hidden(button,!show);
+      button.setAttribute('aria-pressed',String(item.key===selected));button.title=item.label;button.setAttribute('aria-label',(filled?'查看':'上传')+item.label);
+      const preview=item.drop.querySelector('img'),src=preview?.getAttribute('src')||'',signature=src+'|'+filled+'|'+item.label;
+      if(button.dataset.preview!==signature){
+        button.dataset.preview=signature;button.replaceChildren();
+        if(src){const img=document.createElement('img');img.src=src;img.alt='';button.append(img)}
+        const label=document.createElement('span');label.textContent=(filled?'✓ ':'＋ ')+item.label;button.append(label);
+      }
+    }
+    hidden(stage,!rows.length);hidden(strip,!rows.length);hidden(empty,!!active.length);
+    watch();
+  }
+  const change=()=>update();root.addEventListener('change',change);
+  root._compactUploads={refresh:update,destroy(){destroyed=true;observer.disconnect();cancelAnimationFrame(pendingFrame);root.removeEventListener('change',change);panel.remove()}};
+  update();return root._compactUploads;
+}
+
+// Keep the existing boolean data contract while exposing actual toggle buttons.
+function installWorkflowToggleButtons(root){
+  for(const input of root.querySelectorAll('input[type=checkbox]')){
+    if(input.dataset.buttonToggle)continue;input.dataset.buttonToggle='true';input.hidden=true;
+    const container=input.closest('.remix-field,.control')||input.parentElement;
+    const label=input.closest('label')||input.previousElementSibling;
+    const name=input.getAttribute('aria-label')||label?.textContent.trim()||'开关';
+    const button=document.createElement('button');button.type='button';button.className='workflow-toggle-button';button.dataset.toggleFor=input.id||container?.dataset.controlKey||name;
+    button.setAttribute('aria-label',name);button.textContent=name;
+    const refresh=()=>{button.setAttribute('aria-pressed',String(input.checked));button.disabled=input.disabled;button.title=input.checked?'已开启，点击关闭':'已关闭，点击开启'};
+    button.onclick=event=>{event.preventDefault();event.stopPropagation();input.checked=!input.checked;input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));refresh()};
+    input.addEventListener('change',refresh);
+    const row=input.closest('.bool-row');
+    if(row){row.hidden=true;row.after(button);container?.classList.add('button-toggle-control')}
+    else if(label?.tagName==='LABEL'){label.hidden=true;label.after(button)}
+    else input.after(button);
+    refresh();
+  }
+}
+
 // Upload credentials remain on the server. This page transfers file chunks only
 // to its own authenticated API and resumes an interrupted finalization in place.
 const accountMediaUploads=new WeakMap();
@@ -97,7 +176,7 @@ function isCoreOperateControl(mapping){const type=String(mapping.type||'text').t
 function isInputEnabled(mapping,state){const rule=mapping.depends_on;return !rule||state.params[rule.key]===rule.value}
 function updateDependencies(){const state=ensureState(current);controlRefs.forEach(ref=>{if(!ref.mapping.depends_on)return;const enabled=isInputEnabled(ref.mapping,state);ref.control.disabled=!enabled;if(ref.type==='image'){ref.drop.hidden=!enabled;ref.status.hidden=!enabled}else ref.box?.classList.toggle('disabled',!enabled)})}
 function renderSubworkflows(){subworkflowPanel.replaceChildren();if(current.subworkflows?.length){const title=document.createElement('div');title.className='field-label';title.textContent='3in1子功能';const box=document.createElement('div');box.className='config-stack';current.subworkflows.forEach(item=>{const row=document.createElement('button');row.type='button';row.className='config-drawer-head';row.disabled=!item.available;row.textContent=item.label+(item.available?' · 当前可用':' · 暂不可用：'+item.reason);box.appendChild(row)});subworkflowPanel.append(title,box)}if(current.fixed_features?.length){const fixed=document.createElement('div');fixed.className='workflow-note';fixed.textContent=current.fixed_features.join('；');subworkflowPanel.appendChild(fixed)}}
-function renderForm(){renderVersion++;controlRefs.clear();renderSubworkflows();const version=renderVersion,state=ensureState(current);operateControls.innerHTML='';commonControls.innerHTML='';advancedControls.innerHTML='';Object.entries(current.rh_media||{}).forEach(([key,mapping])=>{const target=isCoreOperateControl(mapping)?operateControls:commonControls;target.appendChild(renderControl(key,mapping,state,version))});Object.entries(current.rh_params||{}).forEach(([key,mapping])=>{if(controlRefs.has(key))return;let target;if(isCoreOperateControl(mapping))target=operateControls;else target=groupFor(key,mapping)==='advanced'?advancedControls:commonControls;target.appendChild(renderControl(key,mapping,state,version))});if(!operateControls.children.length)operateControls.innerHTML='<div class="config-state">此方案无需上传素材</div>';if(!commonControls.children.length)commonControls.innerHTML='<div class="config-state">此方案没有额外常用设置</div>';if(!advancedControls.children.length)advancedControls.innerHTML='<div class="config-state">此方案没有额外高级设置</div>';workflowNote.textContent=current.desc||'';updateDependencies();updateGenerateAvailability()}
+function renderForm(){document.querySelector('.creation-scroll')._compactUploads?.destroy();renderVersion++;controlRefs.clear();renderSubworkflows();const version=renderVersion,state=ensureState(current);operateControls.innerHTML='';commonControls.innerHTML='';advancedControls.innerHTML='';Object.entries(current.rh_media||{}).forEach(([key,mapping])=>{const target=isCoreOperateControl(mapping)?operateControls:commonControls;target.appendChild(renderControl(key,mapping,state,version))});Object.entries(current.rh_params||{}).forEach(([key,mapping])=>{if(controlRefs.has(key))return;let target;if(isCoreOperateControl(mapping))target=operateControls;else target=groupFor(key,mapping)==='advanced'?advancedControls:commonControls;target.appendChild(renderControl(key,mapping,state,version))});if(!operateControls.children.length)operateControls.innerHTML='<div class="config-state">此方案无需上传素材</div>';if(!commonControls.children.length)commonControls.innerHTML='<div class="config-state">此方案没有额外常用设置</div>';if(!advancedControls.children.length)advancedControls.innerHTML='<div class="config-state">此方案没有额外高级设置</div>';workflowNote.textContent=current.desc||'';updateDependencies();updateGenerateAvailability();installImageCompactForm()}
 function updateGenerateAvailability(){if(!current){generateBtn.disabled=true;generateBtn.textContent='没有可用工作流';return}const state=ensureState(current),media=Object.entries(current.rh_media||{}).filter(([,mapping])=>isInputEnabled(mapping,state)),missing=media.filter(([key,mapping])=>mapping.required&&!state.media[key]).map(([,mapping])=>mapping.label);generateBtn.disabled=missing.length>0||media.some(([key])=>state.uploading?.[key]);generateBtn.textContent=missing.length?'请先上传：'+missing.join('、'):'开始运行 '+current.name}
 function selectWorkflow(id){current=workflows.find(item=>item.id===id)||workflows[0]||null;if(!current)return updateGenerateAvailability();workflowSelect.value=current.id;renderForm();updateWorkflowPreview()}
 function showWorkflowLoadError(error){const box=document.createElement('div'),retry=document.createElement('button');box.className='config-state error';box.textContent='工作流配置加载失败：'+error.message;retry.className='retry';retry.type='button';retry.textContent='重新加载';retry.onclick=loadWorkflows;box.appendChild(document.createElement('br'));box.appendChild(retry);commonControls.replaceChildren(box);const empty=document.createElement('div');empty.className='config-state';empty.textContent='没有提交任何任务';advancedControls.replaceChildren(empty)}
@@ -259,6 +338,7 @@ function openQueueEditor(job){
     input.dataset.paramType=p.vtype||p.type||'text';input.name=key;if(input.type==='checkbox')input.checked=job.params?.[key]===true;else input.value=job.params?.[key]??p.default??'';label.append(input);form.append(label);fields.set(key,input);
   }
   save.type='submit';save.textContent='保存修改';cancel.type='button';cancel.textContent='返回';cancel.onclick=()=>dialog.close();actions.className='queue-actions';actions.append(save,cancel);form.append(actions);dialog.append(form);document.body.append(dialog);dialog.addEventListener('close',()=>dialog.remove(),{once:true});
+  installWorkflowToggleButtons(form);
   form.onsubmit=async e=>{e.preventDefault();save.disabled=true;const params={};for(const [key,input] of fields){if(input.type==='checkbox')params[key]=input.checked;else if(input.value!=='')params[key]=input.value}if(await queueAction(job,'edit',{params}))dialog.close();else{save.disabled=false;note.textContent='保存失败，原任务未被此操作修改。请关闭编辑窗，核对最新队列状态后重试。'}};dialog.showModal();
 }
 let historyVersion=0;
@@ -298,6 +378,17 @@ async function favorites(){
 
 // Image form keeps its native schema controls; task UI comes from the video runtime.
 const imagePreviewUrls=new Map();
+function installImageCompactForm(){
+ const root=document.querySelector('.creation-scroll'),state=ensureState(current),items=[];
+ const options=document.createElement('div');options.className='compact-upload-options';operateControls.prepend(options);
+ for(const [key,ref] of controlRefs){
+  if(ref.type!=='image')continue;
+  for(const toggle of ref.box.querySelectorAll('.reference-toggle'))options.append(toggle);
+  items.push({key,type:'image',label:ref.mapping.label||key,box:ref.box,drop:ref.drop,
+   filled:()=>!!state.media[key],hasFile:()=>!!state.files?.[key],enabled:()=>isInputEnabled(ref.mapping,state)});
+ }
+ installCompactUploads(root,items,{before:options});installWorkflowToggleButtons(root);
+}
 function renderImageControl(key,mapping,state,version){
  const box=controlShell(key,mapping),workflow=current,drop=document.createElement('div'),button=document.createElement('button'),input=document.createElement('input'),status=document.createElement('div'),remove=document.createElement('button'),paste=document.createElement('button');
  const dependency=mapping.depends_on,toggle=dependency&&workflow.rh_params?.[dependency.key];if(toggle?.type==='boolean'){const toggleBox=renderBooleanControl(dependency.key,toggle,state);toggleBox.classList.add('reference-toggle');box.append(toggleBox)}
@@ -323,7 +414,7 @@ function renderImageControl(key,mapping,state,version){
 function pasteImageEditReference(event){
  if(!current||document.body.closest('.page-host')?.hidden||document.getElementById('queueEditor')||histOverlay.classList.contains('open')||favOverlay.classList.contains('open'))return;
  const item=Array.from(event.clipboardData?.items||[]).find(item=>item.kind==='file'&&item.type.startsWith('image/')),file=item?.getAsFile();if(!file)return;
- const refs=Array.from(controlRefs.values()).filter(ref=>ref.type==='image'&&isInputEnabled(ref.mapping,ensureState(current))),focused=refs.find(ref=>ref.drop===document.activeElement||ref.drop.contains(document.activeElement)),target=focused||(refs.length===1?refs[0]:null);if(!target){if(refs.length){event.preventDefault();generateStatus.textContent='请先点击对应图片框的“粘贴到这里”，再按 Ctrl＋V'}return}
+ const refs=Array.from(controlRefs.values()).filter(ref=>ref.type==='image'&&ref.drop.getClientRects().length&&isInputEnabled(ref.mapping,ensureState(current))),focused=refs.find(ref=>ref.drop===document.activeElement||ref.drop.contains(document.activeElement)),target=focused||(refs.length===1?refs[0]:null);if(!target){if(refs.length){event.preventDefault();generateStatus.textContent='请先点击对应图片框的“粘贴到这里”，再按 Ctrl＋V'}return}
  event.preventDefault();target.acceptFile(file);
 }
 function readParamValue(input){if(input.type==='checkbox')return input.checked;return input.value}

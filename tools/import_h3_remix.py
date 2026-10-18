@@ -20,7 +20,7 @@ def install(config, original, editor_sha):
         if node['class_type'] == 'VHS_VideoCombine':
             node['inputs']['save_metadata'] = False
     setup = graph['295']['inputs']
-    setup.update(embedded_media_json='[]', prompt='', prompt_optimizer_api_key='',
+    setup.update(embedded_media_json='[]', prompt='', prompt_optimizer_enabled=False, prompt_optimizer_api_key='',
                  prompt_optimizer_api_url='', prompt_optimizer_api_format='auto',
                  reference_mention_mode='index')
     # Model/resource names and executable wiring remain server-only.
@@ -47,8 +47,6 @@ def install(config, original, editor_sha):
     toggle('face_refine','开启人脸精修',True,description='可独立于二采启用；增加生成耗时。')
     toggle('original_audio','使用参考原声音频',False,node=297,field='switch',description='关闭则使用生成音频；开启需要参考视频或参考音频。')
     toggle('advanced','启用高级设置',True,node=295,group='一采与高级设置')
-    toggle('prompt_optimizer_enabled','提示词反推 / 优化',False,node=295,group='一采与高级设置',
-           depends_on=dict(key='advanced',value=True),description='生成时根据素材优化提示词，可能增加云端费用与耗时。')
     enum('keyframe_role','首尾帧顺序','first',{'first':'图 1 为首帧，图 2 为尾帧','last':'图 1 为尾帧，图 2 为首帧'},node=295,group='一采与高级设置')
     enum('ref_image_size','参考图处理尺寸','640',['match','480','544','640','736','768','832','928','1024','1088'],node=295,group='一采与高级设置')
     p('fps','帧率','float',24,295,min=1,max=120,step=1,group='一采与高级设置')
@@ -106,7 +104,7 @@ def install(config, original, editor_sha):
                 p(key+'_end','参考'+('视频' if kind=='video' else '音频')+str(index)+' · 截取终点（0 为末尾）','float',0,group='参考素材截取',min=0,max=86400,step=.1)
     media['face_reference']=dict(node='339',field='image',type='image',label='独立人脸参考图',group='独立人脸参考',required=True,depends_on=dict(key='use_face_reference',value=True))
     item=dict(id='h3_remix_full',name='MiniMax H3 Remix · 全功能双采样',kind='video',backend='runninghub',section='MiniMax H3',
-        desc='支持参考生视频与首尾帧、二次采样、独立人脸精修、原声切换和提示词反推。参考模式至少上传图片或视频；首尾帧模式仅使用前两张参考图。',
+        desc='支持参考生视频与首尾帧、二次采样、独立人脸精修和原声切换。参考模式至少上传图片或视频；首尾帧模式仅使用前两张参考图。',
         rh_workflow_id=RUN_ID,source_editor_workflow_id=EDITOR_ID,source_editor_json_sha256=editor_sha,
         source_api_json_sha256=hashlib.sha256(json.dumps(original,ensure_ascii=False,indent=2).encode()).hexdigest(),
         rh_graph=graph,rh_media=media,rh_params=params)

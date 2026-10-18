@@ -2235,7 +2235,7 @@
    "kind": "video",
    "backend": "runninghub",
    "section": "MiniMax H3",
-   "desc": "支持参考生视频与首尾帧、二次采样、独立人脸精修、原声切换和提示词反推。参考模式至少上传图片或视频；首尾帧模式仅使用前两张参考图。",
+   "desc": "支持参考生视频与首尾帧、二次采样、独立人脸精修和原声切换。参考模式至少上传图片或视频；首尾帧模式仅使用前两张参考图。",
    "rh_workflow_id": "2111635037301452801",
    "source_editor_workflow_id": "2111655708270211074",
    "source_editor_json_sha256": "5b9b3ba075547ba743937189d1e81e2ac4ecb96b04ac00ba7c3960dbb1b02043",
@@ -3253,19 +3253,6 @@
      "group": "一采与高级设置",
      "node": "295",
      "field": "advanced"
-    },
-    "prompt_optimizer_enabled": {
-     "label": "提示词反推 / 优化",
-     "type": "boolean",
-     "default": false,
-     "group": "一采与高级设置",
-     "depends_on": {
-      "key": "advanced",
-      "value": true
-     },
-     "description": "生成时根据素材优化提示词，可能增加云端费用与耗时。",
-     "node": "295",
-     "field": "prompt_optimizer_enabled"
     },
     "keyframe_role": {
      "label": "首尾帧顺序",

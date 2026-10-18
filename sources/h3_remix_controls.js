@@ -54,3 +54,17 @@ function enhanceRemixForm(form,workflow,state){
   };
   form.onchange=update;update();
 }
+
+function installVideoCompactForm(form,workflow,state){
+  const items=Object.entries(workflow.rh_media||{}).map(([key,mapping])=>{
+    const drop=form.querySelector('.drop[data-media-key="'+key+'"]');
+    let box=drop.closest('.remix-field');
+    if(!box){box=document.createElement('div');box.className='compact-upload-field';const label=drop.previousElementSibling;drop.before(box);if(label?.tagName==='LABEL')box.append(label);box.append(drop)}
+    return {key,type:mapping.type,label:mapping.label||key,box,drop,
+      filled:()=>!!state.tokens[key],hasFile:()=>!!state.files[key],
+      enabled:()=>videoInputEnabled(workflow,mapping,Object.fromEntries(Object.entries(workflow.rh_params||{}).map(([key,p])=>[key,document.getElementById('param_'+key)?readParamValue(document.getElementById('param_'+key)):p.default])))};
+  });
+  installCompactUploads(form,items,{before:form.children[1]});
+  for(const group of form.querySelectorAll('.remix-group'))if(!group.querySelector('.remix-field'))group.hidden=true;
+  installWorkflowToggleButtons(form);
+}

@@ -3199,7 +3199,7 @@ def rh_build_h3_remix_graph(job, w):
             graph[mapping['node']]['inputs'][mapping['field']] = params[key]
     setup = graph['295']['inputs']
     setup['prompt'] = job.get('prompt', params['prompt'])
-    setup.update(prompt_optimizer_api_key='', prompt_optimizer_api_url='', embedded_media_json='[]')
+    setup.update(prompt_optimizer_enabled=False, prompt_optimizer_api_key='', prompt_optimizer_api_url='', embedded_media_json='[]')
     records, counts = [], {'image': 0, 'video': 0, 'audio': 0}
     def trim_time(seconds):
         millis = round(seconds * 1000)
