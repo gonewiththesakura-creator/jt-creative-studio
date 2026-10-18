@@ -41,7 +41,14 @@ def test_multi_reference_graph_has_real_separate_connections(panel,monkeypatch):
     assert refs['ref_videos.ref_video_1']==['276',0]
 
 
-def test_resumable_http_provider_receives_complete_file_once(panel,monkeypatch):
+@pytest.mark.parametrize('workflow,key', [
+    ('h3_edit_n','reference_image_2'),
+    ('qwen21_wardrobe','person'),
+    ('qwen21_wardrobe','clothing'),
+    ('realcomic','source_image'),
+    ('realism_krea2','image'),
+])
+def test_resumable_http_provider_receives_complete_file_once(panel,monkeypatch,workflow,key):
     from PIL import Image
     import io
     image=io.BytesIO();Image.new('RGB',(5,5)).save(image,format='PNG');data=image.getvalue();calls=[]
@@ -50,7 +57,7 @@ def test_resumable_http_provider_receives_complete_file_once(panel,monkeypatch):
     monkeypatch.setattr(panel,'rh_upload_temp_file',provider)
     with running_server(panel) as httpd:
         cookie=session_cookie(panel)
-        status,body,_=json_request(httpd,'POST','/api/upload-start',dict(workflow='h3_edit_n',input_key='reference_image_2',filename='test.png',size=len(data)),cookie=cookie)
+        status,body,_=json_request(httpd,'POST','/api/upload-start',dict(workflow=workflow,input_key=key,filename='image.png',size=len(data)),cookie=cookie)
         assert status==200;uid=body['upload_id']
         for raw,offset in [(data[:20],0),(data[:20],0),(data[20:],20)]:
             c=http.client.HTTPConnection('127.0.0.1',httpd.server_port)
@@ -62,3 +69,5 @@ def test_resumable_http_provider_receives_complete_file_once(panel,monkeypatch):
             time.sleep(.01)
         assert status==200 and body['uploadToken'].startswith('upl_')
         assert calls==[data]
+        row=panel._upload_capabilities[panel._upload_token_hash(body['uploadToken'])]
+        assert row['workflow']==workflow and row['input_key']==key and row['media_type']=='image'

@@ -4878,7 +4878,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     key = str(body.get('input_key', ''))
                     name = _safe_upload_filename(body.get('filename', ''))
                     size = int(body.get('size', 0))
-                    if w.get('kind') != 'video' or key not in w.get('rh_media', {}):
+                    if (w.get('kind') not in ('video', 'rh_workflow', 'ai_app')
+                            or w.get('backend') != 'runninghub'
+                            or key not in w.get('rh_media', {})):
                         raise ValueError('无效的上传位置')
                     quota = reserve_upload_attempt(session_id, size)
                     if self._upload_quota_rejection(quota): return
