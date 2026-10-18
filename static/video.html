@@ -252,7 +252,71 @@ body {background:transparent;isolation:isolate;color:var(--text)}
 .prompt-presets button:disabled{opacity:.35;cursor:default}.prompt-presets button:focus-visible{outline:2px solid #dbbc85;outline-offset:2px}
 .form .prompt-presets input{min-height:32px;padding:6px 8px;font-size:12px;margin:0}
 .prompt-preset-actions{display:grid;grid-template-columns:1fr 1.3fr 1fr;gap:6px;margin:7px 0}.prompt-presets .note{line-height:1.6}
-</style><!-- singularity:start --><link rel="stylesheet" href="/static/singularity/theme.css?v=677f99157b7c"><script type="importmap">{"imports":{"three":"/static/singularity/vendor/build/three.module.js","three/addons/":"/static/singularity/vendor/examples/jsm/"}}</script><script type="module" src="/static/singularity/workbench.js?v=677f99157b7c"></script><!-- singularity:end --></head><body class="singularity"><div class="app-background" aria-hidden="true"></div><div class="app-shell"><header class="topbar"><a class="brand" href="/"><span class="brand-mark">JT</span><span>JT 灵感工作台</span></a><nav class="topnav"><a class="topnav-link" href="/">创作台</a><a class="topnav-link" href="/realism">图片编辑</a><a class="topnav-link active" href="/video">视频</a></nav><div class="topbar-tools"><button class="topbar-action" id="favOpen">♥ 收藏</button><button class="topbar-action" id="histOpen">⌛ 历史</button></div></header><main class="studio-grid"><aside class="creation-pane"><div class="creation-scroll"><div class="pane-heading"><h1>视频创作</h1></div><section class="panel switch" id="wfSwitch"><div class="config-loading">正在加载视频工作流…</div></section><section class="panel form" id="wfForm"><div class="config-loading">加载完成后可设置提示词和素材</div></section></div><div class="creation-footer"><button class="primary" id="genBtn" disabled><span class="video-wave"></span><span>生成视频</span></button><div class="status" id="genStatus"></div></div></aside><section class="preview-pane"><div class="preview-header"><h2>视频预览</h2></div><div class="preview-stage"><div class="preview-empty" id="videoEmpty"><div class="empty-icon">▶</div><strong>生成后，视频将在这里播放</strong><span>任务状态、预览和下载会显示在同一区域</span></div><section class="media-gallery" id="mediaGallery" hidden><div class="gallery-viewer"><div class="gallery-main" id="galleryMain"></div><div class="gallery-navigation"><button class="gallery-nav" id="galleryPrev" type="button" aria-label="上一个结果">‹</button><button class="gallery-nav" id="galleryNext" type="button" aria-label="下一个结果">›</button></div></div><div class="gallery-thumbs" id="galleryThumbs"></div></section><section class="panel" id="taskPanel"><div class="task-panel-head"><b>视频任务</b><span class="note" id="taskCount">0 个任务</span></div><div id="taskList"></div></section><div class="result" id="genResult"></div></div></section></main><div class="library-overlay" id="histOverlay"><div class="library-panel"><div class="library-header"><h2>历史记录</h2><button class="close">×</button></div><div class="library-scroll"><div id="histList"></div></div></div></div><div class="library-overlay" id="favOverlay"><div class="library-panel"><div class="library-header"><h2>我的收藏</h2><button class="close">×</button></div><div class="library-scroll"><div id="favList"></div></div></div></div></div><script>function renderPromptPresets(parent,input,workflowId){
+
+.remix-group{margin-top:16px;padding:12px;border:1px solid #aaa4;border-radius:12px}
+.remix-group>summary{cursor:pointer;font-weight:700;padding:5px}.remix-group[open]>summary{margin-bottom:12px}
+.remix-field{margin:12px 0;min-width:0}.remix-toggle>label{display:flex!important;align-items:center;gap:10px;cursor:pointer}
+.remix-toggle input[type=checkbox]{flex:0 0 auto;width:20px;height:20px;accent-color:#c9a76a}
+.remix-field .note{line-height:1.6;margin-top:5px}.remix-field audio{width:100%;max-width:100%;height:44px}
+.remix-form .drop{position:relative}.remix-form .drop .local-media-preview{max-width:100%}
+</style><!-- singularity:start --><link rel="stylesheet" href="/static/singularity/theme.css?v=677f99157b7c"><script type="importmap">{"imports":{"three":"/static/singularity/vendor/build/three.module.js","three/addons/":"/static/singularity/vendor/examples/jsm/"}}</script><script type="module" src="/static/singularity/workbench.js?v=677f99157b7c"></script><!-- singularity:end --></head><body class="singularity"><div class="app-background" aria-hidden="true"></div><div class="app-shell"><header class="topbar"><a class="brand" href="/"><span class="brand-mark">JT</span><span>JT 灵感工作台</span></a><nav class="topnav"><a class="topnav-link" href="/">创作台</a><a class="topnav-link" href="/realism">图片编辑</a><a class="topnav-link active" href="/video">视频</a></nav><div class="topbar-tools"><button class="topbar-action" id="favOpen">♥ 收藏</button><button class="topbar-action" id="histOpen">⌛ 历史</button></div></header><main class="studio-grid"><aside class="creation-pane"><div class="creation-scroll"><div class="pane-heading"><h1>视频创作</h1></div><section class="panel switch" id="wfSwitch"><div class="config-loading">正在加载视频工作流…</div></section><section class="panel form" id="wfForm"><div class="config-loading">加载完成后可设置提示词和素材</div></section></div><div class="creation-footer"><button class="primary" id="genBtn" disabled><span class="video-wave"></span><span>生成视频</span></button><div class="status" id="genStatus"></div></div></aside><section class="preview-pane"><div class="preview-header"><h2>视频预览</h2></div><div class="preview-stage"><div class="preview-empty" id="videoEmpty"><div class="empty-icon">▶</div><strong>生成后，视频将在这里播放</strong><span>任务状态、预览和下载会显示在同一区域</span></div><section class="media-gallery" id="mediaGallery" hidden><div class="gallery-viewer"><div class="gallery-main" id="galleryMain"></div><div class="gallery-navigation"><button class="gallery-nav" id="galleryPrev" type="button" aria-label="上一个结果">‹</button><button class="gallery-nav" id="galleryNext" type="button" aria-label="下一个结果">›</button></div></div><div class="gallery-thumbs" id="galleryThumbs"></div></section><section class="panel" id="taskPanel"><div class="task-panel-head"><b>视频任务</b><span class="note" id="taskCount">0 个任务</span></div><div id="taskList"></div></section><div class="result" id="genResult"></div></div></section></main><div class="library-overlay" id="histOverlay"><div class="library-panel"><div class="library-header"><h2>历史记录</h2><button class="close">×</button></div><div class="library-scroll"><div id="histList"></div></div></div></div><div class="library-overlay" id="favOverlay"><div class="library-panel"><div class="library-header"><h2>我的收藏</h2><button class="close">×</button></div><div class="library-scroll"><div id="favList"></div></div></div></div></div><script>function videoInputEnabled(workflow,mapping,params){
+  if(workflow.id==='h3_remix_full'&&mapping===workflow.rh_media.face_reference&&!params.face_refine)return false;
+  const rule=mapping.depends_on;
+  return !rule||(params[rule.key]??workflow.rh_params?.[rule.key]?.default)===rule.value;
+}
+function enhanceRemixForm(form,workflow,state){
+  form.onchange=null;form.classList.remove('remix-form');
+  if(workflow.id!=='h3_remix_full')return;
+  form.classList.add('remix-form');
+  const groups=new Map(),fields=[];
+  function group(name){
+    if(groups.has(name))return groups.get(name);
+    const box=document.createElement('details'),heading=document.createElement('summary');
+    box.className='remix-group';box.dataset.group=name;box.open=['基本设置','参考素材'].includes(name);
+    heading.textContent=name;box.append(heading);groups.set(name,box);return box;
+  }
+  // Detach each field as one unit, so hidden dependencies never leave orphan labels.
+  for(const [key,mapping] of Object.entries(workflow.rh_media||{})){
+    const drop=form.querySelector('.drop[data-media-key="'+key+'"]'),label=drop.previousElementSibling,box=document.createElement('div');
+    box.className='remix-field';box.dataset.mediaField=key;box.append(label,drop);group(mapping.group||'参考素材').append(box);
+    drop.dataset.mediaType=mapping.type;
+    if(mapping.type==='audio'){
+      drop.querySelector('.upload-kind-icon').textContent='♪';
+      drop.querySelector('.upload-formats').textContent='点击或拖入音频 · MP3 / WAV / FLAC / M4A / OGG';
+    }
+    fields.push({box,mapping,key,media:true});
+  }
+  for(const [key,mapping] of Object.entries(workflow.rh_params||{})){
+    const input=form.querySelector('#param_'+key);if(!input)continue;
+    const label=input.previousElementSibling,box=document.createElement('div');box.className='remix-field';box.dataset.control=key;
+    const presets=key==='prompt'?form.querySelector('.prompt-presets'):null;
+    const duration=key==='duration'?form.querySelector('#durationAutoNote'):null;
+    label.htmlFor=input.id;box.append(label,input);if(presets)box.append(presets);if(duration)box.append(duration);
+    if(input.type==='checkbox'){box.classList.add('remix-toggle');label.prepend(input)}
+    if(mapping.description){const help=document.createElement('div');help.className='note';help.textContent=mapping.description;box.append(help)}
+    group(mapping.group||'基本设置').append(box);fields.push({box,mapping,key});
+  }
+  for(const name of ['基本设置','参考素材','更多参考素材','一采与高级设置','二次采样设置','LoRA 设置','人脸精修设置','独立人脸参考','参考素材截取','输出设置']){
+    const box=groups.get(name);if(box)form.append(box);
+  }
+  const update=()=>{
+    const params={};for(const key of Object.keys(workflow.rh_params))params[key]=readParamValue(form.querySelector('#param_'+key));
+    for(const field of fields){
+      let enabled=videoInputEnabled(workflow,field.mapping,params);
+      if(field.mapping.group==='二次采样设置')enabled&&=params.second_pass;
+      if(field.mapping.group==='人脸精修设置')enabled&&=params.face_refine;
+      if(field.key==='save_second')enabled&&=params.second_pass;
+      if(field.key==='save_face')enabled&&=params.face_refine;
+      field.box.hidden=!enabled;
+      // Keep values when switching off; hidden branches are excluded server-side.
+    }
+    for(const box of groups.values())box.hidden=![...box.querySelectorAll(':scope > .remix-field')].some(field=>!field.hidden);
+    state.formParams={...params};
+  };
+  form.onchange=update;update();
+}
+
+function renderPromptPresets(parent,input,workflowId){
   const key='jt-video-prompt-presets-v1:'+workflowId,box=document.createElement('details');
   box.className='prompt-presets';box.open=true;
   const heading=document.createElement('summary');heading.textContent='提示词预设';
@@ -391,23 +455,23 @@ function prepareVideoThumbnail(file){
 }
 async function prepareImageThumbnail(file){try{const bitmap=await createImageBitmap(file),canvas=document.createElement('canvas'),scale=Math.min(160/bitmap.width,90/bitmap.height,1);canvas.width=Math.max(1,Math.round(bitmap.width*scale));canvas.height=Math.max(1,Math.round(bitmap.height*scale));canvas.getContext('2d').drawImage(bitmap,0,0,canvas.width,canvas.height);bitmap.close();const data=canvas.toDataURL('image/jpeg',.6).split(',')[1];return data.length<=44000?data:null}catch{return null}}
 function persistTaskThumbnails(jobId,files,workflow){
-  for(const [key,file] of Object.entries(files))(isVideoType(workflow.rh_media?.[key]?.type)?prepareVideoThumbnail(file):prepareImageThumbnail(file)).then(async data=>{if(!data)return;try{await api('/api/video-thumbnail',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({job_id:jobId,key,data})});refreshVideoQueue()}catch{/* Optional preview never blocks a paid task. */}});
+  for(const [key,file] of Object.entries(files).filter(([key])=>workflow.rh_media?.[key]?.type!=='audio'))(isVideoType(workflow.rh_media?.[key]?.type)?prepareVideoThumbnail(file):prepareImageThumbnail(file)).then(async data=>{if(!data)return;try{await api('/api/video-thumbnail',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({job_id:jobId,key,data})});refreshVideoQueue()}catch{/* Optional preview never blocks a paid task. */}});
 }
 function pasteReferenceImage(event){
   if(!cur||document.body.closest('.page-host')?.hidden||document.getElementById('queueEditor')||histOverlay.classList.contains('open')||favOverlay.classList.contains('open'))return;
   const file=Array.from(event.clipboardData?.items||[]).find(item=>item.kind==='file'&&item.type.startsWith('image/'))?.getAsFile();if(!file)return;
-  const drops=Array.from(document.querySelectorAll('.drop')).filter(drop=>!isVideoType(cur.rh_media?.[drop.dataset.mediaKey]?.type));
+  const drops=Array.from(document.querySelectorAll('.drop')).filter(drop=>cur.rh_media?.[drop.dataset.mediaKey]?.type==='image'&&drop.getClientRects().length);
   const focused=document.activeElement?.closest?.('.drop');const target=drops.includes(focused)?focused:drops.length===1?drops[0]:null;
   if(!target){if(drops.length){event.preventDefault();document.getElementById('genStatus').textContent='有多个参考图位置，请先点击对应上传框的“粘贴到这里”再按 Ctrl＋V'}return}
   event.preventDefault();const key=target.dataset.mediaKey,m=cur.rh_media[key],ext={'image/png':'.png','image/jpeg':'.jpg','image/webp':'.webp'}[file.type];
   const named=ext&&!/\.(png|jpe?g|webp)$/i.test(file.name)?new File([file],'剪贴板-'+Date.now()+ext,{type:file.type}):file;
   uploadMedia(key,m,named,target,cur,renderVersion,ensureMediaState(cur.id));
 }
-function mediaAccept(type){return isVideoType(type)?'.mp4,.mov,.avi,.webm,.mkv,video/mp4,video/quicktime,video/x-msvideo,video/webm,video/x-matroska':'.png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp'}
-function validateSelectedMedia(file,m){const suffix=(String(file?.name||'').match(/\.[^.]+$/)||[''])[0].toLowerCase(),allowed=isVideoType(m.type)?['.mp4','.mov','.avi','.webm','.mkv']:['.png','.jpg','.jpeg','.webp'];if(!allowed.includes(suffix))return isVideoType(m.type)?'请选择 MP4、MOV、WebM、AVI 或 MKV 视频':'请选择 JPG、PNG 或 WebP 图片；HEIC 请先导出为 JPG';if(!Number.isFinite(file.size)||file.size>MAX_VIDEO_UPLOAD_BYTES)return'文件超过60MB限制';if(file.size===0)return'文件为空，请重新选择';return''}
+function mediaAccept(type){return type==='audio'?'.mp3,.wav,.flac,.m4a,.ogg,audio/*':isVideoType(type)?'.mp4,.mov,.avi,.webm,.mkv,video/mp4,video/quicktime,video/x-msvideo,video/webm,video/x-matroska':'.png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp'}
+function validateSelectedMedia(file,m){const suffix=(String(file?.name||'').match(/\.[^.]+$/)||[''])[0].toLowerCase(),allowed=m.type==='audio'?['.mp3','.wav','.flac','.m4a','.ogg']:isVideoType(m.type)?['.mp4','.mov','.avi','.webm','.mkv']:['.png','.jpg','.jpeg','.webp'];if(!allowed.includes(suffix))return m.type==='audio'?'请选择 MP3、WAV、FLAC、M4A 或 OGG 音频':isVideoType(m.type)?'请选择 MP4、MOV、WebM、AVI 或 MKV 视频':'请选择 JPG、PNG 或 WebP 图片；HEIC 请先导出为 JPG';if(!Number.isFinite(file.size)||file.size>MAX_VIDEO_UPLOAD_BYTES)return'文件超过60MB限制';if(file.size===0)return'文件为空，请重新选择';return''}
 function revokeLocalMediaPreview(key,state){const value=state.previewUrls[key];if(value)URL.revokeObjectURL(value);delete state.previewUrls[key]}
 function revokeWorkflowMediaPreviews(workflowId){const state=mediaStateByWorkflow.get(workflowId);if(!state)return;Object.keys(state.previewUrls).forEach(key=>revokeLocalMediaPreview(key,state))}
-function replaceLocalMediaPreview(key,m,file,drop,state){revokeLocalMediaPreview(key,state);const existing=drop.querySelector('.local-media-preview');if(existing)drop.removeChild(existing);const media=document.createElement(isVideoType(m.type)?'video':'img');media.className='local-media-preview';media.src=URL.createObjectURL(file);state.previewUrls[key]=media.src;state.files[key]=file;const remove=drop.querySelector('.media-remove');if(remove)remove.hidden=false;if(isVideoType(m.type)){prepareVideoThumbnail(file);media.controls=true;media.playsInline=true;media.preload='metadata';detectSourceDuration(media,key,file,drop,state)}else media.alt='已选择的'+String(m.label||'图片');media.onerror=()=>{const note=drop.querySelector('.fn');if(note)note.textContent+=' · 当前浏览器无法预览此编码，可尝试 MP4/H.264 或 JPG'};drop.append(media)}
+function replaceLocalMediaPreview(key,m,file,drop,state){revokeLocalMediaPreview(key,state);const existing=drop.querySelector('.local-media-preview');if(existing)drop.removeChild(existing);const media=document.createElement(m.type==='audio'?'audio':isVideoType(m.type)?'video':'img');media.className='local-media-preview';media.src=URL.createObjectURL(file);state.previewUrls[key]=media.src;state.files[key]=file;const remove=drop.querySelector('.media-remove');if(remove)remove.hidden=false;if(isVideoType(m.type)||m.type==='audio'){media.controls=true;media.playsInline=true;media.preload='metadata';if(isVideoType(m.type)){prepareVideoThumbnail(file);if(cur?.id!=='h3_remix_full'||key==='source_video')detectSourceDuration(media,key,file,drop,state)}}else media.alt='已选择的'+String(m.label||'图片');media.onerror=()=>{const note=drop.querySelector('.fn');if(note)note.textContent+=' · 当前浏览器无法预览此编码'};drop.append(media)}
 function detectSourceDuration(media,key,file,drop,state){
   if(!cur?.rh_params?.duration)return;
   const workflow=cur,version=renderVersion,previous=state.durationSelection;
@@ -431,15 +495,16 @@ function renderForm(){const f=document.getElementById('wfForm'),workflow=cur,ver
     const trigger=document.createElement('button'),remove=document.createElement('button');trigger.type=remove.type='button';trigger.className='upload-trigger';trigger.append(icon,copy);drop.prepend(trigger);trigger.onclick=event=>{event.stopPropagation();inp.click()};remove.className='media-remove';remove.title='删除已选择素材';remove.setAttribute('aria-label','删除'+String(m.label||'素材'));remove.hidden=!state.files[key]&&!state.tokens[key];remove.onclick=event=>{event.stopPropagation();state.uploadIds[key]=(state.uploadIds[key]||0)+1;delete state.tokens[key];delete state.names[key];delete state.files[key];delete state.uploading[key];revokeLocalMediaPreview(key,state);drop.querySelector('.local-media-preview')?.remove();drop.querySelector('.upload-retry')?.remove();drop.classList.remove('has-file');fn.textContent='';remove.hidden=true;if(key==='source_video'){delete state.durationSelection;const note=document.getElementById('durationAutoNote');if(note)note.textContent='选择视频后自动读取时长，可手动修改'}};drop.append(remove);
     drop.onclick=event=>{if(event.target!==inp&&!event.target.closest('video,button'))inp.click()};drop.onkeydown=event=>{if(event.target===drop&&(event.key==='Enter'||event.key===' ')){event.preventDefault();inp.click()}};f.appendChild(drop)});
   const params=Object.entries(cur.rh_params||{});
-  f.querySelectorAll('.drop').forEach(drop=>{if(isVideoType(workflow.rh_media[drop.dataset.mediaKey].type))return;const hint=document.createElement('button');hint.type='button';hint.className='paste-target';hint.textContent='粘贴到这里（Ctrl＋V）';hint.onclick=event=>{event.stopPropagation();drop.focus()};drop.append(hint)});
+  f.querySelectorAll('.drop').forEach(drop=>{if(workflow.rh_media[drop.dataset.mediaKey].type!=='image')return;const hint=document.createElement('button');hint.type='button';hint.className='paste-target';hint.textContent='粘贴到这里（Ctrl＋V）';hint.onclick=event=>{event.stopPropagation();drop.focus()};drop.append(hint)});
   params.filter(([,p])=>p.group!=='lora').forEach(([key,p])=>{const lab=document.createElement('label');lab.textContent=p.label+(p.required?'（必填）':'');f.appendChild(lab);let inp;
     if(p.type==='text'||p.type==='textarea'||key==='prompt'||key==='negative'){inp=document.createElement('textarea');if(cur.prompt_placeholder&&key==='prompt')inp.placeholder=cur.prompt_placeholder;if(key==='prompt'&&cur.prompt_hint){const h=document.createElement('div');h.className='note';h.style.color='#c26a4a';h.textContent=cur.prompt_hint;f.appendChild(h)}}
     else if(p.type==='boolean'){inp=document.createElement('input');inp.type='checkbox'}
     else if(p.type==='select'){inp=document.createElement('select');(p.options||[]).forEach(option=>{const item=document.createElement('option');item.value=optionValue(option);item.textContent=optionLabel(option);inp.appendChild(item)})}
-    else{inp=document.createElement('input');inp.type=(p.type==='number'||p.type==='int'||p.vtype==='int'||p.vtype==='float')?'number':'text';if(p.min!==undefined)inp.min=p.min;if(p.max!==undefined)inp.max=p.max;if(p.step!==undefined)inp.step=p.step;else if(p.type==='int'||p.vtype==='int')inp.step='1'}
+    else{inp=document.createElement('input');inp.type=(p.type==='number'||p.type==='float'||p.type==='int'||p.vtype==='int'||p.vtype==='float')?'number':'text';if(p.min!==undefined)inp.min=p.min;if(p.max!==undefined)inp.max=p.max;if(p.step!==undefined)inp.step=p.step;else if(p.type==='int'||p.vtype==='int')inp.step='1'}
     inp.id='param_'+key;inp.dataset.paramType=p.vtype||p.type||'text';const d=paramDefault(key,p);if(d!==undefined){if(inp.type==='checkbox')inp.checked=d===true;else inp.value=d}f.appendChild(inp);if(key==='duration'){const note=document.createElement('div');note.id='durationAutoNote';note.className='note';note.setAttribute('aria-live','polite');note.textContent=state.durationSelection?.note||'选择视频后自动读取时长，可手动修改';f.appendChild(note);inp.addEventListener('input',()=>{if(state.durationSelection){state.durationSelection.manual=true;state.durationSelection.value=inp.value;state.durationSelection.note='已手动设置时长';note.textContent=state.durationSelection.note}})}});
   const promptInput=f.querySelector('#param_prompt');if(promptInput)renderPromptPresets(f,promptInput,workflow.id);
   renderLoraSettings(f,params,state);
+  enhanceRemixForm(f,workflow,state);
   (cur.fixed_features||[]).forEach(text=>{const note=document.createElement('div');note.className='note unavailable';note.textContent=text;f.appendChild(note)})}
 function sendMediaFile(url,file,onProgress){return new Promise((resolve,reject)=>{const request=new XMLHttpRequest();request.open('POST',url);request.timeout=600000;request.setRequestHeader('Content-Type','application/octet-stream');request.upload.onprogress=event=>{if(event.lengthComputable)onProgress(Math.round(event.loaded/event.total*100))};request.onload=()=>{let data={};try{data=JSON.parse(request.responseText)}catch{}if(request.status>=200&&request.status<300&&data.uploadToken)resolve(data);else reject(new Error(data.error||'上传服务返回错误（'+request.status+'）'))};request.onerror=()=>reject(new Error('网络连接中断，请重新选择文件重试'));request.ontimeout=()=>reject(new Error('上传超时，请检查网络或压缩文件后重试'));request.send(file)})}
 async function uploadMedia(key,m,file,drop,workflow,version,state){const fnEl=drop.querySelector('.fn'),error=validateSelectedMedia(file,m);if(error){fnEl.textContent='✗ '+error;return}const uploadId=(state.uploadIds[key]||0)+1;state.uploadIds[key]=uploadId;state.uploading[key]=true;drop.querySelector('.upload-retry')?.remove();delete state.tokens[key];delete state.names[key];replaceLocalMediaPreview(key,m,file,drop,state);fnEl.textContent='上传中…';drop.classList.remove('has-file');try{const query=new URLSearchParams({workflow:workflow.id,input_key:key,filename:file.name});const r=await sendResumableMediaFile('/api/upload?'+query,file,percent=>{if(state.uploadIds[key]!==uploadId)return;const activeDrop=currentMediaDrop(workflow.id,key,version,drop);if(activeDrop)activeDrop.querySelector('.fn').textContent=percent<100?'上传中 '+percent+'%':'文件已传完，云端接收中…'});if(state.uploadIds[key]!==uploadId)return;state.tokens[key]=r.uploadToken;state.names[key]=file.name;const activeDrop=currentMediaDrop(workflow.id,key,version,drop);if(activeDrop){activeDrop.classList.add('has-file');activeDrop.querySelector('.fn').textContent='✓ '+file.name+' 已上传'}}catch(e){if(state.uploadIds[key]!==uploadId)return;delete state.tokens[key];delete state.names[key];const activeDrop=currentMediaDrop(workflow.id,key,version,drop);if(activeDrop){activeDrop.classList.remove('has-file');activeDrop.querySelector('.fn').textContent='✗ 上传暂未完成：'+publicMessage(e.message);const retry=document.createElement('button');retry.type='button';retry.className='upload-retry';retry.textContent='继续上传';retry.onclick=event=>{event.stopPropagation();uploadMedia(key,m,file,activeDrop,workflow,renderVersion,state)};activeDrop.append(retry)}}finally{if(state.uploadIds[key]===uploadId)delete state.uploading[key]}}
@@ -603,7 +668,32 @@ function openQueueEditor(job){
   save.type='submit';save.textContent='保存修改';cancel.type='button';cancel.textContent='返回';cancel.onclick=()=>dialog.close();actions.className='queue-actions';actions.append(save,cancel);form.append(actions);dialog.append(form);document.body.append(dialog);dialog.addEventListener('close',()=>dialog.remove(),{once:true});
   form.onsubmit=async e=>{e.preventDefault();save.disabled=true;const params={};for(const [key,input] of fields){if(input.type==='checkbox')params[key]=input.checked;else if(input.value!=='')params[key]=input.value}if(await queueAction(job,'edit',{params}))dialog.close();else{save.disabled=false;note.textContent='保存失败，原任务未被此操作修改。请关闭编辑窗，核对最新队列状态后重试。'}};dialog.showModal();
 }
-async function generate(){if(genRunning)return;if(!cur)return;const workflow=cur,state=ensureMediaState(workflow.id);if(Object.values(state.uploading).some(Boolean)){document.getElementById('genStatus').textContent='素材仍在上传，请完成后再生成';return}genRunning=true;const btn=document.getElementById('genBtn');btn.disabled=true;btn.classList.add('is-loading');const st=document.getElementById('genStatus');st.textContent='正在提交…';document.getElementById('genResult').innerHTML='';let pending={};try{pending=JSON.parse(localStorage.getItem(pendingVideoSubmitKey)||'{}')}catch{}const client_request_id=pending.workflow===workflow.id&&pending.id?pending.id:'video-'+Date.now()+'-'+Math.random().toString(36).slice(2);localStorage.setItem(pendingVideoSubmitKey,JSON.stringify({workflow:workflow.id,id:client_request_id}));try{const prompt=(document.getElementById('param_prompt')?.value||'').trim();if(!prompt)throw new Error('提示词不能为空');const required=Object.entries(workflow.rh_media||{}).filter(([,m])=>m.required).map(([k])=>k);const missing=required.filter(k=>!state.tokens[k]);if(missing.length)throw new Error('缺少必传素材：'+missing.join(', '));const submittedFiles={...state.files};const body={workflow:workflow.id,prompt:prompt,negative_prompt:(document.getElementById('param_negative')?.value||'').trim(),media:{...state.tokens},params:collectParams(),client_request_id};const r=await api('/api/video-generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});localStorage.removeItem(pendingVideoSubmitKey);if(!r.job_id)throw new Error(r.error||'提交失败');addTaskCard(r.job_id,workflow.name);persistTaskThumbnails(r.job_id,submittedFiles,workflow);st.textContent='✓ 已提交，任务 '+r.job_id+' 在下方队列中';pollTask(r.job_id)}catch(e){const definitiveRejection=e.status>=400&&e.status<500;if(definitiveRejection)localStorage.removeItem(pendingVideoSubmitKey);st.textContent='✗ '+e.message+(definitiveRejection?'':'；网络不明时再次点击会复用请求号')}finally{genRunning=false;btn.classList.remove('is-loading');btn.disabled=false}}
+async function generate(){
+  if(genRunning||!cur)return;
+  const workflow=cur,state=ensureMediaState(workflow.id),st=document.getElementById('genStatus');
+  let params;try{params=collectParams()}catch(e){st.textContent=e.message;return}
+  const active=Object.entries(workflow.rh_media||{}).filter(([,m])=>videoInputEnabled(workflow,m,params));
+  if(active.some(([key])=>state.uploading[key])){st.textContent='素材仍在上传，请完成后再生成';return}
+  const missing=active.filter(([key,m])=>m.required&&!state.tokens[key]);
+  if(missing.length){st.textContent='缺少必传素材：'+missing.map(([,m])=>m.label).join('、');return}
+  const prompt=(document.getElementById('param_prompt')?.value||'').trim();
+  if(!prompt){st.textContent='提示词不能为空';return}
+  genRunning=true;const btn=document.getElementById('genBtn');btn.disabled=true;btn.classList.add('is-loading');
+  st.textContent='正在提交…';document.getElementById('genResult').innerHTML='';
+  let pending={};try{pending=JSON.parse(localStorage.getItem(pendingVideoSubmitKey)||'{}')}catch{}
+  const client_request_id=pending.workflow===workflow.id&&pending.id?pending.id:'video-'+Date.now()+'-'+Math.random().toString(36).slice(2);
+  localStorage.setItem(pendingVideoSubmitKey,JSON.stringify({workflow:workflow.id,id:client_request_id}));
+  try{
+    const media=Object.fromEntries(active.filter(([key])=>state.tokens[key]).map(([key])=>[key,state.tokens[key]]));
+    const submittedFiles=Object.fromEntries(active.filter(([key])=>state.files[key]).map(([key])=>[key,state.files[key]]));
+    const body={workflow:workflow.id,prompt,negative_prompt:(document.getElementById('param_negative')?.value||'').trim(),media,params,client_request_id};
+    const r=await api('/api/video-generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    localStorage.removeItem(pendingVideoSubmitKey);if(!r.job_id)throw new Error(r.error||'提交失败');
+    addTaskCard(r.job_id,workflow.name);persistTaskThumbnails(r.job_id,submittedFiles,workflow);
+    st.textContent='✓ 已提交，任务 '+r.job_id+' 在下方队列中';pollTask(r.job_id);
+  }catch(e){const definitiveRejection=e.status>=400&&e.status<500;if(definitiveRejection)localStorage.removeItem(pendingVideoSubmitKey);st.textContent='✗ '+e.message+(definitiveRejection?'':'；网络不明时再次点击会复用请求号')}
+  finally{genRunning=false;btn.classList.remove('is-loading');btn.disabled=false}
+}
 let historyVersion=0;
 function sourceThumbnail(job){return safeMediaUrl(Object.values(job.thumbnails||{}).find(src=>typeof src==='string'&&src.startsWith('/api/video-thumbnail/')))}
 function configurationDetails(job,className='favorite-details'){const details=document.createElement('details'),summary=document.createElement('summary'),text=document.createElement('div');details.className=className;summary.textContent='提示词与 LoRA 配置';text.className='library-configuration';text.textContent=jobConfigurationText(job);details.append(summary,text);if(className==='history-details'&&!job.params){let loaded=false;details.ontoggle=async()=>{if(!details.open||loaded)return;loaded=true;text.textContent='加载详情…';try{text.textContent=jobConfigurationText(await api('/api/job/'+encodeURIComponent(job.id)))}catch(e){loaded=false;text.textContent='详情读取失败：'+e.message}}}return details}

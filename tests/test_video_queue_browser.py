@@ -141,25 +141,20 @@ def test_completed_results_auto_appear_without_reloading_player(browser, tmp_pat
 
 def test_reference_drop_paste_and_real_first_frame(browser):
     page=browser.new_page()
-    page.add_init_script("sessionStorage.setItem('jt-personal-rh-key','offline-personal-test-key')")
     serve_page(page,block_scene=True)
     uploads=[]
     page.route('**/api/workflows',lambda r:r.fulfill(json=[dict(id='ref-video',kind='video',name='参考图测试',
         rh_media={'reference_image':dict(type='image',label='参考图',required=True)},rh_params={})]))
-    def upload(route):
-        uploads.append(route.request.url)
-        route.fulfill(json={'uploadToken':'upl_fake'})
-    page.route('**/api/upload-direct-start',lambda r:(uploads.append(r.request.post_data_json),r.fulfill(json={'challenge':'offline-challenge'})))
-    page.route('**/api/upload-direct-verify',lambda r:r.fulfill(json={'ok':True}))
-    page.route('**/api/upload-direct-register',lambda r:r.fulfill(json={'uploadToken':'upl_fake'}))
-    page.route('https://www.runninghub.ai/openapi/v2/media/upload/binary',lambda r:r.fulfill(json={'code':200,'data':{'filename':'openapi/fake.png'}},headers={'Access-Control-Allow-Origin':'*'}))
+    page.route('**/api/upload-start',lambda r:(uploads.append(r.request.post_data_json),r.fulfill(json={'upload_id':str(len(uploads))})))
+    page.route('**/api/upload-chunk?*',lambda r:r.fulfill(json={'offset':len(r.request.post_data_buffer)}))
+    page.route('**/api/upload-finish',lambda r:r.fulfill(json={'uploadToken':'upl_fake'}))
     try:
         page.goto('http://fixture.test/video')
         drop=page.locator('.drop')
         expect(drop).to_be_visible()
         for event in ['drop','paste']:
             drop.locator('.fn').evaluate('(el)=>el.textContent=""')
-            drop.evaluate('''(el,type)=>{const c=document.createElement('canvas');c.width=2;c.height=2;c.toBlob(blob=>{const dt=new DataTransfer();dt.items.add(new File([blob],'ref.png',{type:'image/png'}));(type==='drop'?el:document.body).dispatchEvent(type==='drop'?new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:dt}):new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:dt}))})}''',event)
+            drop.evaluate('''(el,type)=>{el.focus();const c=document.createElement('canvas');c.width=2;c.height=2;c.toBlob(blob=>{const dt=new DataTransfer();dt.items.add(new File([blob],'ref.png',{type:'image/png'}));el.dispatchEvent(type==='drop'?new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:dt}):new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:dt}))})}''',event)
             expect(drop.locator('.fn')).to_contain_text('已上传')
         assert len(uploads)==2
         # Real browser-encoded video: extraction must produce a bounded JPEG,

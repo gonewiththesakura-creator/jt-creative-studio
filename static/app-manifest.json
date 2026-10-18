@@ -13,9 +13,9 @@
       "title": "图片编辑 · JT 灵感工作台"
     },
     "/video": {
-      "module": "/static/assets/video.24a2f9e4feea.js",
+      "module": "/static/assets/video.0e63882b1c35.js",
       "markup": "/static/assets/video.2795d23060ae.html",
-      "css": "/static/assets/video.42254fb04f6d.css",
+      "css": "/static/assets/video.b0f05c36c1dc.css",
       "title": "JT 视频工作台"
     }
   },
@@ -91,9 +91,9 @@
     "/static/assets/three-LICENSE.8b378ebe60e2.txt",
     "/static/assets/three-core.9edde002b066.js",
     "/static/assets/three-module.71e909ad3fc6.js",
-    "/static/assets/video.24a2f9e4feea.js",
+    "/static/assets/video.0e63882b1c35.js",
     "/static/assets/video.2795d23060ae.html",
-    "/static/assets/video.42254fb04f6d.css",
+    "/static/assets/video.b0f05c36c1dc.css",
     "/static/assets/workbench.b4e4fe3d3eac.js"
   ]
 }

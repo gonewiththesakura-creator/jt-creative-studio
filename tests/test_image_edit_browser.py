@@ -92,7 +92,7 @@ def test_every_video_workflow_has_shared_upload_and_retains_parameters(browser):
         for workflow in [w for w in WORKFLOWS if w.get('kind')=='video']:
             host.locator('#wfSwitch button[data-wf="'+workflow['id']+'"]').click()
             expect(host.locator('.drop')).to_have_count(len(workflow.get('rh_media',{})))
-            expect(host.locator('.paste-target')).to_have_count(sum(m.get('type')!='video' for m in workflow.get('rh_media',{}).values()))
+            expect(host.locator('.paste-target')).to_have_count(sum(m.get('type')=='image' for m in workflow.get('rh_media',{}).values()))
             for remove in host.locator('.media-remove').all():assert remove.text_content()==''
         ids=[w['id'] for w in WORKFLOWS if w.get('kind')=='video' and 'prompt' in w.get('rh_params',{})]
         host.locator('#wfSwitch button[data-wf="'+ids[0]+'"]').click()

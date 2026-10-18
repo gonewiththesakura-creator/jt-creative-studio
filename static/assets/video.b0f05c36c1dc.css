@@ -253,6 +253,13 @@
 .form .prompt-presets input{min-height:32px;padding:6px 8px;font-size:12px;margin:0}
 .prompt-preset-actions{display:grid;grid-template-columns:1fr 1.3fr 1fr;gap:6px;margin:7px 0}.prompt-presets .note{line-height:1.6}
 
+.remix-group{margin-top:16px;padding:12px;border:1px solid #aaa4;border-radius:12px}
+.remix-group>summary{cursor:pointer;font-weight:700;padding:5px}.remix-group[open]>summary{margin-bottom:12px}
+.remix-field{margin:12px 0;min-width:0}.remix-toggle>label{display:flex!important;align-items:center;gap:10px;cursor:pointer}
+.remix-toggle input[type=checkbox]{flex:0 0 auto;width:20px;height:20px;accent-color:#c9a76a}
+.remix-field .note{line-height:1.6;margin-top:5px}.remix-field audio{width:100%;max-width:100%;height:44px}
+.remix-form .drop{position:relative}.remix-form .drop .local-media-preview{max-width:100%}
+
 /* SINGULARITY — the competition black-hole scene, fitted to the real workbench. */
 :host{background:#030407;color-scheme:dark}
 .jt-page-body.singularity{

@@ -2087,6 +2087,18 @@ def _upload_media_content_type_from_header(header, filename, expected_type):
         if not ctype or suffix not in allowed[ctype]:
             raise ValueError("invalid image media or extension")
         return ctype
+    if expected_type == "audio":
+        if header[:4] == b'RIFF' and header[8:12] == b'WAVE' and suffix == '.wav':
+            return 'audio/wav'
+        if (header[:3] == b'ID3' or (len(header) >= 2 and header[0] == 255 and header[1] & 224 == 224)) and suffix == '.mp3':
+            return 'audio/mpeg'
+        if header[:4] == b'fLaC' and suffix == '.flac':
+            return 'audio/flac'
+        if header[:4] == b'OggS' and suffix == '.ogg':
+            return 'audio/ogg'
+        if header[4:8] == b'ftyp' and suffix == '.m4a':
+            return 'audio/mp4'
+        raise ValueError('invalid audio media or extension')
     if expected_type != "video":
         raise ValueError("unsupported upload media type")
     if len(header) >= 12 and header[4:8] == b"ftyp" and suffix in {".mp4", ".mov"}:
@@ -2212,6 +2224,10 @@ def _coerce_rh_control(value, mapping):
 
 
 def rh_input_enabled(w, mapping, params):
+    if w.get('id') == 'h3_remix_full' and mapping.get('node') == '339':
+        face = (w.get('rh_params') or {})['face_refine']
+        if not _coerce_rh_control(params.get('face_refine', face['default']), face):
+            return False
     rule = mapping.get('depends_on')
     if not rule:
         return True
@@ -2257,7 +2273,34 @@ def normalize_rh_workflow_inputs(w, media, params):
         if mapping.get("required") and isinstance(result, str) and not result.strip():
             raise ValueError(f"{mapping.get('label') or key}不能为空")
         trusted_params[key] = result
+    if w.get('id') == 'h3_remix_full':
+        validate_h3_remix_inputs(trusted_media, trusted_params)
     return trusted_media, trusted_params
+
+
+def validate_h3_remix_inputs(media, params):
+    """Reject impossible branches before queue admission or credit reservation."""
+    image_mode = params.get('mode') == 'image'
+    active = {key: value for key, value in media.items() if key != 'face_reference'}
+    if image_mode:
+        active = {key: value for key, value in active.items() if key in ('reference_image', 'reference_image_2')}
+    if not any(key.startswith(('reference_image', 'source_video')) for key in active):
+        raise ValueError('请至少上传一张参考图或一个参考视频；首尾帧模式请上传前两张参考图')
+    if params.get('original_audio') and not any(key.startswith(('source_video', 'reference_audio')) for key in active):
+        raise ValueError('使用原声需要参考视频或参考音频；首尾帧模式请关闭原声')
+    alignment = params.get('audio_duration_auto')
+    if alignment in ('audio', 'video') and ('reference_audio' if alignment == 'audio' else 'source_video') not in active:
+        raise ValueError('自动对齐时长需要上传对应的第一个视频或音频；首尾帧模式请使用手动时长')
+    second, face = params.get('second_pass'), params.get('face_refine')
+    if not (params.get('save_first') or (second and params.get('save_second')) or (face and params.get('save_face'))):
+        raise ValueError('请至少保留一个已启用采样阶段的输出')
+    if face and params.get('face_target') == 'reference_identity' and not (media.get('face_reference') or active.get('reference_image')):
+        raise ValueError('按参考图匹配人脸需要第一张参考图或独立人脸参考图')
+    for key in active:
+        if key.startswith(('source_video', 'reference_audio')):
+            start, end = params.get(key+'_start', 0), params.get(key+'_end', 0)
+            if end and end <= start:
+                raise ValueError('素材截取终点必须晚于起点；填 0 表示截取至末尾')
 
 
 def rh_build_generic_node_info(job, w):
@@ -3147,8 +3190,85 @@ def rh_build_h3_graph(job, w):
     return graph
 
 
+def rh_build_h3_remix_graph(job, w):
+    """Build only trusted branches; no browser-supplied graphs, paths or API keys."""
+    media, params = normalize_rh_workflow_inputs(w, job.get('provider_media') or {}, job.get('params') or {})
+    graph = json.loads(json.dumps(w['rh_graph']))
+    for key, mapping in w['rh_params'].items():
+        if mapping.get('node') and key in params:
+            graph[mapping['node']]['inputs'][mapping['field']] = params[key]
+    setup = graph['295']['inputs']
+    setup['prompt'] = job.get('prompt', params['prompt'])
+    setup.update(prompt_optimizer_api_key='', prompt_optimizer_api_url='', embedded_media_json='[]')
+    records, counts = [], {'image': 0, 'video': 0, 'audio': 0}
+    def trim_time(seconds):
+        millis = round(seconds * 1000)
+        return f'{millis // 60000:02}:{millis // 1000 % 60:02}:{millis % 1000:03}'
+    for key, mapping in w['rh_media'].items():
+        filename = media.get(key)
+        if not filename or key == 'face_reference':
+            continue
+        kind = mapping['type']
+        counts[kind] += 1
+        record = dict(media_type=kind, ordinal=counts[kind], filename=filename,
+                      subfolder='', storage='input', audio_trim='')
+        if kind != 'image':
+            record['audio_trim'] = trim_time(params.get(key+'_start', 0))+'-'+trim_time(params.get(key+'_end', 0))
+        records.append(record)
+        # Transport strings are also declared node inputs, recognized by the
+        # provider's input-file resolver; embedded JSON preserves gallery order.
+        index = len(records)
+        setup[f'media_{index}'] = filename
+        setup[f'media_type_{index}'] = kind
+        setup[f'media_trim_{index}'] = record['audio_trim']
+    setup['embedded_media_json'] = json.dumps(records, ensure_ascii=False)
+    second, face = params['second_pass'], params['face_refine']
+    setup['second_sampling_output_connected'] = second or face
+    graph['321']['inputs']['aspect_ratio'] = params['aspect_ratio']
+    for slot, node, row in [(1,'284','lora_1'),(2,'342','lora_1'),(3,'342','lora_2')]:
+        graph[node]['inputs'][row].update(on=params[f'lora_{slot}_enabled'],
+            strength=params[f'lora_{slot}_strength'], bypass=params[f'lora_{slot}_bypass'])
+    if not second:
+        graph['340']['inputs']['images'] = ['298', 0]
+    if face and media.get('face_reference'):
+        graph['339'] = dict(class_type='LoadImage',inputs=dict(image=media['face_reference']))
+        graph['340']['inputs']['reference_face'] = ['339', 0]
+    if not params['sparse_attention']:
+        for node in graph.values():
+            for field, value in list(node['inputs'].items()):
+                if value == ['327', 0]:
+                    node['inputs'][field] = ['325', 0]
+    # Do not let an unused switch input force unnecessary audio decoding.
+    selected_audio = graph['297']['inputs']['on_true' if params['original_audio'] else 'on_false']
+    for node in graph.values():
+        for field, value in list(node['inputs'].items()):
+            if value == ['297', 0]:
+                node['inputs'][field] = selected_audio
+    roots = []
+    for node, enabled, prefix in [('349',params['save_first'],'JT_H3_First'),
+        ('351',second and params['save_second'],'JT_H3_Second'),
+        ('350',face and params['save_face'],'JT_H3_Face')]:
+        if enabled:
+            roots.append(node)
+            graph[node]['inputs'].update(filename_prefix=prefix,save_metadata=False,
+                save_output=True,pingpong=params['pingpong'],crf=params['crf'])
+    # Traverse dependencies instead of leaving disabled sampling/output nodes
+    # in the submitted graph. This also removes previews and unused inputs.
+    keep = set()
+    def visit(node_id):
+        if node_id in keep:
+            return
+        keep.add(node_id)
+        for value in graph[node_id]['inputs'].values():
+            if isinstance(value,list) and len(value)==2 and isinstance(value[0],str) and isinstance(value[1],int):
+                visit(value[0])
+    for root in roots:
+        visit(root)
+    return {node: value for node,value in graph.items() if node in keep}
+
+
 def rh_submit_h3_multi(job, w):
-    graph = rh_build_h3_graph(job, w)
+    graph = rh_build_h3_remix_graph(job, w) if w.get('id') == 'h3_remix_full' else rh_build_h3_graph(job, w)
     body = {'apiKey':RH_KEY,'workflowId':w['rh_workflow_id'],
             'workflow':json.dumps(graph,ensure_ascii=False),'nodeInfoList':[],
             'addMetadata':False,'usePersonalQueue':False,'instanceType':'default'}
@@ -3176,7 +3296,7 @@ def rh_run_video(job, w):
     node_list = rh_build_video_node_info(job, w)
     job["submit_started"] = time.time()
     job["provider_status"] = "SUBMITTING"
-    multi = w.get('id') == 'h3_edit_n'
+    multi = w.get('id') in ('h3_edit_n', 'h3_remix_full')
     task_id = rh_submit_h3_multi(job,w) if multi else rh_submit(wfid, node_list)
     persist_provider_task(job, task_id)
     job["progress_pct"] = 5

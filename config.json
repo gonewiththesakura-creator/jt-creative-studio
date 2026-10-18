@@ -2228,6 +2228,1823 @@
    "rh_result_labels": [
     "换装结果"
    ]
+  },
+  {
+   "id": "h3_remix_full",
+   "name": "MiniMax H3 Remix · 全功能双采样",
+   "kind": "video",
+   "backend": "runninghub",
+   "section": "MiniMax H3",
+   "desc": "支持参考生视频与首尾帧、二次采样、独立人脸精修、原声切换和提示词反推。参考模式至少上传图片或视频；首尾帧模式仅使用前两张参考图。",
+   "rh_workflow_id": "2111635037301452801",
+   "source_editor_workflow_id": "2111655708270211074",
+   "source_editor_json_sha256": "5b9b3ba075547ba743937189d1e81e2ac4ecb96b04ac00ba7c3960dbb1b02043",
+   "source_api_json_sha256": "3a8e4b89bd61da3d0ffe4ce5c54574b4c6849b7957a517eb09f243dee68b7680",
+   "rh_graph": {
+    "251": {
+     "class_type": "BasicScheduler",
+     "inputs": {
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": [
+       "327",
+       0
+      ],
+      "steps": 8
+     }
+    },
+    "295": {
+     "class_type": "FeiHouEasyH3RH",
+     "inputs": {
+      "aspect_ratio": "9:16",
+      "prompt_optimizer_enabled": false,
+      "audio_duration_auto": "Off",
+      "advanced": true,
+      "prompt_optimizer_scene_guide": "General only",
+      "fps": 24,
+      "embedded_media_json": "[]",
+      "resolution": "540P",
+      "ref_image_size": "640",
+      "prompt_optimizer_api_format": "auto",
+      "prompt_optimizer_api_key": "",
+      "h3_bundle": [
+       "341",
+       0
+      ],
+      "low_vram_streamed_attention": false,
+      "mode": "Reference-to-video",
+      "prompt_optimizer_model": "openai/gpt-5.6-terra",
+      "reference_mention_mode": "index",
+      "seconds": 5,
+      "reference_text_only": false,
+      "keyframe_role": "First frame priority",
+      "width": 1344,
+      "force_offload": true,
+      "prompt": "",
+      "prompt_optimizer_api_url": "",
+      "height": 768
+     }
+    },
+    "350": {
+     "class_type": "VHS_VideoCombine",
+     "inputs": {
+      "images": [
+       "340",
+       0
+      ],
+      "pix_fmt": "yuv420p",
+      "format": "video/h264-mp4",
+      "frame_rate": [
+       "340",
+       2
+      ],
+      "pingpong": false,
+      "save_output": true,
+      "filename_prefix": "Minimax_H3_FaceRefine",
+      "loop_count": 0,
+      "save_metadata": false,
+      "crf": 19,
+      "trim_to_audio": false,
+      "no_preview": false,
+      "audio": [
+       "340",
+       1
+      ]
+     }
+    },
+    "351": {
+     "class_type": "VHS_VideoCombine",
+     "inputs": {
+      "images": [
+       "323",
+       0
+      ],
+      "pix_fmt": "yuv420p",
+      "format": "video/h264-mp4",
+      "frame_rate": [
+       "323",
+       1
+      ],
+      "pingpong": false,
+      "save_output": true,
+      "filename_prefix": "Minimax_H3_Upscale",
+      "loop_count": 0,
+      "save_metadata": false,
+      "crf": 19,
+      "trim_to_audio": false,
+      "no_preview": false,
+      "audio": [
+       "323",
+       2
+      ]
+     }
+    },
+    "297": {
+     "class_type": "ComfySwitchNodeV2",
+     "inputs": {
+      "on_false": [
+       "283",
+       0
+      ],
+      "on_true": [
+       "287",
+       7
+      ],
+      "switch": false
+     }
+    },
+    "276": {
+     "class_type": "RandomSeedNoise",
+     "inputs": {
+      "seed": -1
+     }
+    },
+    "298": {
+     "class_type": "FeiHouEasyH3RHDurationCrop",
+     "inputs": {
+      "images": [
+       "282",
+       0
+      ],
+      "fps": [
+       "287",
+       4
+      ],
+      "audio": [
+       "297",
+       0
+      ],
+      "duration_control": [
+       "287",
+       8
+      ]
+     }
+    },
+    "310": {
+     "class_type": "SamplerCustomAdvanced",
+     "inputs": {
+      "guider": [
+       "307",
+       0
+      ],
+      "latent_image": [
+       "319",
+       0
+      ],
+      "noise": [
+       "317",
+       0
+      ],
+      "sigmas": [
+       "320",
+       0
+      ],
+      "sampler": [
+       "316",
+       0
+      ]
+     }
+    },
+    "312": {
+     "class_type": "CLIPTextEncode",
+     "inputs": {
+      "text": "Enhance this video with sharp, crisp details while preserving a natural photorealistic appearance.",
+      "clip": [
+       "322",
+       6
+      ]
+     }
+    },
+    "316": {
+     "class_type": "KSamplerSelect",
+     "inputs": {
+      "sampler_name": "res_multistep"
+     }
+    },
+    "317": {
+     "class_type": "RandomSeedNoise",
+     "inputs": {
+      "seed": -1
+     }
+    },
+    "318": {
+     "class_type": "MiniMaxH3SigmaShift",
+     "inputs": {
+      "shift_audio": 3,
+      "shift_video": 12,
+      "model": [
+       "345",
+       0
+      ]
+     }
+    },
+    "319": {
+     "class_type": "EmptyMiniMaxH3LatentAV",
+     "inputs": {
+      "width": [
+       "309",
+       2
+      ],
+      "length": [
+       "309",
+       0
+      ],
+      "height": [
+       "309",
+       1
+      ]
+     }
+    },
+    "280": {
+     "class_type": "SamplerCustomAdvanced",
+     "inputs": {
+      "guider": [
+       "269",
+       0
+      ],
+      "latent_image": [
+       "287",
+       1
+      ],
+      "noise": [
+       "276",
+       0
+      ],
+      "sigmas": [
+       "251",
+       0
+      ],
+      "sampler": [
+       "246",
+       0
+      ]
+     }
+    },
+    "281": {
+     "class_type": "FeiHouEasyH3RHPromptPreview",
+     "inputs": {
+      "text": [
+       "287",
+       5
+      ]
+     }
+    },
+    "282": {
+     "class_type": "VAEDecode",
+     "inputs": {
+      "vae": [
+       "287",
+       2
+      ],
+      "samples": [
+       "280",
+       0
+      ]
+     }
+    },
+    "283": {
+     "class_type": "VAEDecodeAudio",
+     "inputs": {
+      "vae": [
+       "287",
+       3
+      ],
+      "samples": [
+       "280",
+       1
+      ]
+     }
+    },
+    "284": {
+     "class_type": "FeiHouEasyH3RHLoraStack",
+     "inputs": {
+      "lora_1": {
+       "lora": "minimax_h3_fl2v_turbo_4step_v1.2_768p_comfyui_bf16.safetensors",
+       "bypass": true,
+       "strength": 1,
+       "on": true
+      },
+      "+ Add LoRA": ""
+     }
+    },
+    "340": {
+     "class_type": "FeiHouEasyH3RHFaceRefine",
+     "inputs": {
+      "audio_lock": false,
+      "images": [
+       "323",
+       0
+      ],
+      "face_mode": "单人",
+      "seed": 335463569070439,
+      "advanced": false,
+      "h3_context": [
+       "295",
+       2
+      ],
+      "confidence": 0.35,
+      "crop_factor": 2.5,
+      "canvas_size": "768",
+      "steps": 8,
+      "enabled": true,
+      "target": "largest_face",
+      "scheduler": "simple",
+      "denoise": 0.25,
+      "max_faces": 2,
+      "sampler_name": "euler",
+      "force_offload": true,
+      "model": [
+       "295",
+       1
+      ],
+      "audio": [
+       "297",
+       0
+      ],
+      "chunk_frames": "不分段",
+      "detector": "face_yolov8m.pt",
+      "prompt": "Refine the face in this video crop. Preserve identity, expression, gaze, mouth movement, lighting and motion. Natural facial detail; no new motion or camera changes.",
+      "clean_second_model": true
+     }
+    },
+    "341": {
+     "class_type": "FeiHouEasyH3RHRemixLoader",
+     "inputs": {
+      "second_pass_lora_stack": [
+       "342",
+       0
+      ],
+      "text_encoder": "qwen3vl_32b_minimax_h3_int8_convrot.safetensors",
+      "audio_vae": "minimax_h3_audio_vae_fp32.safetensors",
+      "video_vae": "minimax_h3_video_vae_int8_convrot.safetensors",
+      "second_sampling_model": "minimax_h3_ref2va_pruned_int8_convrot.safetensors",
+      "remix_model": "FeiHou_MiniMax-H3_Remix_HSA_v0.7.safetensors",
+      "first_pass_lora_stack": [
+       "284",
+       0
+      ]
+     }
+    },
+    "287": {
+     "class_type": "FeiHouEasyH3RHOutput",
+     "inputs": {
+      "h3_context": [
+       "295",
+       2
+      ]
+     }
+    },
+    "320": {
+     "class_type": "BasicScheduler",
+     "inputs": {
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": [
+       "305",
+       0
+      ],
+      "steps": 4
+     }
+    },
+    "342": {
+     "class_type": "FeiHouEasyH3RHLoraStack",
+     "inputs": {
+      "lora_1": {
+       "lora": "minimax_h3_lms_v1.0_r64.safetensors",
+       "bypass": true,
+       "strength": 0.75,
+       "on": true
+      },
+      "lora_2": {
+       "lora": "minimax_h3_fl2v_turbo_4step_v1.2_768p_comfyui_bf16.safetensors",
+       "bypass": true,
+       "strength": 0.8,
+       "on": true
+      },
+      "+ Add LoRA": ""
+     }
+    },
+    "321": {
+     "class_type": "FeiHouEasyH3RHResolution",
+     "inputs": {
+      "aspect_ratio": "9:16",
+      "width": 1344,
+      "resolution": "720P",
+      "height": 768
+     }
+    },
+    "322": {
+     "class_type": "FeiHouEasyH3RHOutput",
+     "inputs": {
+      "h3_context": [
+       "295",
+       2
+      ]
+     }
+    },
+    "246": {
+     "class_type": "KSamplerSelect",
+     "inputs": {
+      "sampler_name": "res_multistep"
+     }
+    },
+    "301": {
+     "class_type": "ModelPreviewOverrideKJ",
+     "inputs": {
+      "preview_frames": 1024,
+      "suppress_default_preview": true,
+      "jpeg_quality": 100,
+      "tiny_vae": "taeh3.safetensors",
+      "model": [
+       "295",
+       0
+      ],
+      "preview_fps": 12,
+      "max_resolution": 4096
+     }
+    },
+    "323": {
+     "class_type": "FeiHouEasyH3RHDurationCrop",
+     "inputs": {
+      "images": [
+       "324",
+       0
+      ],
+      "fps": [
+       "322",
+       4
+      ],
+      "audio": [
+       "297",
+       0
+      ],
+      "duration_control": [
+       "322",
+       8
+      ]
+     }
+    },
+    "345": {
+     "class_type": "ModelPreviewOverrideKJ",
+     "inputs": {
+      "preview_frames": 1024,
+      "suppress_default_preview": true,
+      "jpeg_quality": 100,
+      "tiny_vae": "taeh3.safetensors",
+      "model": [
+       "295",
+       1
+      ],
+      "preview_fps": 12,
+      "max_resolution": 4096
+     }
+    },
+    "269": {
+     "class_type": "BasicGuider",
+     "inputs": {
+      "conditioning": [
+       "287",
+       0
+      ],
+      "model": [
+       "327",
+       0
+      ]
+     }
+    },
+    "324": {
+     "class_type": "VAEDecode",
+     "inputs": {
+      "vae": [
+       "322",
+       2
+      ],
+      "samples": [
+       "310",
+       0
+      ]
+     }
+    },
+    "325": {
+     "class_type": "ModelAttentionBackend",
+     "inputs": {
+      "attention": "comfy kitchen attention",
+      "model": [
+       "326",
+       0
+      ]
+     }
+    },
+    "326": {
+     "class_type": "MiniMaxH3SigmaShift",
+     "inputs": {
+      "shift_audio": 3,
+      "shift_video": 12,
+      "model": [
+       "301",
+       0
+      ]
+     }
+    },
+    "305": {
+     "class_type": "ModelAttentionBackend",
+     "inputs": {
+      "attention": "comfy kitchen attention",
+      "model": [
+       "318",
+       0
+      ]
+     }
+    },
+    "327": {
+     "class_type": "BlockSparseAttention",
+     "inputs": {
+      "selection": "sol-attn",
+      "extra_tokens": 256,
+      "selection.tau": 1.3,
+      "dense_blocks": "",
+      "start_percent": 0.2,
+      "model": [
+       "325",
+       0
+      ],
+      "end_percent": 1,
+      "sink_conditioning": "exact_kv_and_rows",
+      "min_tokens": 12288,
+      "verbose": true
+     }
+    },
+    "349": {
+     "class_type": "VHS_VideoCombine",
+     "inputs": {
+      "images": [
+       "298",
+       0
+      ],
+      "pix_fmt": "yuv420p",
+      "format": "video/h264-mp4",
+      "frame_rate": [
+       "298",
+       1
+      ],
+      "pingpong": false,
+      "save_output": true,
+      "filename_prefix": "Minimax_H3",
+      "loop_count": 0,
+      "save_metadata": false,
+      "crf": 19,
+      "trim_to_audio": false,
+      "no_preview": false,
+      "audio": [
+       "298",
+       2
+      ]
+     }
+    },
+    "306": {
+     "class_type": "ImageResizeKJv2",
+     "inputs": {
+      "crop_position": "center",
+      "image": [
+       "298",
+       0
+      ],
+      "pad_color": "0, 0, 0",
+      "divisible_by": 32,
+      "width": [
+       "321",
+       0
+      ],
+      "keep_proportion": "crop",
+      "upscale_method": "bicubic",
+      "device": "cpu",
+      "height": [
+       "321",
+       1
+      ]
+     }
+    },
+    "307": {
+     "class_type": "CFGGuider",
+     "inputs": {
+      "negative": [
+       "308",
+       0
+      ],
+      "cfg": 1,
+      "model": [
+       "305",
+       0
+      ],
+      "positive": [
+       "308",
+       0
+      ]
+     }
+    },
+    "308": {
+     "class_type": "MiniMaxH3AddGuide",
+     "inputs": {
+      "image": [
+       "306",
+       0
+      ],
+      "latent": [
+       "319",
+       0
+      ],
+      "frame_idx": 0,
+      "positive": [
+       "312",
+       0
+      ],
+      "vae": [
+       "322",
+       2
+      ]
+     }
+    },
+    "309": {
+     "class_type": "ImpactImageInfo",
+     "inputs": {
+      "value": [
+       "306",
+       0
+      ]
+     }
+    }
+   },
+   "rh_media": {
+    "reference_image": {
+     "node": "295",
+     "field": "embedded_media_json",
+     "type": "image",
+     "label": "参考图 1",
+     "group": "参考素材",
+     "required": false
+    },
+    "reference_image_2": {
+     "node": "295",
+     "field": "embedded_media_json",
+     "type": "image",
+     "label": "参考图 2",
+     "group": "更多参考素材",
+     "required": false
+    },
+    "reference_image_3": {
+     "node": "295",
+     "field": "embedded_media_json",
+     "type": "image",
+     "label": "参考图 3",
+     "group": "更多参考素材",
+     "required": false,
+     "depends_on": {
+      "key": "mode",
+      "value": "reference"
+     }
+    },
+    "reference_image_4": {
+     "node": "295",
+     "field": "embedded_media_json",
+     "type": "image",
+     "label": "参考图 4",
+     "group": "更多参考素材",
+     "required": false,
+     "depends_on": {
+      "key": "mode",
+      "value": "reference"
+     }
+    },
+    "reference_image_5": {
+     "node": "295",
+     "field": "embedded_media_json",
+     "type": "image",
+     "label": "参考图 5",
+     "group": "更多参考素材",
+     "required": false,
+     "depends_on": {
+      "key": "mode",
+      "value": "reference"
+     }
+    },
+    "reference_image_6": {
+     "node": "295",
+     "field": "embedded_media_json",
+     "type": "image",
+     "label": "参考图 6",
+     "group": "更多参考素材",
+     "required": false,
+     "depends_on": {
+      "key": "mode",
+      "value": "reference"
+     }
+    },
+    "reference_image_7": {
+     "node": "295",
+     "field": "embedded_media_json",
+     "type": "image",
+     "label": "参考图 7",
+     "group": "更多参考素材",
+     "required": false,
+     "depends_on": {
+      "key": "mode",
+      "value": "reference"
+     }
+    },
+    "reference_image_8": {
+     "node": "295",
+     "field": "embedded_media_json",
+     "type": "image",
+     "label": "参考图 8",
+     "group": "更多参考素材",
+     "required": false,
+     "depends_on": {
+      "key": "mode",
+      "value": "reference"
+     }
+    },
+    "reference_image_9": {
+     "node": "295",
+     "field": "embedded_media_json",
+     "type": "image",
+     "label": "参考图 9",
+     "group": "更多参考素材",
+     "required": false,
+     "depends_on": {
+      "key": "mode",
+      "value": "reference"
+     }
+    },
+    "source_video": {
+     "node": "295",
+     "field": "embedded_media_json",
+     "type": "video",
+     "label": "参考视频 1",
+     "group": "参考素材",
+     "required": false,
+     "depends_on": {
+      "key": "mode",
+      "value": "reference"
+     }
+    },
+    "source_video_2": {
+     "node": "295",
+     "field": "embedded_media_json",
+     "type": "video",
+     "label": "参考视频 2",
+     "group": "更多参考素材",
+     "required": false,
+     "depends_on": {
+      "key": "mode",
+      "value": "reference"
+     }
+    },
+    "source_video_3": {
+     "node": "295",
+     "field": "embedded_media_json",
+     "type": "video",
+     "label": "参考视频 3",
+     "group": "更多参考素材",
+     "required": false,
+     "depends_on": {
+      "key": "mode",
+      "value": "reference"
+     }
+    },
+    "reference_audio": {
+     "node": "295",
+     "field": "embedded_media_json",
+     "type": "audio",
+     "label": "参考音频 1",
+     "group": "更多参考素材",
+     "required": false,
+     "depends_on": {
+      "key": "mode",
+      "value": "reference"
+     }
+    },
+    "reference_audio_2": {
+     "node": "295",
+     "field": "embedded_media_json",
+     "type": "audio",
+     "label": "参考音频 2",
+     "group": "更多参考素材",
+     "required": false,
+     "depends_on": {
+      "key": "mode",
+      "value": "reference"
+     }
+    },
+    "reference_audio_3": {
+     "node": "295",
+     "field": "embedded_media_json",
+     "type": "audio",
+     "label": "参考音频 3",
+     "group": "更多参考素材",
+     "required": false,
+     "depends_on": {
+      "key": "mode",
+      "value": "reference"
+     }
+    },
+    "face_reference": {
+     "node": "339",
+     "field": "image",
+     "type": "image",
+     "label": "独立人脸参考图",
+     "group": "独立人脸参考",
+     "required": true,
+     "depends_on": {
+      "key": "use_face_reference",
+      "value": true
+     }
+    }
+   },
+   "rh_params": {
+    "prompt": {
+     "label": "提示词",
+     "type": "text",
+     "default": "保持参考人物的身份、外貌与场景一致，按文字要求生成自然流畅的视频。",
+     "group": "基本设置",
+     "required": true,
+     "max_length": 10000,
+     "description": "按类型编号引用素材：<Picture 1>、<Video 1>、<Audio 1>。",
+     "node": "295",
+     "field": "prompt"
+    },
+    "mode": {
+     "label": "生成模式",
+     "type": "select",
+     "default": "reference",
+     "group": "基本设置",
+     "options": [
+      {
+       "value": "reference",
+       "label": "参考生视频"
+      },
+      {
+       "value": "image",
+       "label": "图生视频 / 首尾帧"
+      }
+     ],
+     "node": "295",
+     "field": "mode"
+    },
+    "duration": {
+     "label": "时长（秒）",
+     "type": "float",
+     "default": 5,
+     "group": "基本设置",
+     "min": 0.2,
+     "max": 30,
+     "step": 0.1,
+     "node": "295",
+     "field": "seconds"
+    },
+    "audio_duration_auto": {
+     "label": "自动对齐时长",
+     "type": "select",
+     "default": "off",
+     "group": "基本设置",
+     "options": [
+      {
+       "value": "off",
+       "label": "关闭 · 手动时长"
+      },
+      {
+       "value": "video",
+       "label": "参考视频 1"
+      },
+      {
+       "value": "audio",
+       "label": "参考音频 1"
+      }
+     ],
+     "node": "295",
+     "field": "audio_duration_auto"
+    },
+    "resolution": {
+     "label": "一采分辨率",
+     "type": "select",
+     "default": "540P",
+     "group": "基本设置",
+     "options": [
+      {
+       "value": "360P",
+       "label": "360P"
+      },
+      {
+       "value": "416P",
+       "label": "416P"
+      },
+      {
+       "value": "480P",
+       "label": "480P"
+      },
+      {
+       "value": "540P",
+       "label": "540P"
+      },
+      {
+       "value": "640P",
+       "label": "640P"
+      },
+      {
+       "value": "720P",
+       "label": "720P"
+      },
+      {
+       "value": "768P",
+       "label": "768P"
+      },
+      {
+       "value": "832P",
+       "label": "832P"
+      },
+      {
+       "value": "928P",
+       "label": "928P"
+      },
+      {
+       "value": "1024P",
+       "label": "1024P"
+      },
+      {
+       "value": "1080P",
+       "label": "1080P"
+      },
+      {
+       "value": "custom",
+       "label": "custom"
+      }
+     ],
+     "node": "295",
+     "field": "resolution"
+    },
+    "aspect_ratio": {
+     "label": "画面比例",
+     "type": "select",
+     "default": "9:16",
+     "group": "基本设置",
+     "options": [
+      {
+       "value": "1:1",
+       "label": "1:1"
+      },
+      {
+       "value": "2:3",
+       "label": "2:3"
+      },
+      {
+       "value": "3:2",
+       "label": "3:2"
+      },
+      {
+       "value": "3:4",
+       "label": "3:4"
+      },
+      {
+       "value": "4:3",
+       "label": "4:3"
+      },
+      {
+       "value": "9:16",
+       "label": "9:16"
+      },
+      {
+       "value": "16:9",
+       "label": "16:9"
+      },
+      {
+       "value": "21:9",
+       "label": "21:9"
+      }
+     ],
+     "node": "295",
+     "field": "aspect_ratio"
+    },
+    "second_pass": {
+     "label": "开启二次采样",
+     "type": "boolean",
+     "default": true,
+     "group": "基本设置",
+     "description": "再次采样提升细节；关闭后跳过整个二采分支。"
+    },
+    "face_refine": {
+     "label": "开启人脸精修",
+     "type": "boolean",
+     "default": true,
+     "group": "基本设置",
+     "description": "可独立于二采启用；增加生成耗时。"
+    },
+    "original_audio": {
+     "label": "使用参考原声音频",
+     "type": "boolean",
+     "default": false,
+     "group": "基本设置",
+     "description": "关闭则使用生成音频；开启需要参考视频或参考音频。",
+     "node": "297",
+     "field": "switch"
+    },
+    "advanced": {
+     "label": "启用高级设置",
+     "type": "boolean",
+     "default": true,
+     "group": "一采与高级设置",
+     "node": "295",
+     "field": "advanced"
+    },
+    "prompt_optimizer_enabled": {
+     "label": "提示词反推 / 优化",
+     "type": "boolean",
+     "default": false,
+     "group": "一采与高级设置",
+     "depends_on": {
+      "key": "advanced",
+      "value": true
+     },
+     "description": "生成时根据素材优化提示词，可能增加云端费用与耗时。",
+     "node": "295",
+     "field": "prompt_optimizer_enabled"
+    },
+    "keyframe_role": {
+     "label": "首尾帧顺序",
+     "type": "select",
+     "default": "first",
+     "group": "一采与高级设置",
+     "options": [
+      {
+       "value": "first",
+       "label": "图 1 为首帧，图 2 为尾帧"
+      },
+      {
+       "value": "last",
+       "label": "图 1 为尾帧，图 2 为首帧"
+      }
+     ],
+     "node": "295",
+     "field": "keyframe_role"
+    },
+    "ref_image_size": {
+     "label": "参考图处理尺寸",
+     "type": "select",
+     "default": "640",
+     "group": "一采与高级设置",
+     "options": [
+      {
+       "value": "match",
+       "label": "match"
+      },
+      {
+       "value": "480",
+       "label": "480"
+      },
+      {
+       "value": "544",
+       "label": "544"
+      },
+      {
+       "value": "640",
+       "label": "640"
+      },
+      {
+       "value": "736",
+       "label": "736"
+      },
+      {
+       "value": "768",
+       "label": "768"
+      },
+      {
+       "value": "832",
+       "label": "832"
+      },
+      {
+       "value": "928",
+       "label": "928"
+      },
+      {
+       "value": "1024",
+       "label": "1024"
+      },
+      {
+       "value": "1088",
+       "label": "1088"
+      }
+     ],
+     "node": "295",
+     "field": "ref_image_size"
+    },
+    "fps": {
+     "label": "帧率",
+     "type": "float",
+     "default": 24,
+     "group": "一采与高级设置",
+     "min": 1,
+     "max": 120,
+     "step": 1,
+     "node": "295",
+     "field": "fps"
+    },
+    "force_offload": {
+     "label": "采样后释放显存",
+     "type": "boolean",
+     "default": true,
+     "group": "一采与高级设置",
+     "depends_on": {
+      "key": "advanced",
+      "value": true
+     },
+     "node": "295",
+     "field": "force_offload"
+    },
+    "low_vram_streamed_attention": {
+     "label": "低显存流式注意力",
+     "type": "boolean",
+     "default": false,
+     "group": "一采与高级设置",
+     "depends_on": {
+      "key": "advanced",
+      "value": true
+     },
+     "node": "295",
+     "field": "low_vram_streamed_attention"
+    },
+    "reference_text_only": {
+     "label": "只用多模态文字参考",
+     "type": "boolean",
+     "default": false,
+     "group": "一采与高级设置",
+     "depends_on": {
+      "key": "advanced",
+      "value": true
+     },
+     "node": "295",
+     "field": "reference_text_only"
+    },
+    "width": {
+     "label": "自定义宽度",
+     "type": "int",
+     "default": 1344,
+     "group": "一采与高级设置",
+     "min": 32,
+     "max": 4096,
+     "step": 32,
+     "depends_on": {
+      "key": "resolution",
+      "value": "custom"
+     },
+     "node": "295",
+     "field": "width"
+    },
+    "height": {
+     "label": "自定义高度",
+     "type": "int",
+     "default": 768,
+     "group": "一采与高级设置",
+     "min": 32,
+     "max": 4096,
+     "step": 32,
+     "depends_on": {
+      "key": "resolution",
+      "value": "custom"
+     },
+     "node": "295",
+     "field": "height"
+    },
+    "second_resolution": {
+     "label": "二采分辨率",
+     "type": "select",
+     "default": "720P",
+     "group": "二次采样设置",
+     "options": [
+      {
+       "value": "360P",
+       "label": "360P"
+      },
+      {
+       "value": "416P",
+       "label": "416P"
+      },
+      {
+       "value": "480P",
+       "label": "480P"
+      },
+      {
+       "value": "540P",
+       "label": "540P"
+      },
+      {
+       "value": "640P",
+       "label": "640P"
+      },
+      {
+       "value": "720P",
+       "label": "720P"
+      },
+      {
+       "value": "768P",
+       "label": "768P"
+      },
+      {
+       "value": "832P",
+       "label": "832P"
+      },
+      {
+       "value": "928P",
+       "label": "928P"
+      },
+      {
+       "value": "1024P",
+       "label": "1024P"
+      },
+      {
+       "value": "1080P",
+       "label": "1080P"
+      },
+      {
+       "value": "custom",
+       "label": "custom"
+      }
+     ],
+     "node": "321",
+     "field": "resolution"
+    },
+    "second_width": {
+     "label": "自定义宽度",
+     "type": "int",
+     "default": 1344,
+     "group": "二次采样设置",
+     "min": 32,
+     "max": 4096,
+     "step": 32,
+     "depends_on": {
+      "key": "second_resolution",
+      "value": "custom"
+     },
+     "node": "321",
+     "field": "width"
+    },
+    "second_height": {
+     "label": "自定义高度",
+     "type": "int",
+     "default": 768,
+     "group": "二次采样设置",
+     "min": 32,
+     "max": 4096,
+     "step": 32,
+     "depends_on": {
+      "key": "second_resolution",
+      "value": "custom"
+     },
+     "node": "321",
+     "field": "height"
+    },
+    "seed": {
+     "label": "随机种子（-1 为随机）",
+     "type": "int",
+     "default": -1,
+     "group": "一采与高级设置",
+     "min": -1,
+     "max": 9007199254740991,
+     "node": "276",
+     "field": "seed"
+    },
+    "steps": {
+     "label": "采样步数",
+     "type": "int",
+     "default": 8,
+     "group": "一采与高级设置",
+     "min": 1,
+     "max": 60,
+     "node": "251",
+     "field": "steps"
+    },
+    "denoise": {
+     "label": "去噪强度",
+     "type": "float",
+     "default": 1,
+     "group": "一采与高级设置",
+     "min": 0.01,
+     "max": 1,
+     "step": 0.01,
+     "node": "251",
+     "field": "denoise"
+    },
+    "video_shift": {
+     "label": "视频偏移",
+     "type": "float",
+     "default": 12,
+     "group": "一采与高级设置",
+     "min": 0,
+     "max": 30,
+     "step": 0.1,
+     "node": "326",
+     "field": "shift_video"
+    },
+    "audio_shift": {
+     "label": "音频偏移",
+     "type": "float",
+     "default": 3,
+     "group": "一采与高级设置",
+     "min": 0,
+     "max": 30,
+     "step": 0.1,
+     "node": "326",
+     "field": "shift_audio"
+    },
+    "second_seed": {
+     "label": "随机种子（-1 为随机）",
+     "type": "int",
+     "default": -1,
+     "group": "二次采样设置",
+     "min": -1,
+     "max": 9007199254740991,
+     "node": "317",
+     "field": "seed"
+    },
+    "second_steps": {
+     "label": "采样步数",
+     "type": "int",
+     "default": 4,
+     "group": "二次采样设置",
+     "min": 1,
+     "max": 60,
+     "node": "320",
+     "field": "steps"
+    },
+    "second_denoise": {
+     "label": "去噪强度",
+     "type": "float",
+     "default": 1,
+     "group": "二次采样设置",
+     "min": 0.01,
+     "max": 1,
+     "step": 0.01,
+     "node": "320",
+     "field": "denoise"
+    },
+    "second_video_shift": {
+     "label": "视频偏移",
+     "type": "float",
+     "default": 12,
+     "group": "二次采样设置",
+     "min": 0,
+     "max": 30,
+     "step": 0.1,
+     "node": "318",
+     "field": "shift_video"
+    },
+    "second_audio_shift": {
+     "label": "音频偏移",
+     "type": "float",
+     "default": 3,
+     "group": "二次采样设置",
+     "min": 0,
+     "max": 30,
+     "step": 0.1,
+     "node": "318",
+     "field": "shift_audio"
+    },
+    "sparse_attention": {
+     "label": "稀疏注意力加速",
+     "type": "boolean",
+     "default": true,
+     "group": "一采与高级设置"
+    },
+    "second_prompt": {
+     "label": "二采提示词",
+     "type": "text",
+     "default": "Enhance this video with sharp, crisp details while preserving a natural photorealistic appearance.",
+     "group": "二次采样设置",
+     "max_length": 10000,
+     "allow_blank": true,
+     "node": "312",
+     "field": "text"
+    },
+    "second_cfg": {
+     "label": "二采提示词引导",
+     "type": "float",
+     "default": 1,
+     "group": "二次采样设置",
+     "min": 0,
+     "max": 10,
+     "step": 0.1,
+     "node": "307",
+     "field": "cfg"
+    },
+    "lora_1_enabled": {
+     "label": "一采 Turbo · 启用",
+     "type": "boolean",
+     "default": true,
+     "group": "LoRA 设置"
+    },
+    "lora_1_strength": {
+     "label": "一采 Turbo · 权重",
+     "type": "float",
+     "default": 1,
+     "group": "LoRA 设置",
+     "min": -2,
+     "max": 2,
+     "step": 0.05
+    },
+    "lora_1_bypass": {
+     "label": "一采 Turbo · Bypass 加载",
+     "type": "boolean",
+     "default": true,
+     "group": "LoRA 设置",
+     "description": "这是 LoRA 加载方式；要停用请关闭“启用”。"
+    },
+    "lora_2_enabled": {
+     "label": "二采 LMS · 启用",
+     "type": "boolean",
+     "default": true,
+     "group": "LoRA 设置"
+    },
+    "lora_2_strength": {
+     "label": "二采 LMS · 权重",
+     "type": "float",
+     "default": 0.75,
+     "group": "LoRA 设置",
+     "min": -2,
+     "max": 2,
+     "step": 0.05
+    },
+    "lora_2_bypass": {
+     "label": "二采 LMS · Bypass 加载",
+     "type": "boolean",
+     "default": true,
+     "group": "LoRA 设置",
+     "description": "这是 LoRA 加载方式；要停用请关闭“启用”。"
+    },
+    "lora_3_enabled": {
+     "label": "二采 Turbo · 启用",
+     "type": "boolean",
+     "default": true,
+     "group": "LoRA 设置"
+    },
+    "lora_3_strength": {
+     "label": "二采 Turbo · 权重",
+     "type": "float",
+     "default": 0.8,
+     "group": "LoRA 设置",
+     "min": -2,
+     "max": 2,
+     "step": 0.05
+    },
+    "lora_3_bypass": {
+     "label": "二采 Turbo · Bypass 加载",
+     "type": "boolean",
+     "default": true,
+     "group": "LoRA 设置",
+     "description": "这是 LoRA 加载方式；要停用请关闭“启用”。"
+    },
+    "face_advanced": {
+     "label": "高级精修选项",
+     "type": "boolean",
+     "default": false,
+     "group": "人脸精修设置",
+     "node": "340",
+     "field": "advanced"
+    },
+    "face_audio_lock": {
+     "label": "音频约束（实验性）",
+     "type": "boolean",
+     "default": false,
+     "group": "人脸精修设置",
+     "node": "340",
+     "field": "audio_lock"
+    },
+    "face_clean_second_model": {
+     "label": "使用纯净二采模型",
+     "type": "boolean",
+     "default": true,
+     "group": "人脸精修设置",
+     "node": "340",
+     "field": "clean_second_model"
+    },
+    "face_force_offload": {
+     "label": "精修后释放显存",
+     "type": "boolean",
+     "default": true,
+     "group": "人脸精修设置",
+     "node": "340",
+     "field": "force_offload"
+    },
+    "face_mode": {
+     "label": "精修人数",
+     "type": "select",
+     "default": "单人",
+     "group": "人脸精修设置",
+     "options": [
+      {
+       "value": "单人",
+       "label": "单人"
+      },
+      {
+       "value": "多人",
+       "label": "多人"
+      }
+     ],
+     "node": "340",
+     "field": "face_mode"
+    },
+    "face_target": {
+     "label": "人脸选择",
+     "type": "select",
+     "default": "largest_face",
+     "group": "人脸精修设置",
+     "options": [
+      {
+       "value": "largest_face",
+       "label": "最大人脸"
+      },
+      {
+       "value": "reference_identity",
+       "label": "按参考图匹配身份"
+      }
+     ],
+     "node": "340",
+     "field": "target"
+    },
+    "face_canvas": {
+     "label": "精修画布",
+     "type": "select",
+     "default": "768",
+     "group": "人脸精修设置",
+     "options": [
+      {
+       "value": "512",
+       "label": "512"
+      },
+      {
+       "value": "640",
+       "label": "640"
+      },
+      {
+       "value": "768",
+       "label": "768"
+      },
+      {
+       "value": "1024",
+       "label": "1024"
+      }
+     ],
+     "node": "340",
+     "field": "canvas_size"
+    },
+    "face_chunks": {
+     "label": "分段帧数",
+     "type": "select",
+     "default": "不分段",
+     "group": "人脸精修设置",
+     "options": [
+      {
+       "value": "不分段",
+       "label": "不分段"
+      },
+      {
+       "value": "240",
+       "label": "240"
+      },
+      {
+       "value": "192",
+       "label": "192"
+      },
+      {
+       "value": "120",
+       "label": "120"
+      },
+      {
+       "value": "72",
+       "label": "72"
+      }
+     ],
+     "node": "340",
+     "field": "chunk_frames"
+    },
+    "face_seed": {
+     "label": "精修种子",
+     "type": "int",
+     "default": 335463569070439,
+     "group": "人脸精修设置",
+     "min": 0,
+     "max": 9007199254740991,
+     "step": 1,
+     "node": "340",
+     "field": "seed"
+    },
+    "face_steps": {
+     "label": "精修步数",
+     "type": "int",
+     "default": 8,
+     "group": "人脸精修设置",
+     "min": 1,
+     "max": 60,
+     "step": 1,
+     "node": "340",
+     "field": "steps"
+    },
+    "face_denoise": {
+     "label": "精修去噪",
+     "type": "float",
+     "default": 0.25,
+     "group": "人脸精修设置",
+     "min": 0.01,
+     "max": 1,
+     "step": 0.01,
+     "node": "340",
+     "field": "denoise"
+    },
+    "face_confidence": {
+     "label": "人脸检测置信度",
+     "type": "float",
+     "default": 0.35,
+     "group": "人脸精修设置",
+     "min": 0.05,
+     "max": 1,
+     "step": 0.05,
+     "node": "340",
+     "field": "confidence"
+    },
+    "face_crop_factor": {
+     "label": "裁剪范围",
+     "type": "float",
+     "default": 2.5,
+     "group": "人脸精修设置",
+     "min": 1.2,
+     "max": 5,
+     "step": 0.1,
+     "node": "340",
+     "field": "crop_factor"
+    },
+    "face_max_faces": {
+     "label": "最多精修人数",
+     "type": "int",
+     "default": 2,
+     "group": "人脸精修设置",
+     "min": 2,
+     "max": 8,
+     "step": 1,
+     "node": "340",
+     "field": "max_faces"
+    },
+    "face_prompt": {
+     "label": "精修提示词",
+     "type": "text",
+     "default": "Refine the face in this video crop. Preserve identity, expression, gaze, mouth movement, lighting and motion. Natural facial detail; no new motion or camera changes.",
+     "group": "人脸精修设置",
+     "max_length": 10000,
+     "node": "340",
+     "field": "prompt"
+    },
+    "use_face_reference": {
+     "label": "使用独立人脸参考图",
+     "type": "boolean",
+     "default": false,
+     "group": "人脸精修设置"
+    },
+    "save_first": {
+     "label": "保留一采结果",
+     "type": "boolean",
+     "default": true,
+     "group": "输出设置"
+    },
+    "save_second": {
+     "label": "保留二采结果",
+     "type": "boolean",
+     "default": true,
+     "group": "输出设置"
+    },
+    "save_face": {
+     "label": "保留精修结果",
+     "type": "boolean",
+     "default": true,
+     "group": "输出设置"
+    },
+    "pingpong": {
+     "label": "往返播放输出",
+     "type": "boolean",
+     "default": false,
+     "group": "输出设置"
+    },
+    "crf": {
+     "label": "视频压缩质量（越小越清晰）",
+     "type": "int",
+     "default": 19,
+     "group": "输出设置",
+     "min": 0,
+     "max": 35
+    },
+    "source_video_start": {
+     "label": "参考视频1 · 截取起点（秒）",
+     "type": "float",
+     "default": 0,
+     "group": "参考素材截取",
+     "min": 0,
+     "max": 86400,
+     "step": 0.1
+    },
+    "source_video_end": {
+     "label": "参考视频1 · 截取终点（0 为末尾）",
+     "type": "float",
+     "default": 0,
+     "group": "参考素材截取",
+     "min": 0,
+     "max": 86400,
+     "step": 0.1
+    },
+    "source_video_2_start": {
+     "label": "参考视频2 · 截取起点（秒）",
+     "type": "float",
+     "default": 0,
+     "group": "参考素材截取",
+     "min": 0,
+     "max": 86400,
+     "step": 0.1
+    },
+    "source_video_2_end": {
+     "label": "参考视频2 · 截取终点（0 为末尾）",
+     "type": "float",
+     "default": 0,
+     "group": "参考素材截取",
+     "min": 0,
+     "max": 86400,
+     "step": 0.1
+    },
+    "source_video_3_start": {
+     "label": "参考视频3 · 截取起点（秒）",
+     "type": "float",
+     "default": 0,
+     "group": "参考素材截取",
+     "min": 0,
+     "max": 86400,
+     "step": 0.1
+    },
+    "source_video_3_end": {
+     "label": "参考视频3 · 截取终点（0 为末尾）",
+     "type": "float",
+     "default": 0,
+     "group": "参考素材截取",
+     "min": 0,
+     "max": 86400,
+     "step": 0.1
+    },
+    "reference_audio_start": {
+     "label": "参考音频1 · 截取起点（秒）",
+     "type": "float",
+     "default": 0,
+     "group": "参考素材截取",
+     "min": 0,
+     "max": 86400,
+     "step": 0.1
+    },
+    "reference_audio_end": {
+     "label": "参考音频1 · 截取终点（0 为末尾）",
+     "type": "float",
+     "default": 0,
+     "group": "参考素材截取",
+     "min": 0,
+     "max": 86400,
+     "step": 0.1
+    },
+    "reference_audio_2_start": {
+     "label": "参考音频2 · 截取起点（秒）",
+     "type": "float",
+     "default": 0,
+     "group": "参考素材截取",
+     "min": 0,
+     "max": 86400,
+     "step": 0.1
+    },
+    "reference_audio_2_end": {
+     "label": "参考音频2 · 截取终点（0 为末尾）",
+     "type": "float",
+     "default": 0,
+     "group": "参考素材截取",
+     "min": 0,
+     "max": 86400,
+     "step": 0.1
+    },
+    "reference_audio_3_start": {
+     "label": "参考音频3 · 截取起点（秒）",
+     "type": "float",
+     "default": 0,
+     "group": "参考素材截取",
+     "min": 0,
+     "max": 86400,
+     "step": 0.1
+    },
+    "reference_audio_3_end": {
+     "label": "参考音频3 · 截取终点（0 为末尾）",
+     "type": "float",
+     "default": 0,
+     "group": "参考素材截取",
+     "min": 0,
+     "max": 86400,
+     "step": 0.1
+    }
+   }
   }
  ],
  "default_prompt_reset": true

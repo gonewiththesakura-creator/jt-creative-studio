@@ -26,7 +26,10 @@ def test_packaging_preserves_business_functions_and_backend_contracts():
                          'load_jobs','run_job','main','video_redoable','clear_video_ui','scoped_history_jobs',
                          # Optional reference wiring and capability checks have dedicated HTTP/runtime tests.
                          'rh_input_enabled','resolve_upload_capabilities','normalize_rh_workflow_inputs',
-                         'rh_build_generic_node_info','rh_build_single_image_graph','rh_submit_single_image_graph','rh_run_generic'}
+                         'rh_build_generic_node_info','rh_build_single_image_graph','rh_submit_single_image_graph','rh_run_generic',
+                         # Remix branches and audio admission have dedicated graph/HTTP tests.
+                         'validate_h3_remix_inputs','rh_build_h3_remix_graph','rh_submit_h3_multi',
+                         'rh_run_video','_upload_media_content_type_from_header'}
         tree.body=[n for n in tree.body if not (
             isinstance(n,ast.FunctionDef) and n.name in queue_functions) and not (
             isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id in
@@ -40,7 +43,8 @@ def test_packaging_preserves_business_functions_and_backend_contracts():
     candidate=json.loads((ROOT/'config.json').read_text(encoding='utf8'))
     added=[w for w in candidate['workflows'] if w['id']=='qwen21_wardrobe']
     assert len(added)==1
-    candidate['workflows']=[w for w in candidate['workflows'] if w['id']!='qwen21_wardrobe']
+    assert len([w for w in candidate['workflows'] if w['id']=='h3_remix_full'])==1
+    candidate['workflows']=[w for w in candidate['workflows'] if w['id'] not in ('qwen21_wardrobe','h3_remix_full')]
     assert candidate==previous, 'Existing workflow definitions must remain intact'
 
 
