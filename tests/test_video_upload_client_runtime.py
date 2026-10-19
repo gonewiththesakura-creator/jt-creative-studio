@@ -41,9 +41,11 @@ class Element {
   replaceChildren(...items){this.children=[...items]}
   removeChild(item){this.children=this.children.filter(child=>child!==item)}
   querySelector(selector){return this.children.find(item=>item.className==='local-media-preview')||null}
+  addEventListener(){}
 }
 const created=[], revoked=[];
-globalThis.document={createElement:tag=>new Element(tag),addEventListener:()=>{}};
+// 38884c4 added top-level gallery listeners (galleryThumbs / preview-stage scroll), so the stub document resolves lookups.
+globalThis.document={createElement:tag=>new Element(tag),addEventListener:()=>{},getElementById:id=>new Element('div'),querySelector:()=>new Element('div'),querySelectorAll:()=>[]};
 globalThis.URL={createObjectURL:file=>{const value='blob:'+file.name;created.push(value);return value},revokeObjectURL:value=>revoked.push(value)};
 globalThis.window={addEventListener:()=>{}};
 '''
@@ -99,7 +101,7 @@ def test_mobile_upload_sends_file_bytes_keeps_failure_preview_and_restores_selec
         'rh_media': {'source': {'type': 'image', 'label': '参考图', 'required': True}},
         'rh_params': {'prompt': {'type': 'text', 'label': '提示词', 'default': '测试'}},
     } for name in ('first', 'second')]
-    uploaded = []
+    uploaded, started = [], []
     with sync_playwright() as driver:
         browser = driver.chromium.launch(headless=True)
         page = browser.new_page(viewport={'width': 390, 'height': 844})
@@ -112,17 +114,24 @@ def test_mobile_upload_sends_file_bytes_keeps_failure_preview_and_restores_selec
                 return request_route.fulfill(body=(ROOT/'static/video.html').read_text(encoding='utf8'), content_type='text/html')
             if path == '/api/workflows':
                 return request_route.fulfill(json=workflows)
-            if path.startswith('/api/upload?'):
+            # 97be240: bytes go through the account chunk-upload API (start -> chunk -> finish).
+            if path == '/api/upload-start':
+                started.append(request.post_data_json)
+                return request_route.fulfill(json={'upload_id': 'offline-upload'})
+            if path.startswith('/api/upload-chunk?'):
                 uploaded.append((request.url, request.headers['content-type'], request.post_data_buffer))
+                return request_route.fulfill(json={'offset': len(request.post_data_buffer)})
+            if path == '/api/upload-finish':
                 return request_route.fulfill(status=502, json={'error': '测试上游暂时不可用'})
             return request_route.fulfill(json=[])
         page.route('**/*', route)
         page.goto('http://fixture.test/video')
         page.locator('input[type=file]').set_input_files({'name': '手机参考图.png', 'mimeType': 'image/png', 'buffer': png})
-        page.wait_for_function("document.querySelector('.fn').textContent.includes('上传失败')")
+        page.wait_for_function("document.querySelector('.fn').textContent.includes('上传暂未完成')")
         assert len(uploaded) == 1
         assert uploaded[0][1:] == ('application/octet-stream', png)
-        assert 'workflow=first' in uploaded[0][0] and 'filename=%E6%89%8B' in uploaded[0][0]
+        assert 'id=offline-upload' in uploaded[0][0] and 'offset=0' in uploaded[0][0]
+        assert started == [{'workflow': 'first', 'input_key': 'source', 'filename': '手机参考图.png', 'size': len(png)}]
         expect(page.locator('img.local-media-preview')).to_be_visible()
         assert page.evaluate("ensureMediaState('first').tokens.source === undefined")
         page.locator('[data-wf=second]').click()
@@ -140,7 +149,10 @@ def test_replacing_upload_clears_old_token_and_waits_before_generation():
         page = browser.new_page(viewport={'width': 390, 'height': 844})
         page.route('**/*', lambda route: route.fulfill(json=[]))
         page.set_content('<div id="wfSwitch"></div><div id="wfForm"></div><button id="genBtn"></button><div id="genStatus"></div>')
-        source = (ROOT/'sources/video_business.js').read_text(encoding='utf8').split("window.addEventListener('pagehide'")[0]
+        # Compose the shared helpers exactly as build_video_workbench.py does (547e6cc split LoRA settings out).
+        helpers = ('compact_workflow_form.js', 'h3_remix_controls.js', 'video_prompt_presets.js',
+                   'video_lora_settings.js', 'direct_upload.js', 'video_business.js')
+        source = '\n'.join((ROOT/'sources'/name).read_text(encoding='utf8') for name in helpers).split("window.addEventListener('pagehide'")[0]
         page.add_script_tag(content=source)
         result = page.evaluate("""async () => {
             const wf={id:'video',name:'video',rh_media:{source:{type:'video',label:'视频'}},rh_params:{}};

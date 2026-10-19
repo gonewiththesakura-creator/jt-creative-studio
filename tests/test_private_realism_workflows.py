@@ -8,7 +8,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 ATTACHMENTS = Path(os.environ.get('JT_WORKFLOW_SOURCES', str(ROOT / 'audit' / 'workflow_sources')))
 # Missing originals cannot re-prove provenance; require unchanged accepted data.
-ACCEPTED_CONFIG_COMMIT = '5069b11a3e5213a89dea3aad4e4bd0e4480face5'
+# 1133c7d only removed the provider name from the user-facing "speed" label (verified: no other field differs).
+ACCEPTED_CONFIG_COMMIT = '1133c7d193e8041fdbe6aee55a62ed9d86e6eb18'
 CONFIG = json.loads((ROOT / "config.json").read_text(encoding="utf-8"))
 BY_ID = {item["id"]: item for item in CONFIG["workflows"]}
 

@@ -13,14 +13,13 @@ ROOT = Path(__file__).resolve().parents[1]
 @pytest.fixture(scope="module")
 def built_pages(tmp_path_factory):
     root = tmp_path_factory.mktemp("glass-build")
-    (root / "sources").mkdir()
-    shutil.copy2(ROOT / "workbench_theme.py", root / "workbench_theme.py")
+    # The builders now compose many shared sources and helper modules (e.g. 4aa41f6 added
+    # workbench_task_runtime.py and sources/image_edit_*), so copy them all.
+    shutil.copytree(ROOT / "sources", root / "sources")
+    for helper in ROOT.glob("workbench_*.py"):
+        shutil.copy2(helper, root / helper.name)
     shutil.copytree(ROOT / "static" / "singularity", root / "static" / "singularity")
     (root / "static" / "previews").mkdir(parents=True)
-    for name in ("video_business.js", "workbench_glass.css"):
-        source = ROOT / "sources" / name
-        if source.exists():
-            shutil.copy2(source, root / "sources" / name)
     for source in (ROOT / "static" / "previews").glob("realism-*.webp"):
         shutil.copy2(source, root / "static" / "previews" / source.name)
     for name in ("realism", "video"):
@@ -37,19 +36,46 @@ def render_without_network(page, html):
     page.set_content(re.sub(r"<script\b[^>]*>.*?</script>", "", html, flags=re.S))
 
 
+def js_function(html, name):
+    """Return the full source of `function name(...){...}`, skipping braces inside string literals."""
+    start = html.index("function " + name + "(")
+    index, depth, quote, templates = html.index("{", start), 0, None, []
+    while True:
+        char = html[index]
+        if quote:
+            if char == "\\":
+                index += 1
+            elif char == quote:
+                quote = None
+            elif quote == "`" and html.startswith("${", index):
+                templates.append(depth)
+                quote = None
+                depth += 1
+                index += 1
+        elif char in "'\"`":
+            quote = char
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if templates and depth == templates[-1]:
+                templates.pop()
+                quote = "`"
+            elif depth == 0:
+                return html[start:index + 1]
+        index += 1
+
+
 def render_real_task_card(page, html, name):
     # Run only actual task DOM factories; omit boot code and provider requests.
-    functions = ["createTaskCard"] if name == "realism" else ["fmtTime", "refreshTaskCount", "addTaskCard"]
-    code = "const tasks = new Map();\n" + "\n".join(
-        re.search(r"function " + function + r"\([^\n]+", html).group(0)
-        for function in functions
-    )
+    # 4aa41f6: the realism (image-edit) page now shares the video task-card runtime.
+    functions = ["fmtTime", "refreshTaskCount", "taskGroup", "addTaskCard"]
+    code = "const tasks = new Map();\n" + "\n".join(js_function(html, function) for function in functions)
     page.add_script_tag(content=code)
-    page.evaluate("""name => {
-        if(name === 'realism') document.querySelector('#taskList').append(createTaskCard('fixture-task','测试任务').card);
-        else addTaskCard('fixture-task','测试任务');
+    page.evaluate("""() => {
+        addTaskCard('fixture-task','测试任务');
         document.querySelector('.task-view').hidden = false;
-    }""", name)
+    }""")
 
 
 @pytest.fixture(scope="module")

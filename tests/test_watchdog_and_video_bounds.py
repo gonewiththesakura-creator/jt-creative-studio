@@ -64,6 +64,13 @@ VIDEO_WORKFLOWS = [
 BOUNDED_KEYS = {"width", "height", "duration", "short_edge", "long_edge", "max_side"}
 
 
+# NEEDS OWNER DECISION: ad0a196 deliberately removed the 15 s cap on h3_edit_n duration and no new
+# maximum was chosen. Do not restore 15 s or invent a cap here; once the owner picks a value, add it to
+# config.json and delete this entry (the strict xfail below then turns red as a reminder).
+UNBOUNDED_PENDING_OWNER_DECISION = {("h3_edit_n", "duration")}
+INTEGER_TYPES = {"int", "integer"}
+
+
 def numeric_controls(workflow):
     for key, mapping in workflow.get("rh_params", {}).items():
         control_type = mapping.get("vtype", mapping.get("type"))
@@ -71,13 +78,25 @@ def numeric_controls(workflow):
             yield key, mapping
 
 
+def control_step(mapping):
+    # Integer controls without an explicit step render as <input type=number> (browser step 1);
+    # e611c4c added such H3 Remix seed/steps/crf controls. Non-integer controls must declare a step.
+    if "step" in mapping:
+        return mapping["step"]
+    return 1 if mapping.get("vtype", mapping.get("type")) in INTEGER_TYPES else None
+
+
 def test_all_public_runninghub_video_dimensions_and_durations_are_bounded():
     assert VIDEO_WORKFLOWS
     for workflow in VIDEO_WORKFLOWS:
         for key, mapping in numeric_controls(workflow):
-            assert {"min", "max", "step"} <= mapping.keys(), (workflow["id"], key)
+            if (workflow["id"], key) in UNBOUNDED_PENDING_OWNER_DECISION:
+                assert "max" not in mapping, "owner set a cap: remove it from UNBOUNDED_PENDING_OWNER_DECISION"
+                continue
+            assert {"min", "max"} <= mapping.keys(), (workflow["id"], key)
+            assert control_step(mapping) is not None, (workflow["id"], key)
             assert mapping["min"] <= mapping["max"], (workflow["id"], key)
-            assert mapping["step"] > 0, (workflow["id"], key)
+            assert control_step(mapping) > 0, (workflow["id"], key)
             default = mapping.get("default", workflow.get("params_defaults", {}).get(key))
             assert default is not None, (workflow["id"], key)
             assert mapping["min"] <= default <= mapping["max"], (workflow["id"], key)
@@ -86,7 +105,9 @@ def test_all_public_runninghub_video_dimensions_and_durations_are_bounded():
 @pytest.mark.parametrize(
     "workflow,key",
     [
-        (workflow, key)
+        pytest.param(workflow, key, marks=pytest.mark.xfail(
+            strict=True, reason="h3_edit_n duration has no max since ad0a196; owner must choose the cap"))
+        if (workflow["id"], key) in UNBOUNDED_PENDING_OWNER_DECISION else (workflow, key)
         for workflow in VIDEO_WORKFLOWS
         for key, _ in numeric_controls(workflow)
     ],
@@ -111,11 +132,11 @@ def test_video_boundaries_are_enforced_before_provider_submit(workflow, key):
         SERVER.normalize_rh_workflow_inputs(
             workflow,
             media,
-            {**params, key: mapping["max"] + mapping["step"]},
+            {**params, key: mapping["max"] + control_step(mapping)},
         )
     with pytest.raises(ValueError, match=re.escape(f"{label}低于最小值")):
         SERVER.normalize_rh_workflow_inputs(
             workflow,
             media,
-            {**params, key: mapping["min"] - mapping["step"]},
+            {**params, key: mapping["min"] - control_step(mapping)},
         )

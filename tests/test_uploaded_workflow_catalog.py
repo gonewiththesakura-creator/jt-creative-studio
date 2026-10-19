@@ -12,8 +12,11 @@ SOURCES = {
         "editor_id": "2098341535964643329",
         "run_id": "2098330246185926657",
         "kind": "video",
-        "media": {"reference_image": ("293", "image", True), "source_video": ("275", "video", True)},
+        # 4a46084 added optional reference images 2-4 (four-image H3 reference graph).
+        "media": {"reference_image": ("293", "image", True), "reference_image_2": ("294", "image", False), "reference_image_3": ("295", "image", False), "reference_image_4": ("296", "image", False), "source_video": ("275", "video", True)},
         "params": {"prompt": ("244", "text"), "duration": ("247", "value"), "short_edge": ("251", "value"), "seed": ("222", "noise_seed")},
+        # 547e6cc: three LoRA slots bound server-side through video_wf/h3_edit_multi_api.json (no client node ids).
+        "server_params": {"lora_1_model", "lora_1_strength", "lora_2_model", "lora_2_strength", "lora_3_model", "lora_3_strength"},
     },
     "h3_edit_t3": {
         "name": "MinimaxH3视频编辑T3",
@@ -98,7 +101,9 @@ def test_only_verified_business_inputs_are_exposed_with_exact_nodes():
     for workflow_id, source in SOURCES.items():
         item = BY_ID[workflow_id]
         assert set(item["rh_media"]) == set(source["media"])
-        assert set(item["rh_params"]) == set(source["params"])
+        server_params = source.get("server_params", set())
+        assert set(item["rh_params"]) == set(source["params"]) | server_params
+        assert not any("node" in item["rh_params"][key] for key in server_params)
         for key, (node, field, required) in source["media"].items():
             mapping = item["rh_media"][key]
             assert (mapping["node"], mapping["field"], mapping["required"]) == (node, field, required)

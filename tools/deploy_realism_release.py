@@ -19,6 +19,7 @@ import hashlib
 import hmac
 import io
 import json
+import os
 import pathlib
 import re
 import shlex
@@ -106,9 +107,10 @@ PUBLIC_RESPONSE_MAX_BYTES = 16 * 1024 * 1024
 PUBLIC_GZIP_WIRE_OVERHEAD = 64 * 1024
 IDLE_STABILITY_CHECKS = 3
 IDLE_STABILITY_INTERVAL = 1.0
+# Re-baselined 2026-10-19 at 7f10ec5 (chore/green-test-gate): 55 script contracts + 93 pytest files.
 MIN_SCRIPT_CONTRACTS = 55
-MIN_PYTEST_FILES = 40
-RELEASE_TEST_INVENTORY_SHA256 = "09298aac5e4cf5ba18cbd66a53110bdd1bcd108bfa39e1b60c7d305bf4467023"
+MIN_PYTEST_FILES = 93
+RELEASE_TEST_INVENTORY_SHA256 = "c064ff26f3198523806ec588663c45d75543a580e47764f6ddd278e75b7d496e"
 DREAMAPI_CONTRACT_SHA256 = "d2e692e229a0525590fbbc5ffc4f466faebe70675278d263a44bfd0dffc6f0fa"
 HISTORICAL_DREAMAPI_CONTRACT_SHA256 = "665d283bd420f76f031d9530f1d757f022d6cc16a5c9e9bc315e4966da797959"
 DREAMAPI_NATIVE_MANIFEST = BASE / "audit" / "internal_canary_20260924" / "verification.json"
@@ -1232,10 +1234,15 @@ def run_release_tests(test_dir=None):
                 "review the test-set change before updating RELEASE_TEST_INVENTORY_SHA256"
             )
     failures = []
+    # Script contracts load server.py via spec_from_file_location, so its sibling
+    # modules (video_uploads, membership_media, ...) must be importable from BASE.
+    env = dict(os.environ)
+    env["PYTHONPATH"] = os.pathsep.join(filter(None, (str(BASE), env.get("PYTHONPATH"))))
+    env["PYTHONIOENCODING"] = "utf-8"
     for path in scripts:
         result = subprocess.run(
-            [sys.executable, str(path)], cwd=BASE, text=True,
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=300,
+            [sys.executable, str(path)], cwd=BASE, text=True, encoding="utf-8", errors="replace",
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=300, env=env,
         )
         expected_failure = path.name in KNOWN_BASELINE_SCRIPT_FAILURES
         if expected_failure and result.returncode == 0:
@@ -1256,11 +1263,14 @@ def run_release_tests(test_dir=None):
         elif result.returncode and not expected_failure:
             failures.append({"file": path.name, "output": result.stdout[-1200:]})
     if pytest_files:
-        command_line = [sys.executable, "-m", "pytest", "-q", *map(str, pytest_files)]
-        result = subprocess.run(
-            command_line, cwd=BASE, text=True,
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=1200,
-        )
+        # A private basetemp avoids Windows PermissionError on the shared pytest-of-<user> dir.
+        with tempfile.TemporaryDirectory(prefix="release-pytest-") as basetemp:
+            command_line = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider",
+                            f"--basetemp={pathlib.Path(basetemp) / 'tmp'}", *map(str, pytest_files)]
+            result = subprocess.run(
+                command_line, cwd=BASE, text=True, encoding="utf-8", errors="replace",
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=1800, env=env,
+            )
         if result.returncode:
             failures.append({"file": "pytest", "output": result.stdout[-4000:]})
     if failures:
@@ -1281,6 +1291,67 @@ def auth_is_disabled(server_source):
                 for ret in returns
             )
     return False
+
+
+PUBLIC_UPLOAD_ROUTES = ("/api/workflow-upload", "/api/realcomic-upload", "/api/upload-start", "/api/upload")
+PUBLIC_BILLABLE_ROUTES = ("/api/workflow-generate", "/api/ai-app-generate", "/api/video-generate",
+                          "/api/image-edit-generate", "/api/generate")
+
+
+def route_guarded_calls(tree, func_name):
+    """Count calls to func_name inside each `path == / in / != "<route>"` branch of server.py.
+
+    `if path == R:` / `if path in (R, ...):` covers that branch's body; an early-exit
+    `if path != R: return ...` covers the statements that follow it in the same block.
+    """
+    def is_call(node):
+        return (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                and node.func.id == func_name)
+
+    def calls_in(nodes):
+        return sum(1 for stmt in nodes for node in ast.walk(stmt) if is_call(node))
+
+    def routes(test, ops):
+        found = []
+        for node in ast.walk(test):
+            if (isinstance(node, ast.Compare) and isinstance(node.left, ast.Name)
+                    and node.left.id == "path" and len(node.ops) == 1
+                    and isinstance(node.ops[0], ops)):
+                comparator = node.comparators[0]
+                values = comparator.elts if isinstance(comparator, (ast.Tuple, ast.List, ast.Set)) else [comparator]
+                found.extend(v.value for v in values
+                             if isinstance(v, ast.Constant) and isinstance(v.value, str))
+        return found
+
+    counts = {}
+    for owner in ast.walk(tree):
+        for field in ("body", "orelse", "finalbody"):
+            block = getattr(owner, field, None)
+            if not isinstance(block, list):
+                continue
+            for index, stmt in enumerate(block):
+                if not isinstance(stmt, ast.If):
+                    continue
+                for route in routes(stmt.test, (ast.Eq, ast.In)):
+                    counts[route] = counts.get(route, 0) + calls_in(stmt.body)
+                if isinstance(stmt.test, ast.Compare) and stmt.body and isinstance(stmt.body[-1], ast.Return):
+                    for route in routes(stmt.test, ast.NotEq):
+                        counts[route] = counts.get(route, 0) + calls_in(block[index + 1:])
+    return counts
+
+
+def route_coverage_errors(tree, func_name, required_routes, discovered, message):
+    """Every required route, and every discovered route of the same family, must call func_name."""
+    definitions = sum(
+        1 for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == func_name
+    )
+    counts = route_guarded_calls(tree, func_name)
+    unguarded = sorted({route for route in required_routes if counts.get(route, 0) < 1}
+                       | {route for route, count in counts.items() if discovered(route) and count < 1})
+    if definitions != 1 or unguarded:
+        return [f"{message}: {', '.join(unguarded) or func_name + ' definition'}"]
+    return []
 
 
 def validate_public_upload_quota(server_source):
@@ -1313,18 +1384,11 @@ def validate_public_upload_quota(server_source):
     for name, value in required.items():
         if assignments.get(name) != value:
             errors.append(f"public upload quota invalid: {name}")
-    definitions = sum(
-        1 for node in ast.walk(tree)
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-        and node.name == "reserve_upload_attempt"
-    )
-    calls = sum(
-        1 for node in ast.walk(tree)
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-        and node.func.id == "reserve_upload_attempt"
-    )
-    if definitions != 1 or calls != 4:
-        errors.append("not all public upload routes are quota guarded")
+    # Coverage, not an exact call count: new upload routes (e.g. image-edit uploads) add calls.
+    errors.extend(route_coverage_errors(
+        tree, "reserve_upload_attempt", PUBLIC_UPLOAD_ROUTES,
+        lambda route: route.startswith("/api/") and "upload" in route,
+        "not all public upload routes are quota guarded"))
     if ("_upload_usage_lock = threading.Lock()" not in server_source
             or "load_upload_usage()" not in server_source
             or "Retry-After" not in server_source):
@@ -1345,18 +1409,10 @@ def validate_public_billable_quota(server_source):
     for node in ast.walk(tree):
         if isinstance(node, ast.Name) and node.id in removed_caps:
             errors.append(f"owner-removed billable cap reintroduced: {node.id}")
-    function_defs = sum(
-        1 for node in ast.walk(tree)
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-        and node.name == "register_billable_job"
-    )
-    guarded_calls = sum(
-        1 for node in ast.walk(tree)
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-        and node.func.id == "register_billable_job"
-    )
-    if function_defs != 1 or guarded_calls != 4:
-        errors.append("not all public billable routes register tasks")
+    errors.extend(route_coverage_errors(
+        tree, "register_billable_job", PUBLIC_BILLABLE_ROUTES,
+        lambda route: route.startswith("/api/") and route.endswith("generate"),
+        "not all public billable routes register tasks"))
     for marker in ("_billable_quota_lock", "idempotency_decision", "_submit_locks", "billable_quota_recorded"):
         if marker not in server_source:
             errors.append(f"missing public billable quota control: {marker}")

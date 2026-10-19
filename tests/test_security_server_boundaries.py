@@ -153,7 +153,9 @@ def test_account_media_limit_is_enforced_by_real_http_and_releases_on_completion
         status, raw, headers = request(env, 'GET', '/api/favorite-image/' + 'b' * 12, user='bob')
         assert status == 200 and raw == value
         assert env.users['bob']['id'] not in env.httpd._media_owner_slots._active
-        assert dict(headers)['Cache-Control'] == 'private, no-store'
+        # 4aa41f6: private video replay may be cached by the owner's browser; logout sends Clear-Site-Data.
+        assert dict(headers)['Cache-Control'] == 'private, max-age=3600'
+        assert dict(headers)['Vary'] == 'Cookie'
     finally:
         for lease in leases: media.release_media_slot(lease)
     assert request(env, 'GET', '/api/favorite-image/' + 'a' * 12, user='alice')[0] == 200

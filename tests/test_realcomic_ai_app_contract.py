@@ -18,9 +18,10 @@ checks={
  'ai app rejects empty request id':'normalize_client_request_id(body.get("client_request_id"))' in SERVER.split('if path == "/api/ai-app-generate"',1)[1].split('if path == "/api/upload"',1)[0],
  'legacy route redirects':all(x in SERVER for x in ['if path == "/realcomic"','Location", "/realism?workflow=realcomic"']) and '/realism?workflow=realcomic' in legacy,
  'unified page one image optional text':all(x in html for x in ['renderImageControl','renderTextControl']) and w.get('name')=='快速真人化（原漫画转真人）',
- 'unified app uses dedicated adapters':all(x in html for x in ["current.kind==='ai_app'","/api/realcomic-upload","/api/ai-app-generate"]),
+ # 4aa41f6: /realism became the queued image-edit page; ai_app workflows submit through the shared image-edit scheduler.
+ 'unified app uses dedicated adapters':all(x in html for x in ["['rh_workflow','ai_app'].includes(item.kind)","/api/image-edit-generate"]) and "allowed_kinds = ('rh_workflow', 'ai_app') if task_page == 'realism'" in SERVER,
  'unified async lifecycle':all(x in html for x in ['/api/job/','client_request_id','sessionStorage','restoreTasks']),
- 'unified history favorites':all(x in html for x in ['/api/jobs?scope=realism','/api/favorites','realcomic']),
+ 'unified history favorites':all(x in html for x in ["scope:'realism'","/api/jobs?",'/api/favorites','realcomic']),
  'all navigation has one route':all(p.exists() and 'href="/realism"' in p.read_text(encoding='utf8') and 'href="/realcomic"' not in p.read_text(encoding='utf8') for p in pages),
  'mobile and accessibility':all(x in html for x in ['@media(max-width:820px)','min-height:44px','aria-live','aria-busy']),
 }
