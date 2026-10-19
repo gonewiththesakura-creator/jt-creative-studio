@@ -1,0 +1,14 @@
+[Unit]
+Description=Alert when the last successful JT backup is older than 30 hours
+OnFailure=jt-backup-alert@%n.service
+
+[Service]
+Type=oneshot
+User=root
+EnvironmentFile=/etc/jt-backup/backup.env
+ExecStart=/usr/bin/python3 /usr/local/libexec/jt-backup/jt_backup.py --check-freshness 30
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadOnlyPaths=/var/backups/jt
