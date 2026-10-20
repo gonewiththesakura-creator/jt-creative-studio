@@ -45,9 +45,14 @@ def main():
     manifest = json.loads((t.BASE/'static/app-manifest.json').read_text(encoding='utf-8'))
     assets = [p.lstrip('/') for p in manifest['assets']]
     assert all(re.fullmatch(r'static/assets/[A-Za-z0-9_-]+\.[0-9a-f]{12}\.(?:js|css|html|json|txt|webp)', p) for p in assets)
-    paths = [*assets, 'membership_store.py', 'membership_http.py', 'static/app-manifest.json', 'static/app.html']
-    data = {p: (t.BASE/p).read_bytes() for p in paths}
-    data = {p: raw.replace(b'\r\n', b'\n') if not p.endswith('.webp') else raw for p, raw in data.items()}
+    paths = r.require_server_runtime_modules(
+        [*assets, *r.SERVER_RUNTIME_MODULE_PATHS, 'static/app-manifest.json', 'static/app.html'])
+    normalize = lambda p, raw: raw.replace(b'\r\n', b'\n') if not p.endswith('.webp') else raw
+    data = {p: normalize(p, (t.BASE/p).read_bytes()) for p in paths}
+    if args.execute:
+        if STATE.exists():
+            raise RuntimeError('Inspect the existing release transaction before another attempt')
+        r.run_feature_release_gate(data, normalize)
     client = t._connect(t.BASE/'tools/creds.json', r.DEPLOY_SSH_KEY_PATH)
     sftp = client.open_sftp()
     tx = None
@@ -76,8 +81,6 @@ def main():
         print(json.dumps({'phase': 'preflight', 'changed': changed, 'queue': current}), flush=True)
         if not args.execute:
             return
-        if STATE.exists():
-            raise RuntimeError('Inspect the existing release transaction before another attempt')
         tx = r.new_release_transaction()
         r.acquire_release_lock(client, tx)
         locked = True

@@ -2,19 +2,20 @@
 import json
 import release_video_queue_presets as release
 
+STATE = release.t.BASE / 'audit/membership-code-release-20261009/release.json'
+
 
 def main():
     root = release.t.BASE
     manifest = json.loads((root / 'static/app-manifest.json').read_text(encoding='utf-8'))
-    base = {'server.py', 'static/video.html', 'static/app-manifest.json', 'static/app.html'}
-    base.update(p.lstrip('/') for p in manifest['pages']['/video'].values() if p.startswith('/static/'))
+    # The presets release already ships server.py's module closure and the video page,
+    # and skips extra paths it carries itself.
     extra = {p.lstrip('/') for p in manifest['assets']}
-    extra.update(('membership_store.py', 'membership_auth.py', 'membership_http.py', 'membership_media.py',
-                  'requirements-membership.txt', 'tools/migrate_membership_owner.py'))
-    release.STATE = root / 'audit/membership-code-release-20261009/release.json'
+    extra.update(('requirements-membership.txt', 'tools/migrate_membership_owner.py'))
+    release.STATE = STATE
     if release.STATE.exists():
         raise RuntimeError('Inspect existing release state before another publish')
-    release.main(extra_paths=sorted(extra - base))
+    release.main(extra_paths=sorted(extra))
 
 
 if __name__ == '__main__':

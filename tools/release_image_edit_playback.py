@@ -6,11 +6,8 @@ as release_video_queue_plan; only the explicitly listed candidate files differ.
 """
 import hashlib
 import json
-import pathlib
 import re
 import subprocess
-import sys
-import tempfile
 
 import release_video_queue_plan as transaction
 
@@ -37,25 +34,10 @@ def verify_scope(baseline, manifest, data):
     assert new['source_api_json_sha256']=='9603bf4b7ac5480f977d68bec3e939f16541e7258a6987e893ef5e7a0ae4455d'
 
 
-def checks():
-    with tempfile.TemporaryDirectory(prefix='jt-image-edit-release-') as directory:
-        subprocess.run([sys.executable,'-m','pytest','-q',
-            'tests/test_image_edit_queue.py','tests/test_image_edit_browser.py','tests/test_video_replay_cache.py','tests/test_membership_image_edit.py',
-            'tests/test_video_queue.py','tests/test_video_redo.py','tests/test_video_cancel.py',
-            'tests/test_video_clear.py','tests/test_video_thumbnails.py','tests/test_favorite_streaming.py',
-            'tests/test_membership_media.py','tests/test_membership_http.py','tests/test_membership_store.py',
-            'tests/test_membership_video_queue.py','tests/test_access_code_http.py',
-            'tests/test_app_shell.py','tests/test_video_queue_layout.py',
-            '--basetemp',str(pathlib.Path(directory)/'pytest')],cwd=BASE,check=True)
-    subprocess.run([sys.executable,'tests/test_realism_workbench_contract.py'],cwd=BASE,check=True)
-    subprocess.run(['node','frontend/verify-contracts.mjs'],cwd=BASE,check=True)
-
-
 def main():
-    transaction.MODULES=('server.py','membership_media.py','config.json')
+    transaction.MODULES=(*transaction.RUNTIME_MODULES,'config.json')
     transaction.DEFAULT_STATE=BASE/'audit/image-edit-release-20261018/release.json'
     transaction.verify_frontend_scope=verify_scope
-    transaction.run_checks=checks
     transaction.main()
 
 

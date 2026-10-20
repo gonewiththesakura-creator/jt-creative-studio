@@ -1,11 +1,8 @@
 """Release one additive video workflow through the existing preservation transaction."""
 import hashlib
 import json
-import pathlib
 import re
 import subprocess
-import sys
-import tempfile
 import release_video_queue_plan as transaction
 
 BASE=transaction.t.BASE
@@ -29,21 +26,11 @@ def scope(baseline,manifest,data):
     assert candidate==previous, 'Existing workflows and configuration must remain intact'
 
 
-def checks():
-    with tempfile.TemporaryDirectory(prefix='jt-remix-release-') as directory:
-        subprocess.run([sys.executable,'-m','pytest','-q',
-            'tests/test_h3_remix.py','tests/test_h3_remix_browser.py','tests/test_h3_lora_slots.py',
-            'tests/test_video_resumable_multi.py','tests/test_video_queue.py','tests/test_video_redo.py',
-            'tests/test_video_cancel.py','tests/test_video_queue_layout.py','tests/test_video_queue_browser.py',
-            'tests/test_image_edit_browser.py','tests/test_image_edit_upload_http.py',
-            'tests/test_membership_video_queue.py','tests/test_membership_http.py','tests/test_rh_upload_capabilities_http.py',
-            'tests/test_app_shell.py','--basetemp',str(pathlib.Path(directory)/'pytest')],cwd=BASE,check=True)
-    subprocess.run(['node','frontend/verify-contracts.mjs'],cwd=BASE,check=True)
-
-
-if __name__=='__main__':
-    transaction.MODULES=('server.py','config.json')
+def main():
+    transaction.MODULES=(*transaction.RUNTIME_MODULES,'config.json')
     transaction.DEFAULT_STATE=BASE/'audit/h3-remix-20261018/release.json'
     transaction.verify_frontend_scope=scope
-    transaction.run_checks=checks
     transaction.main()
+
+
+if __name__=='__main__':main()

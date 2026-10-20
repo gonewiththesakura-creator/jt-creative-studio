@@ -1,11 +1,8 @@
 """Publish only the wardrobe reference switch, preserving production data."""
 import hashlib
 import json
-import pathlib
 import re
 import subprocess
-import sys
-import tempfile
 import import_qwen21_image_edit as importer
 import release_video_queue_plan as transaction
 
@@ -31,25 +28,11 @@ def verify_scope(baseline,manifest,data):
     assert config==previous, 'Only the verified wardrobe schema may change'
 
 
-def checks():
-    with tempfile.TemporaryDirectory(prefix='jt-reference-toggle-') as directory:
-        subprocess.run([sys.executable,'-m','pytest','-q',
-            'tests/test_wardrobe_reference_toggle.py','tests/test_image_edit_queue.py',
-            'tests/test_image_edit_browser.py','tests/test_generic_rh_workflow_runtime.py',
-            'tests/test_membership_image_edit.py','tests/test_video_queue.py',
-            'tests/test_video_redo.py','tests/test_video_cancel.py','tests/test_video_clear.py',
-            'tests/test_video_thumbnails.py','tests/test_membership_media.py',
-            'tests/test_membership_http.py','tests/test_membership_store.py',
-            'tests/test_membership_video_queue.py','tests/test_access_code_http.py',
-            'tests/test_app_shell.py','tests/test_video_queue_layout.py',
-            '--basetemp',str(pathlib.Path(directory)/'pytest')],cwd=BASE,check=True)
-    subprocess.run([sys.executable,'tests/test_realism_workbench_contract.py'],cwd=BASE,check=True)
-    subprocess.run(['node','frontend/verify-contracts.mjs'],cwd=BASE,check=True)
-
-
-if __name__=='__main__':
-    transaction.MODULES=('server.py','config.json')
+def main():
+    transaction.MODULES=(*transaction.RUNTIME_MODULES,'config.json')
     transaction.DEFAULT_STATE=BASE/'audit/wardrobe-reference-toggle-20261018/release.json'
     transaction.verify_frontend_scope=verify_scope
-    transaction.run_checks=checks
     transaction.main()
+
+
+if __name__=='__main__':main()

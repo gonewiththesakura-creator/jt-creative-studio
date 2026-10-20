@@ -16,7 +16,6 @@ import sqlite3
 import stat
 import subprocess
 import sys
-import tempfile
 import time
 
 import prepare_dreamapi_native_canary as t
@@ -26,7 +25,10 @@ from release_membership_cutover import queue, remote_json
 r = t.release
 sys.path.insert(0, str(t.BASE))
 DATA = r.REMOTE_ROOT + '/panel_data'
-MODULES = ('membership_store.py', 'membership_http.py')
+# server.py's whole local-module closure. Releases built on this transaction append
+# only non-Python payload; unchanged modules match production and are never staged.
+RUNTIME_MODULES = r.SERVER_RUNTIME_MODULE_PATHS
+MODULES = RUNTIME_MODULES
 ENTRIES = ('static/app-manifest.json', 'static/app.html')
 DEFAULT_STATE = t.BASE / 'audit/video-queue-plan-20261017/release.json'
 
@@ -83,17 +85,6 @@ print(json.dumps({{'live':True,'release_lock':False,'start_drain':False,'members
 ''', root=True)
 
 
-def run_checks():
-    with tempfile.TemporaryDirectory(prefix='jt-video-queue-release-') as directory:
-        subprocess.run([sys.executable, '-m', 'pytest', '-q',
-                        'tests/test_membership_store.py', 'tests/test_membership_http.py',
-                        'tests/test_membership_video_queue.py', 'tests/test_membership_queue_plan_browser.py',
-                        'tests/test_access_code_store.py', 'tests/test_access_code_http.py',
-                        'tests/test_video_queue_plan_release.py',
-                        '--basetemp', str(pathlib.Path(directory) / 'pytest')], cwd=t.BASE, check=True)
-    subprocess.run(['node', 'frontend/verify-contracts.mjs'], cwd=t.BASE, check=True)
-
-
 def verify_frontend_scope(baseline, manifest, data):
     """Permit only the account/admin modules and their main import references."""
     previous = json.loads(subprocess.check_output(
@@ -133,7 +124,7 @@ def main(argv=None):
     assets = [path.removeprefix('/') for path in manifest['assets']]
     assert assets and len(set(assets)) == len(assets), 'Invalid asset manifest'
     assert all(re.fullmatch(r'static/assets/[A-Za-z0-9_-]+\.[0-9a-f]{12}\.(?:js|css|html|json|txt|webp)', path) for path in assets), 'Unexpected asset path'
-    paths = [*assets, *MODULES, *ENTRIES]
+    paths = r.require_server_runtime_modules([*assets, *MODULES, *ENTRIES])
     normalize = lambda path, raw: raw if path.endswith('.webp') else raw.replace(b'\r\n', b'\n')
     data = {path: normalize(path, (t.BASE / path).read_bytes()) for path in paths}
     verify_frontend_scope(baseline, manifest, data)
@@ -142,8 +133,9 @@ def main(argv=None):
     assert MembershipStore.SCHEMA_VERSION == 2, 'Use a rollback-compatible additive migration'
     if args.execute:
         assert not args.state.exists(), 'Inspect existing release state before retry'
-        run_checks()
-        assert all(normalize(path, (t.BASE / path).read_bytes()) == raw for path, raw in data.items()), 'Candidate changed during checks'
+        # Every release built on this transaction ships server.py's whole closure, so it
+        # runs the whole gate, never a hand-picked subset of tests.
+        r.run_feature_release_gate(data, normalize)
     client = t._connect(t.BASE / 'tools/creds.json', r.DEPLOY_SSH_KEY_PATH)
     sftp = client.open_sftp()
     tx = None

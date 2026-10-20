@@ -3,10 +3,7 @@ import hashlib
 import json
 import re
 import subprocess
-import tempfile
-from pathlib import Path
 import release_video_queue_plan as transaction
-import release_h3_remix as previous_release
 
 BASE=transaction.t.BASE
 
@@ -29,21 +26,11 @@ def scope(baseline,manifest,data):
     assert previous==candidate, 'Unexpected workflow configuration change'
 
 
-def checks():
-    backend_changed=any((BASE/path).read_bytes().replace(b'\r\n',b'\n')!=
-                        subprocess.check_output(['git','show','HEAD:'+path],cwd=BASE).replace(b'\r\n',b'\n')
-                        for path in ('server.py','config.json'))
-    if backend_changed:previous_release.checks()
-    tests=['tests/test_compact_workflow_forms.py']
-    if not backend_changed:tests+=['tests/test_h3_remix_browser.py','tests/test_image_edit_browser.py','tests/test_app_shell.py']
-    with tempfile.TemporaryDirectory(prefix='jt-compact-release-') as directory:
-        subprocess.run([previous_release.sys.executable,'-m','pytest','-q',
-                        *tests,'--basetemp',str(Path(directory)/'pytest')],cwd=BASE,check=True)
-
-
-if __name__=='__main__':
-    transaction.MODULES=('server.py','config.json')
+def main():
+    transaction.MODULES=(*transaction.RUNTIME_MODULES,'config.json')
     transaction.DEFAULT_STATE=BASE/'audit/compact-workflow-20261018/release.json'
     transaction.verify_frontend_scope=scope
-    transaction.run_checks=checks
     transaction.main()
+
+
+if __name__=='__main__':main()

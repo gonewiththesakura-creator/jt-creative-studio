@@ -24,8 +24,13 @@ r = t.release
 ORIGIN = 'https://studio.dreamapi.club'
 STATE = t.BASE / 'audit/image-loading-20261012/release.json'
 DATA = r.REMOTE_ROOT + '/panel_data'
-MODULES = ['server.py', 'membership_http.py', 'result_image_cache.py']
-NEW_MODULES = {'result_image_cache.py'}
+MODULES = list(r.SERVER_RUNTIME_MODULE_PATHS)
+
+
+def new_module(path):
+    """A runtime module absent from the git baseline is new in this candidate, not production drift."""
+    return path in MODULES and subprocess.run(['git', 'show', 'HEAD:' + path], cwd=t.BASE,
+                                              capture_output=True).returncode != 0
 
 
 def fetch(path):
@@ -47,9 +52,12 @@ def main():
     assert all(re.fullmatch(
         r'static/assets/[A-Za-z0-9_-]+\.[0-9a-f]{12}\.(?:js|css|html|json|txt|webp)', p
     ) for p in assets), 'Unexpected asset path'
-    paths = [*assets, *MODULES, 'static/app-manifest.json', 'static/app.html']
-    data = {p: (t.BASE / p).read_bytes() for p in paths}
-    data = {p: raw if p.endswith('.webp') else raw.replace(b'\r\n', b'\n') for p, raw in data.items()}
+    paths = r.require_server_runtime_modules([*assets, *MODULES, 'static/app-manifest.json', 'static/app.html'])
+    normalize = lambda p, raw: raw if p.endswith('.webp') else raw.replace(b'\r\n', b'\n')
+    data = {p: normalize(p, (t.BASE / p).read_bytes()) for p in paths}
+    if args.execute:
+        assert not STATE.exists(), 'Inspect existing release state before retry'
+        r.run_feature_release_gate(data, normalize)
     client = t._connect(t.BASE / 'tools/creds.json', r.DEPLOY_SSH_KEY_PATH)
     sftp = client.open_sftp()
 
@@ -75,7 +83,7 @@ def main():
         before = {p: read(p) for p in paths}
         for p in paths:
             if before[p] is None:
-                assert p in assets or p in NEW_MODULES, 'Missing existing release file: ' + p
+                assert p in assets or new_module(p), 'Missing existing release file: ' + p
             elif before[p] != data[p]:
                 baseline = subprocess.run(['git', 'show', 'HEAD:' + p], cwd=t.BASE, capture_output=True)
                 baseline_raw = baseline.stdout if p.endswith('.webp') else baseline.stdout.replace(b'\r\n', b'\n')
@@ -86,7 +94,6 @@ def main():
         print(json.dumps({'phase': 'preflight', 'changed_count': len(changed), 'queue': queue(client)}), flush=True)
         if not args.execute:
             return
-        assert not STATE.exists(), 'Inspect existing release state before retry'
         if not changed:
             print('IMAGE_LOADING_RELEASE_UNCHANGED', flush=True)
             return
@@ -179,7 +186,7 @@ print(json.dumps({{'jobs_preserved':len(after),'favorites_preserved':len(json.lo
                 for p in changed:
                     remote = r.REMOTE_ROOT + '/' + p
                     if not backup[remote]['exists']:
-                        # Also remove the new cache module when rolling back.
+                        # Also remove a new runtime module or asset when rolling back.
                         # Delete only the exact new bytes from this transaction.
                         remote_json(client, f'''import pathlib,hashlib,json,os
 p=pathlib.Path({remote!r});root=pathlib.Path({r.REMOTE_ROOT!r})
