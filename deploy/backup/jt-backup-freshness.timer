@@ -1,0 +1,10 @@
+[Unit]
+Description=Check JT backup freshness every 6 hours
+
+[Timer]
+OnCalendar=*-*-* 00/6:45:00
+Persistent=true
+Unit=jt-backup-freshness.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,14 @@
+[Unit]
+Description=JT backup failure alert for %i
+
+[Service]
+Type=oneshot
+User=root
+EnvironmentFile=/etc/jt-backup/backup.env
+ExecStart=/usr/bin/python3 /usr/local/libexec/jt-backup/jt_backup_alert.py %i
+TimeoutStartSec=2min
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadOnlyPaths=/var/backups/jt

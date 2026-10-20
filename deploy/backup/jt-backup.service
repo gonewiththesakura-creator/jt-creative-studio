@@ -1,0 +1,34 @@
+[Unit]
+Description=JT workbench consistent data backup (local snapshot + restic offsite)
+Documentation=file:///home/admin/comfy-panel/docs/backup-operations.md
+After=network-online.target comfy-panel.service
+Wants=network-online.target
+OnFailure=jt-backup-alert@%n.service
+
+[Service]
+Type=oneshot
+User=root
+EnvironmentFile=/etc/jt-backup/backup.env
+Environment=RESTIC_CACHE_DIR=/var/cache/jt-backup
+ExecStart=/usr/bin/python3 /usr/local/libexec/jt-backup/jt_backup.py
+# A freeze fallback must never leave the panel frozen.
+ExecStopPost=-/bin/sh -c 'if [ -n "${JT_BACKUP_FREEZE_UNIT}" ]; then systemctl thaw "${JT_BACKUP_FREEZE_UNIT}"; fi'
+TimeoutStartSec=6h
+UMask=0077
+Nice=10
+IOSchedulingClass=idle
+CacheDirectory=jt-backup
+CacheDirectoryMode=0700
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=read-only
+# Write access to the data directories is needed only because opening a live
+# SQLite database may create its -wal/-shm sidecars; no data file is modified.
+ReadWritePaths=/var/backups/jt /home/admin/comfy-panel/panel_data /opt/jt-identity/data
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes

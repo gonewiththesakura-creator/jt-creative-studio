@@ -1,0 +1,11 @@
+[Unit]
+Description=Monthly JT restore drill
+
+[Timer]
+OnCalendar=*-*-08 05:10:00 Asia/Shanghai
+RandomizedDelaySec=30min
+Persistent=true
+Unit=jt-backup-drill.service
+
+[Install]
+WantedBy=timers.target
