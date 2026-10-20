@@ -64,8 +64,8 @@
 
 | 项 | 说明 | 测试中的处理 |
 |---|---|---|
-| h3_edit_n 的 duration 没有上限 | `ad0a196` 有意去掉了 15 秒上限。按要求不恢复 15 秒，也不自定新上限，上限值需要用户决定 | `UNBOUNDED_PENDING_OWNER_DECISION` 豁免，参数化用例为 strict xfail |
-| h3_edit_n 公开 schema 与发布门评审版本不一致（参考图 2–4、LoRA、无上限的 duration） | 如果重新固定 `UPLOADED_WORKFLOW_FIELDS`、`UPLOADED_WORKFLOW_CONTROL_SCHEMA_SHA256` 和线上 schema 证据，就等于接受 duration 没有上限 | 在 `test_uploaded_workflow_release_gate` 中精确固定已知的 3 条漂移 |
-| 创作页 `promptgen.html` 超出快速启动预算 | `15f4c40` 之后为 450,229 LF 字节，预算为 450,000 | 两个脚本合同把大小锁在 450,229，输出 `PENDING OWNER DECISION` |
+| ~~h3_edit_n 的 duration 没有上限~~ **2026-10-20 已决定**：用户把上限定为 25 秒 | `config.json` 中 duration 为 `min 4 / max 25`；服务端拒绝超过上限的值，视频页自动识别源视频时长时也会夹到 25 秒 | 豁免和 strict xfail 已删除，边界用例覆盖 26 秒被拒绝 |
+| h3_edit_n 公开 schema 与发布门评审版本不一致（参考图 2–4、LoRA） | **2026-10-20**：时长有了上限，`UPLOADED_WORKFLOW_FIELDS` 和 `UPLOADED_WORKFLOW_CONTROL_SCHEMA_SHA256` 已按当前结构重新固定。2026-09-12 的线上 schema 证据早于这些映射，刷新需要用生产账号向 RunningHub 只读拉一次 schema，需用户授权 | 只剩 `uploaded workflow live mappings invalid: h3_edit_n` 这 1 条漂移被精确固定 |
+| 创作页 `promptgen.html` 超出快速启动预算 | `15f4c40` 之后为 450,229 LF 字节，预算为 450,000。**2026-10-20 实测**：用当前源码重建，仅导航标签同步就到 450,232 字节，超过锁定值，创作页在决定预算前无法正常重建；同账号重登丢草稿的修复也要改创作页内联的 `gallery_image_loader.js`，同样卡在这里 | 两个脚本合同把大小锁在 450,229，输出 `PENDING OWNER DECISION` |
 | 原生 DreamAPI 付费证据与当前运行时不一致 | 运行时自 `f7c1798` 起已变化。刷新证据需要用户授权一次付费 canary，本次没有提交 | `test_app_shell_has_reviewed_paid_evidence` 标为 strict xfail。正式发布的 preflight 仍会因此拒绝发布 |
 | promptgen.html 的导航仍显示「真人化」 | 页面没有随 `4aa41f6` 重建，外壳导航已显示「图片编辑」 | 测试两种标签都接受。建议下次构建时同步 |

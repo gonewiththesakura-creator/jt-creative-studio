@@ -46,6 +46,10 @@ def test_packaging_preserves_business_functions_and_backend_contracts():
     assert len(added)==1
     assert len([w for w in candidate['workflows'] if w['id']=='h3_remix_full'])==1
     candidate['workflows']=[w for w in candidate['workflows'] if w['id'] not in ('qwen21_wardrobe','h3_remix_full','h3_reference_optimized')]
+    # 2026-10-20 owner decision: h3_edit_n duration capped at 25 s, the only reviewed change to an existing workflow.
+    duration=next(w for w in previous['workflows'] if w['id']=='h3_edit_n')['rh_params']['duration']
+    assert 'max' not in duration
+    duration['max']=25
     assert candidate==previous, 'Existing workflow definitions must remain intact'
 
 

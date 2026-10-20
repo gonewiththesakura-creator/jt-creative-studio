@@ -113,9 +113,10 @@ IDLE_STABILITY_INTERVAL = 1.0
 # which checks that every tools/release_*.py that restarts the panel ships server.py's module closure.
 # 2026-10-20 on 70bcdfa (chore/release-scripts-full-gate): +tests/test_release_scripts_full_gate.py,
 # which checks that those scripts run this whole gate (run_feature_release_gate) before production.
+# 2026-10-20 merging ops/scheduled-backups: +tests/test_backup_scripts.py (backup, retention, restore drill).
 MIN_SCRIPT_CONTRACTS = 55
-MIN_PYTEST_FILES = 97
-RELEASE_TEST_INVENTORY_SHA256 = "5c374c5679bed538743ae3470db94acb6e5a400bf2d232ebf3d0f9ef8d9ed38a"
+MIN_PYTEST_FILES = 98
+RELEASE_TEST_INVENTORY_SHA256 = "03b0f6112d1f0c764124d2cade9f12871619d7a5b4c190e92676bc3a4cb282e5"
 DREAMAPI_CONTRACT_SHA256 = "d2e692e229a0525590fbbc5ffc4f466faebe70675278d263a44bfd0dffc6f0fa"
 HISTORICAL_DREAMAPI_CONTRACT_SHA256 = "665d283bd420f76f031d9530f1d757f022d6cc16a5c9e9bc315e4966da797959"
 DREAMAPI_NATIVE_MANIFEST = BASE / "audit" / "internal_canary_20260924" / "verification.json"
