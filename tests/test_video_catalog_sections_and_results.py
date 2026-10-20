@@ -23,7 +23,8 @@ def test_non_previewable_video_results_render_as_download_only_files():
     for text in (SOURCE, PAGE):
         assert "resultMediaKind" in text
         assert "file-result" in text
-        assert "下载结果文件" in text
+        # fd03485: files render in the media gallery with a notice and the shared original-file download.
+        assert "结果文件已生成，可直接下载" in text and "⬇ 下载原文件" in text
         assert "application/zip" in text
         assert "document.createElement(kind==='video'?'video':'img')" in text
         assert "if(kind==='file')" in text

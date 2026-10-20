@@ -47,7 +47,8 @@ def test_video_polling_exposes_recovery_and_terminal_failure_states():
     assert "setTimeout(refreshVideoQueue" in VIDEO_SOURCE
     assert "document.hidden?15000:4000" in VIDEO_SOURCE
     assert "j.status==='error'" in VIDEO_SOURCE
-    assert "提交结果待核对，保留并发名额以防重复计费" in VIDEO_SOURCE
+    # eb3cf6b reworded the held-slot notice when it added active-task reconciliation.
+    assert "提交超时，未收到云端任务号；暂占 1 个名额，正在自动核对，不会重复提交" in VIDEO_SOURCE
 
 
 def test_realism_upload_does_not_drift_after_workflow_switch():

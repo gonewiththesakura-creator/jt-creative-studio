@@ -256,11 +256,15 @@ def test_session_cookie_has_server_side_expiry(panel, monkeypatch):
     assert panel._decode_session_cookie(encoded) == ""
 
 
-def test_legacy_session_cookie_is_accepted_once_and_refreshed(panel):
+def test_legacy_session_cookie_is_accepted_once_and_refreshed(panel, monkeypatch):
     signature = base64.urlsafe_b64encode(
         hmac.new(panel.SESSION_SECRET, SESSION_ID.encode("ascii"), hashlib.sha256).digest()
     ).decode("ascii").rstrip("=")
     legacy = SESSION_ID + "." + signature
+    # 8c9a122 bounds the legacy migration window (default deadline 2026-10-15 UTC); after it the
+    # cookie must be rejected, inside it the cookie is accepted once and re-issued.
+    assert panel._decode_session_cookie_details(legacy, now=panel.LEGACY_SESSION_COOKIE_DEADLINE + 1) == ("", False)
+    monkeypatch.setattr(panel, "LEGACY_SESSION_COOKIE_DEADLINE", int(time.time()) + 3600)
 
     with running_server(panel) as httpd:
         status, _, headers = request(

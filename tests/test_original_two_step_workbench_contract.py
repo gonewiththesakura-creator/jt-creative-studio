@@ -8,7 +8,7 @@ styles=load_style_configs(ROOT)
 checks={
  'same creation workbench hierarchy':all(x in HTML for x in ['<h1>创作设置</h1>','class="section-label">人物模式','id="drawers"','id="randomAll"','id="clearAll"']),
  'all option categories start hidden':'openDrawers=new Set()' in HTML and '.drawer-body{display:none' in HTML,
- 'one category click reveals selectors':"openDrawers.has(d.id)?openDrawers.delete(d.id):openDrawers.add(d.id)" in HTML and '.drawer.open .drawer-body' in HTML,
+ 'one category click reveals selectors':"const opening=!openDrawers.has(d.id);openDrawers.clear();if(opening)openDrawers.add(d.id)" in HTML and '.drawer.open .drawer-body' in HTML,
  'two step direct picker':'class="picker"' in HTML and 'class="picker-wrap"' in HTML,
  'random and lock retained':all(x in HTML for x in ['class="reroll"','class="lock"']),
  'favorites restore only relevant drawers':'openDrawers=new Set(Object.keys(state()).filter' in HTML,

@@ -136,7 +136,6 @@ def test_history_has_loaded_thumbnails_and_complete_configuration(browser, tmp_p
 
 def test_upload_remove_cancel_and_completed_task_navigation(browser):
     page = browser.new_page(viewport={'width': 1440, 'height': 1000}, reduced_motion='reduce')
-    page.add_init_script("sessionStorage.setItem('jt-personal-rh-key','offline-personal-test-key')")
     serve_page(page, block_scene=True)
     sample = media_sample(page)
     workflow = dict(id='controls', kind='video', name='控件测试',
@@ -163,12 +162,10 @@ def test_upload_remove_cancel_and_completed_task_navigation(browser):
         job for job in jobs if job['id'] == route.request.url.rsplit('/', 1)[-1])))
     page.route('**/result.webm', lambda route: route.fulfill(
         body=base64.b64decode(sample['video']), content_type='video/webm'))
-    page.route('**/api/upload-direct-start', lambda route: route.fulfill(json={'challenge': 'offline-challenge'}))
-    page.route('**/api/upload-direct-verify', lambda route: route.fulfill(json={'ok': True}))
-    page.route('**/api/upload-direct-register', lambda route: route.fulfill(json={'uploadToken': 'upl_fake'}))
-    page.route('https://www.runninghub.ai/openapi/v2/media/upload/binary', lambda route: route.fulfill(
-        json={'code': 200, 'data': {'filename': 'openapi/fake.png'}},
-        headers={'Access-Control-Allow-Origin': '*'}))
+    # 97be240 keeps upload credentials server-side: files go through the account chunk-upload API.
+    page.route('**/api/upload-start', lambda route: route.fulfill(json={'upload_id': 'offline-upload'}))
+    page.route('**/api/upload-chunk?*', lambda route: route.fulfill(json={'offset': len(route.request.post_data_buffer)}))
+    page.route('**/api/upload-finish', lambda route: route.fulfill(json={'uploadToken': 'upl_fake'}))
     page.route('**/api/video-generate', lambda route: (generation.append(route.request.post_data_json),
                                                     route.fulfill(status=503, json={'error': 'offline only'})))
     try:

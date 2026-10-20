@@ -6,6 +6,16 @@ FILES = [
     ROOT / "static" / "index.html",
     ROOT / "static" / "promptgen.html",
 ]
+# 15f4c40 moved result-gallery rendering into sources/gallery_image_loader.js, which the builder inlines.
+GALLERY_SOURCE = ROOT / "sources" / "gallery_image_loader.js"
+
+
+def gallery_text(path):
+    text = path.read_text(encoding="utf8")
+    if path.name == "build_unified_three_styles.py":
+        assert "__GALLERY_IMAGE_LOADER__" in text
+        text += GALLERY_SOURCE.read_text(encoding="utf8")
+    return text
 
 
 def test_creator_exposes_three_generation_channels_and_three_result_panes():
@@ -56,7 +66,7 @@ def test_creator_api_channel_has_only_trusted_image_options():
 
 def test_api_model_quality_options_are_linked_and_seed_is_not_misrepresented():
     for path in FILES:
-        text = path.read_text(encoding="utf8")
+        text = gallery_text(path)
         assert 'updateApiQualityOptions' in text
         assert "j.seed_supported===false?'Seed：不适用'" in text
         assert "backendUi(j.generation_backend).label" in text
@@ -87,7 +97,7 @@ def test_api_settings_are_captured_and_restored_with_valid_defaults():
 
 def test_api_gallery_displays_requested_and_actual_upstream_settings():
     for path in FILES:
-        text = path.read_text(encoding="utf8")
+        text = gallery_text(path)
         for token in (
             "j.api_upstream_model",
             "j.api_upstream_quality",

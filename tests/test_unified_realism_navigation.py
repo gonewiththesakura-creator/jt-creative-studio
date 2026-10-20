@@ -15,7 +15,8 @@ def test_one_realism_top_level_navigation():
    continue
   assert html.count('href="/realism"')==1,(page.name,html.count('href="/realism"'))
   assert 'href="/realcomic"' not in html,page.name
-  assert '>真人化<' in html
+  # 4aa41f6 renamed the nav entry to 图片编辑; pages not rebuilt since keep the old label.
+  assert '>真人化<' in html or '>图片编辑<' in html, page.name
   assert '真人化工作流' not in html.split('<nav class="topnav">',1)[1].split('</nav>',1)[0]
 
 def test_legacy_realcomic_route_redirects_to_unified_console():

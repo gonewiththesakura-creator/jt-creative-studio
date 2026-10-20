@@ -10,6 +10,7 @@ VIDEO=(ROOT/'static/video.html').read_text(encoding='utf8')
 SKETCH=(ROOT/'static/original_sketch.html').read_text(encoding='utf8')
 GRAPHIC=(ROOT/'static/original_graphic.html').read_text(encoding='utf8')
 ACTIVE=[MAIN,REALISM,VIDEO]
+SHELL=(ROOT/'frontend/index.html').read_text(encoding='utf8')
 checks={
  'library flex shell':all(x in MAIN for x in ['.library-panel{','display:flex','flex-direction:column','overflow:hidden','isolation:isolate']),
  'library header outside scroll':all(x in MAIN for x in ['class="library-header"','class="library-scroll"','id="favList"','id="histList"']),
@@ -23,7 +24,8 @@ checks={
  'libraries open at top':all(x in MAIN for x in ["favOverlay.querySelector('.library-scroll').scrollTop=0","histOverlay.querySelector('.library-scroll').scrollTop=0"]),
  'video libraries open at top':all(x in VIDEO for x in ["favOverlay.querySelector('.library-scroll').scrollTop=0","histOverlay.querySelector('.library-scroll').scrollTop=0"]),
  'active pages workbench shell':all(all(x in p for x in ['class="app-shell"','class="topbar"','class="brand-mark"']) for p in ACTIVE),
- 'active pages consolidated nav':all(all(x in p for x in ['JT 灵感工作台','创作台','真人化','视频']) and 'href="/original-sketch"' not in p for p in ACTIVE),
+ # 4aa41f6 renamed the 真人化 nav entry to 图片编辑 (shell nav and rebuilt pages); promptgen.html still carries the old label.
+ 'active pages consolidated nav':all(all(x in p for x in ['JT 灵感工作台','创作台','视频']) and ('真人化' in p or '图片编辑' in p) and 'href="/original-sketch"' not in p for p in ACTIVE) and 'href="/realism">图片编辑' in SHELL,
  'creator and realism preview panes':all('class="preview-pane"' in p for p in [MAIN,REALISM]),
  'shared palette':all(all(x in p for x in ['--brand:#536cff','--canvas:#f6f7fb']) for p in ACTIVE),
  'original styles unified':all(x in MAIN for x in ['data-style="original_sketch"','data-style="original_graphic"','style-original-sketch.webp','style-original-graphic.webp']),

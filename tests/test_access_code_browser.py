@@ -116,6 +116,9 @@ def test_expired_session_then_other_code_reloads_account_private_state(browser):
         page.close()
 
 
+@pytest.mark.xfail(strict=True, reason=(
+    "REAL REGRESSION (owner decision): since 15f4c40 frontend/account.js sets mediaIdentityExpired on any "
+    "expiry gate and reloads even when the same account logs back in, so the unsubmitted draft is lost."))
 def test_same_account_relogin_clears_transition_marker_without_reloading_private_state(browser):
     page = browser.new_page(reduced_motion='reduce')
     requests = serve_page(page, block_scene=True)

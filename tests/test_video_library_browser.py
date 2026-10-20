@@ -13,6 +13,7 @@ def test_details_hover_scroll_history_and_pending_favorite(browser):
     page.route('**/api/favorites',lambda r:r.fulfill(status=202 if r.request.method=='POST' else 200,json=fav if r.request.method=='POST' else [fav]))
     try:
         page.goto('http://fixture.test/video')
+        page.wait_for_load_state('networkidle')
         thumb=page.locator('.gallery-thumb').first;thumb.hover()
         page.wait_for_timeout(1000)
         expect(page.locator('#galleryJobHint')).to_be_hidden()

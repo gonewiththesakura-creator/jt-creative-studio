@@ -131,11 +131,14 @@ def test_admin_code_login_needs_verification_before_management(browser):
     page.route('**/api/auth/login?*', lambda route: route.fulfill(body='offline identity verification'))
     try:
         page.goto('http://fixture.test/video')
+        # a28b141: the admin entry stays visible; verification happens inside the dialog.
+        expect(page.locator('#membershipAdminOpen')).to_be_visible()
+        page.locator('#membershipAdminOpen').click()
         expect(page.locator('#membershipAdminVerify')).to_be_visible()
-        expect(page.locator('#membershipAdminOpen')).to_be_hidden()
+        expect(page.locator('#membershipAdminContent')).to_be_hidden()
         assert not [r for r in requests if r[1].startswith('/api/admin/membership/')]
         page.locator('#membershipAdminVerify').click()
-        page.wait_for_url('**/api/auth/login?return_to=%2Fvideo')
+        page.wait_for_url('**/api/auth/login?return_to=%2Fvideo%3Fadmin%3Dplans')
         assert page.url.startswith('http://fixture.test/')
     finally:
         page.close()
@@ -153,7 +156,9 @@ def test_admin_verification_expiry_clears_issued_secrets(browser):
         expect(page.locator('#membershipAdminStatus')).to_have_text('')
         page.locator('#adminIssuedCodes').evaluate("el=>el.value='offline-newly-issued-code'")
         page.locator('[data-admin-tab=users]').click()
-        expect(page.locator('#membershipAdmin')).to_be_hidden()
+        # a28b141: expiry swaps the open dialog to its verification panel instead of closing it.
+        expect(page.locator('#membershipAdminVerification')).to_be_visible()
+        expect(page.locator('#membershipAdminContent')).to_be_hidden()
         expect(page.locator('#membershipAdminVerify')).to_be_visible()
         expect(page.locator('#adminIssuedCodes')).to_have_value('')
     finally:
