@@ -108,9 +108,10 @@ PUBLIC_GZIP_WIRE_OVERHEAD = 64 * 1024
 IDLE_STABILITY_CHECKS = 3
 IDLE_STABILITY_INTERVAL = 1.0
 # Re-baselined 2026-10-19 at 7f10ec5 (chore/green-test-gate): 55 script contracts + 93 pytest files.
+# 2026-10-20 after merging into 3e48d15: +tests/test_h3_optimized.py, +tests/test_h3_optimized_browser.py.
 MIN_SCRIPT_CONTRACTS = 55
-MIN_PYTEST_FILES = 93
-RELEASE_TEST_INVENTORY_SHA256 = "c064ff26f3198523806ec588663c45d75543a580e47764f6ddd278e75b7d496e"
+MIN_PYTEST_FILES = 95
+RELEASE_TEST_INVENTORY_SHA256 = "d70564093995012b385229fb4f6e7ecc41cb60ce544e16075a2a55ee10a7fab8"
 DREAMAPI_CONTRACT_SHA256 = "d2e692e229a0525590fbbc5ffc4f466faebe70675278d263a44bfd0dffc6f0fa"
 HISTORICAL_DREAMAPI_CONTRACT_SHA256 = "665d283bd420f76f031d9530f1d757f022d6cc16a5c9e9bc315e4966da797959"
 DREAMAPI_NATIVE_MANIFEST = BASE / "audit" / "internal_canary_20260924" / "verification.json"
@@ -290,15 +291,47 @@ SINGULARITY_ASSET_PATHS = tuple(path.relative_to(BASE).as_posix()
                               for path in sorted((BASE / "static/singularity").rglob("*"))
                               if path.is_file())
 
+
+def server_runtime_module_paths(root=BASE, entry="server.py"):
+    """Follow server.py's local imports transitively so no sibling module is left out of a release.
+
+    Any import (top-level or lazy) whose first name resolves to `<root>/<name>.py` is shipped.
+    Relative imports and local packages fail closed: the flat-module manifest cannot express them.
+    """
+    root = pathlib.Path(root)
+    pending, found = [entry], set()
+    while pending:
+        relative = pending.pop()
+        if relative in found:
+            continue
+        found.add(relative)
+        tree = ast.parse((root / relative).read_text(encoding="utf-8"), filename=relative)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.level:
+                raise RuntimeError(f"relative import in release module {relative} is not supported")
+            if isinstance(node, ast.Import):
+                names = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                names = [node.module]
+            else:
+                continue
+            for name in names:
+                top = name.split(".", 1)[0]
+                if (root / top / "__init__.py").is_file():
+                    raise RuntimeError(f"local package import {top!r} in {relative} is not supported")
+                if (root / f"{top}.py").is_file():
+                    pending.append(f"{top}.py")
+    return tuple(sorted(found))
+
+
+SERVER_RUNTIME_MODULE_PATHS = server_runtime_module_paths()
+
 RELEASE_RELATIVE_PATHS = (
     *SINGULARITY_ASSET_PATHS,
     "static/app.html",
     "static/app-manifest.json",
     *(path.relative_to(BASE).as_posix() for path in sorted((BASE / "static/assets").glob("*")) if path.is_file()),
-    "server.py",
-    "media_library.py",
-    "direct_uploads.py",
-    "video_uploads.py",
+    *SERVER_RUNTIME_MODULE_PATHS,
     "video_wf/h3_edit_multi_api.json",
     "config.json",
     "static/index.html",

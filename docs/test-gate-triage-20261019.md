@@ -58,7 +58,7 @@
 | 项 | 代码位置 | 测试中的处理 |
 |---|---|---|
 | 同账号会话过期后重新登录会整页重载，未提交的表单草稿丢失 | `frontend/account.js:24,60`（`mediaIdentityExpired`，`15f4c40` 引入） | `test_access_code_browser::test_same_account_relogin…` 标为 strict xfail |
-| 正式发布清单缺少 server.py 导入的 `membership_http.py`、`membership_store.py`、`membership_media.py`、`result_image_cache.py`；按正式发布器发布时，这些模块不会随 server.py 一起更新 | `tools/deploy_realism_release.py` 中的 `RELEASE_RELATIVE_PATHS` | 新增 `test_release_manifest_ships_every_local_module_server_imports`，标为 strict xfail |
+| ~~正式发布清单缺少 server.py 导入的 `membership_http.py`、`membership_store.py`、`membership_media.py`、`result_image_cache.py`；按正式发布器发布时，这些模块不会随 server.py 一起更新~~ **2026-10-20 已修复**：`server_runtime_module_paths()` 从 server.py 起按 import 传递推导模块清单，另补上之前漏查的间接依赖 `membership_auth.py` | `tools/deploy_realism_release.py` 中的 `SERVER_RUNTIME_MODULE_PATHS` / `RELEASE_RELATIVE_PATHS` | 去掉 xfail；测试独立计算闭包并比对，另加懒加载、传递依赖、相对导入与本地包 fail-closed 的用例 |
 
 ### C. 需要用户决定
 

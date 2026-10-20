@@ -271,13 +271,12 @@ def test_release_manifest_is_complete_and_excludes_nonproduction_files():
         "static/previews/style-retro-manga-luxury.thumb.webp",
         "tools/panel_liveness_watchdog.py",
         "deploy/comfy-panel-watchdog.service",
-        # server.py runtime dependencies added by a221347 / 939cd2c (uploads) and 547e6cc (H3 edit graph).
-        "video_uploads.py",
-        "media_library.py",
-        "direct_uploads.py",
+        # 547e6cc: H3 edit graph read by server.py at runtime.
         "video_wf/h3_edit_multi_api.json",
         "deploy/comfy-panel-watchdog.timer",
     }
+    # server.py and every local module it imports, derived independently of the release tool.
+    expected.update(local_import_closure("server.py"))
     style_data = ["static/" + path.name for path in (ROOT / "static").glob("style-configs.*.json")]
     assert len(style_data) == 1
     expected.update(style_data)
@@ -289,19 +288,54 @@ def test_release_manifest_is_complete_and_excludes_nonproduction_files():
     assert not any(path.startswith(("tests/", "audit/")) for path in module.RELEASE_RELATIVE_PATHS)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "REAL GAP (needs owner decision): server.py imports membership_http, membership_store, "
-    "membership_media and result_image_cache, but RELEASE_RELATIVE_PATHS does not ship them; "
-    "the formal release would stage a server.py whose sibling modules are not updated."))
-def test_release_manifest_ships_every_local_module_server_imports():
+def local_import_closure(entry, root=ROOT):
+    """Independent reference for the release tool: every root-level .py reachable from entry."""
     import ast
+    found, pending = set(), [entry]
+    while pending:
+        relative = pending.pop()
+        if relative in found:
+            continue
+        found.add(relative)
+        for node in ast.walk(ast.parse((root / relative).read_text(encoding="utf-8"))):
+            names = ([alias.name for alias in node.names] if isinstance(node, ast.Import)
+                     else [node.module] if isinstance(node, ast.ImportFrom) and node.module else [])
+            pending.extend(name.split(".")[0] + ".py" for name in names
+                           if (root / (name.split(".")[0] + ".py")).is_file())
+    return found
+
+
+def test_release_manifest_ships_every_local_module_server_imports():
+    # Previously a hand-written list that missed membership_* and result_image_cache, so a formal
+    # release would have staged a server.py whose sibling modules were not updated.
     module = load_module()
-    tree = ast.parse((ROOT / "server.py").read_text(encoding="utf-8"))
-    names = {alias.name for node in tree.body if isinstance(node, ast.Import) for alias in node.names}
-    names |= {node.module for node in tree.body if isinstance(node, ast.ImportFrom) and node.module}
-    local = {name + ".py" for name in names if (ROOT / (name + ".py")).is_file()}
-    assert local
+    local = local_import_closure("server.py")
+    assert {"membership_http.py", "membership_auth.py", "membership_store.py",
+            "membership_media.py", "result_image_cache.py"} <= local
+    assert set(module.SERVER_RUNTIME_MODULE_PATHS) == local
     assert local <= set(module.RELEASE_RELATIVE_PATHS), sorted(local - set(module.RELEASE_RELATIVE_PATHS))
+
+
+def test_server_runtime_modules_follow_lazy_and_transitive_imports(tmp_path):
+    module = load_module()
+    (tmp_path / "server.py").write_text(
+        "import json, first\nfrom second import thing\ndef late():\n    import lazy\n", encoding="utf-8")
+    (tmp_path / "first.py").write_text("import nested.sub\n", encoding="utf-8")
+    (tmp_path / "nested.py").write_text("", encoding="utf-8")
+    (tmp_path / "second.py").write_text("import first\n", encoding="utf-8")
+    (tmp_path / "lazy.py").write_text("", encoding="utf-8")
+    (tmp_path / "unused.py").write_text("", encoding="utf-8")
+    assert module.server_runtime_module_paths(tmp_path) == (
+        "first.py", "lazy.py", "nested.py", "second.py", "server.py")
+
+    (tmp_path / "lazy.py").write_text("from . import sibling\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="relative import"):
+        module.server_runtime_module_paths(tmp_path)
+    (tmp_path / "lazy.py").write_text("import pkg\n", encoding="utf-8")
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "pkg" / "__init__.py").write_text("", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="local package"):
+        module.server_runtime_module_paths(tmp_path)
 
 
 def test_release_creates_every_remote_parent_directory():
