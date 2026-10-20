@@ -10,7 +10,7 @@
 |---|---|
 | 事务族：video_queue_plan、h3_optimized、h3_remix、compact_workflows、image_upload_fix、wardrobe_reference_toggle、image_edit_playback | `--execute` 时，作用域检查之后、连接生产之前 |
 | image_loading、access_code_login、security_hardening、h3_lora_slots、membership_cutover | `--execute` 时，连接生产之前 |
-| video_queue_presets、membership_code | 每次都跑：这两个脚本没有只读模式，每次运行都会发布 |
+| video_queue_presets、membership_code | `--execute` 时，连接生产之前。2026-10-20 起这两个脚本也默认只读：不带 `--execute` 只连上去比对线上字节并列出将改动的文件，不加锁、不上传、不重启 |
 
 - 各脚本自带的 `checks()` / `run_checks()` 已删除。原来额外执行的 `node frontend/verify-contracts.mjs` 由测试门中的 `tests/test_app_shell.py` 覆盖，`tests/test_realism_workbench_contract.py` 属于测试门的脚本合同部分，所以不需要保留额外步骤。compact_workflows 原来按 `backend_changed` 选择测试子集的逻辑也一并删除。
 - 不带 `--execute` 的只读预检不跑测试门，仍然很快。

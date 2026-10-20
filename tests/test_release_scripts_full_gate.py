@@ -47,7 +47,6 @@ def built_on_transaction(name):
 
 
 def has_read_only_mode(name):
-    # The presets release (and membership_code on top of it) publishes on every invocation.
     return built_on_transaction(name) or "'--execute'" in source(name)
 
 
@@ -114,9 +113,40 @@ def test_read_only_preflight_does_not_wait_for_the_gate(name, offline):
     assert [event[0] for event in offline(name, execute=False)] == ['connect']
 
 
-def test_publish_only_releases_are_the_reviewed_ones():
-    assert {name for name in RUNTIME_RELEASES if not has_read_only_mode(name)} == {
-        'release_membership_code', 'release_video_queue_presets'}
+def test_every_restarting_release_defaults_to_a_read_only_preflight():
+    # presets and membership_code used to publish on every invocation; since 2026-10-20 they need --execute.
+    assert {name for name in RUNTIME_RELEASES if not has_read_only_mode(name)} == set()
+
+
+def test_presets_preflight_only_reads_production(monkeypatch, capsys):
+    import release_video_queue_presets as presets
+
+    class ReadOnlySFTP:
+        def open(self, path, mode):
+            assert mode == 'rb', 'preflight must not write to production'
+            raise FileNotFoundError(path)
+
+        def close(self):
+            pass
+
+    class Client:
+        def open_sftp(self):
+            return ReadOnlySFTP()
+
+        def close(self):
+            pass
+
+        def exec_command(self, *args, **kwargs):
+            raise AssertionError('preflight must not run remote commands')
+
+    monkeypatch.setattr(release, 'run_feature_release_gate', refuse)
+    monkeypatch.setattr(release, 'acquire_release_lock', refuse)
+    monkeypatch.setattr(transport, '_connect', lambda *args: Client())
+    # Pretend every payload file is new (absent from HEAD), so missing production files are expected.
+    monkeypatch.setattr(presets.subprocess, 'run', lambda *args, **kwargs: type('R', (), {'returncode': 1, 'stdout': b''})())
+    presets.main(execute=False)
+    output = capsys.readouterr().out
+    assert '"preflight": "read-only"' in output and 'Pass --execute' in output
 
 
 @pytest.mark.parametrize('script', SCRIPTS, ids=lambda path: path.stem)
