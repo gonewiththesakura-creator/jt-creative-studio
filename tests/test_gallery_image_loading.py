@@ -112,6 +112,33 @@ def test_four_images_retry_selection_reuse_and_identity_clear(tmp_path):
         browser.close()
 
 
+def test_same_account_restore_refetches_cleared_images_in_place():
+    with gallery_server() as (url, metrics, counts), sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page(viewport={'width': 1100, 'height': 760})
+        errors = [];page.on('pageerror', lambda error: errors.append(str(error)))
+        page.goto(url)
+        blobs = page.locator('img[src^="blob:"]')
+        expect(blobs).to_have_count(5)
+        page.evaluate("document.querySelector('.gallery-result-image').dataset.marker='same-element'")
+        views = counts['/view/0']
+        # Session expiry fires both events (api.js, then the account gate); no private bytes may remain.
+        page.evaluate("dispatchEvent(new CustomEvent('jt:auth-expired'));dispatchEvent(new CustomEvent('jt:media-clear'))")
+        assert blobs.count() == 0
+        # The same account signed back in: the existing elements are refetched, not re-rendered.
+        page.evaluate("dispatchEvent(new CustomEvent('jt:media-restore'))")
+        expect(blobs).to_have_count(5)
+        expect(page.locator('.gallery-result-image')).to_have_attribute('data-marker', 'same-element')
+        expect(page.locator('.gallery-result-image')).to_be_visible()
+        assert counts['/view/0'] == views + 1
+        # A second restore has nothing left to repaint.
+        page.evaluate("dispatchEvent(new CustomEvent('jt:media-restore'))")
+        page.wait_for_timeout(300)
+        assert counts['/view/0'] == views + 1
+        assert not errors
+        browser.close()
+
+
 def test_retries_are_bounded_auth_failures_not_retried_and_inflight_cleared():
     with gallery_server() as (url, metrics, counts), sync_playwright() as p:
         browser = p.chromium.launch(headless=True)

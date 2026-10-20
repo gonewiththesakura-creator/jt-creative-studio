@@ -57,7 +57,7 @@
 
 | 项 | 代码位置 | 测试中的处理 |
 |---|---|---|
-| 同账号会话过期后重新登录会整页重载，未提交的表单草稿丢失 | `frontend/account.js:24,60`（`mediaIdentityExpired`，`15f4c40` 引入） | `test_access_code_browser::test_same_account_relogin…` 标为 strict xfail |
+| ~~同账号会话过期后重新登录会整页重载，未提交的表单草稿丢失~~ **2026-10-20 已修复**：只有换了账号才整页刷新；同一账号重新登录时不刷新，并发出 `jt:media-restore`，图片加载器只按记下的地址重新拉取过期时清掉的私有图片，过期期间不保留图片内容 | `frontend/account.js`、`sources/gallery_image_loader.js` | 去掉 strict xfail；新增 `test_same_account_restore_refetches_cleared_images_in_place` |
 | ~~正式发布清单缺少 server.py 导入的 `membership_http.py`、`membership_store.py`、`membership_media.py`、`result_image_cache.py`；按正式发布器发布时，这些模块不会随 server.py 一起更新~~ **2026-10-20 已修复**：`server_runtime_module_paths()` 从 server.py 起按 import 传递推导模块清单，另补上之前漏查的间接依赖 `membership_auth.py` | `tools/deploy_realism_release.py` 中的 `SERVER_RUNTIME_MODULE_PATHS` / `RELEASE_RELATIVE_PATHS` | 去掉 xfail；测试独立计算闭包并比对，另加懒加载、传递依赖、相对导入与本地包 fail-closed 的用例 |
 
 ### C. 需要用户决定
@@ -66,6 +66,6 @@
 |---|---|---|
 | ~~h3_edit_n 的 duration 没有上限~~ **2026-10-20 已决定**：用户把上限定为 25 秒 | `config.json` 中 duration 为 `min 4 / max 25`；服务端拒绝超过上限的值，视频页自动识别源视频时长时也会夹到 25 秒 | 豁免和 strict xfail 已删除，边界用例覆盖 26 秒被拒绝 |
 | h3_edit_n 公开 schema 与发布门评审版本不一致（参考图 2–4、LoRA） | **2026-10-20**：时长有了上限，`UPLOADED_WORKFLOW_FIELDS` 和 `UPLOADED_WORKFLOW_CONTROL_SCHEMA_SHA256` 已按当前结构重新固定。2026-09-12 的线上 schema 证据早于这些映射，刷新需要用生产账号向 RunningHub 只读拉一次 schema，需用户授权 | 只剩 `uploaded workflow live mappings invalid: h3_edit_n` 这 1 条漂移被精确固定 |
-| 创作页 `promptgen.html` 超出快速启动预算 | `15f4c40` 之后为 450,229 LF 字节，预算为 450,000。**2026-10-20 实测**：用当前源码重建，仅导航标签同步就到 450,232 字节，超过锁定值，创作页在决定预算前无法正常重建；同账号重登丢草稿的修复也要改创作页内联的 `gallery_image_loader.js`，同样卡在这里 | 两个脚本合同把大小锁在 450,229，输出 `PENDING OWNER DECISION` |
+| ~~创作页 `promptgen.html` 超出快速启动预算~~ **2026-10-20 已决定**：独立页预算放宽到 452,000 LF 字节。实测这个页面只在 `/promptgen` 使用，约 80% 是内嵌的 base64 预览图；用户访问 `/` 走 App Shell，创作页路由首次加载 gzip 后约 29.7KB。这次重建（重登修复加导航标签）后，独立页为 450,798 字节，App Shell 创作页首次下载（含 app.html、main、账号模块）gzip 增加 307 字节 | — | 去掉 ratchet；新增 App Shell 创作页路由 gzip 预算 32,000 字节 |
 | 原生 DreamAPI 付费证据与当前运行时不一致 | 运行时自 `f7c1798` 起已变化。刷新证据需要用户授权一次付费 canary，本次没有提交 | `test_app_shell_has_reviewed_paid_evidence` 标为 strict xfail。正式发布的 preflight 仍会因此拒绝发布 |
-| promptgen.html 的导航仍显示「真人化」 | 页面没有随 `4aa41f6` 重建，外壳导航已显示「图片编辑」 | 测试两种标签都接受。建议下次构建时同步 |
+| ~~promptgen.html 的导航仍显示「真人化」~~ **2026-10-20 已同步** | 2026-10-20 重建后，所有页面导航都显示「图片编辑」 | 测试改为只接受「图片编辑」 |

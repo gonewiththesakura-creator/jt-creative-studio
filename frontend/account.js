@@ -57,11 +57,14 @@ export async function initializeAccount(){
    root.querySelector('.account-intro').textContent=loginMethod==='access_code'?'一个激活码，就是你的专属创作账号。':'登录你的账号，继续创作与管理专属作品。';
    if(data.authenticated!==true||!data.user?.id){gate(loginMethod==='access_code'?'线下开通后，使用激活码登录即可开始创作。':'登录后可使用你的套餐、任务与收藏。',{login:true});return}
    // A different identity requires a clean document, so old timers and media cannot survive an account switch.
-   if(mountedAccount!==null&&(mediaIdentityExpired||mountedAccount!==String(data.user.id))){window.dispatchEvent(new CustomEvent('jt:media-clear'));location.reload();return}
+   if(mountedAccount!==null&&mountedAccount!==String(data.user.id)){window.dispatchEvent(new CustomEvent('jt:media-clear'));location.reload();return}
+   const restoreMedia=mediaIdentityExpired;mediaIdentityExpired=false;
    mountedAccount=String(data.user.id);window.jtAccountEnabled=true;setStorageAccount(data.user.id);configureAccountRequests(data.csrf_token||'');render(data);accountButton.hidden=false;
    const wantsEntry=consumeLoginTransition(),entryTransition=!ready&&wantsEntry;
    if(entryTransition){prepareLoginEntry();el('accountGateStatus').textContent='登录成功，正在进入创作空间…';el('accountCodeLoginForm').hidden=true;el('accountAdminLogin').hidden=true;el('accountRetry').hidden=true}
    else{revealWorkbenchImmediately();el('accountGate').hidden=true;shell.hidden=false;shell.inert=false}
+   // The same account signed back in: keep unsubmitted drafts and refetch the private images cleared on expiry.
+   if(restoreMedia)window.dispatchEvent(new CustomEvent('jt:media-restore'));
    if(data.user.is_admin&&!adminUI)adminUI=initializeMembershipAdmin({verify:login});
    if(adminUI)adminUI.setVerification(data.admin_verification_required===true,data.admin_verification_expires_at,!!data.user.is_admin);
    const returnTo=new URL(location.href),adminTab=returnTo.searchParams.get('admin');

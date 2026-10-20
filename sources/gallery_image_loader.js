@@ -3,7 +3,7 @@
 const galleryImageLoader=(()=>{
  const MAX_CONCURRENT=2,MAX_BYTES=48*1024*1024,MAX_ENTRIES=100,MAX_RETRIES=3;
  const retryStatuses=new Set([429,502,503,504]),entries=new Map(),queue=[],bindings=new Map();
- let active=0,totalBytes=0,sequence=0,epoch=0,pumpScheduled=false;
+ let active=0,totalBytes=0,sequence=0,epoch=0,pumpScheduled=false,restorable=[];
  const abortError=()=>new DOMException('图片请求已结束','AbortError');
  const normalize=raw=>{const url=new URL(raw,location.href);if(url.origin!==location.origin||!['http:','https:'].includes(url.protocol))throw Error('图片地址无效');return url.href};
  const tell=(entry,state)=>{for(const callback of entry.listeners)callback(state)};
@@ -52,7 +52,7 @@ const galleryImageLoader=(()=>{
  function bind(img,raw,{priority=0,onState}={}){
   for(const existing of bindings.keys())if(!existing.isConnected)unbind(existing);
   unbind(img);let url;try{url=normalize(raw)}catch(error){onState?.('error');return Promise.reject(error)}
-  const binding={url,epoch,onState};bindings.set(img,binding);img.dataset.mediaUrl=url;
+  const binding={url,epoch,onState,options:{priority,onState}};bindings.set(img,binding);img.dataset.mediaUrl=url;
   const current=()=>bindings.get(img)===binding&&binding.epoch===epoch;
   const notify=state=>{if(current())onState?.(state)};binding.onState=notify;notify('loading');
   return load(url,{priority,onState:notify}).then(blobUrl=>{
@@ -63,11 +63,16 @@ const galleryImageLoader=(()=>{
   }).catch(error=>{if(current())notify(error.name==='AbortError'?'cleared':'error');throw error});
  }
  function clear(){
+  // Keep only which images were on screen (never their bytes) so the same account can repaint them.
+  if(bindings.size)restorable=[...bindings].map(([img,binding])=>[img,binding.url,binding.options]);
   epoch++;queue.length=0;
   for(const entry of entries.values()){clearTimeout(entry.timer);entry.controller?.abort();if(entry.blobUrl)URL.revokeObjectURL(entry.blobUrl);if(!entry.finished)entry.reject(abortError());entry.listeners.clear()}
   entries.clear();totalBytes=0;for(const img of [...bindings.keys()])unbind(img);
  }
+ function restore(){const items=restorable;restorable=[];for(const [img,url,options] of items)if(img.isConnected&&!bindings.has(img))bind(img,url,options).catch(()=>{})}
  addEventListener('jt:media-clear',clear);addEventListener('jt:auth-expired',clear);addEventListener('pagehide',clear);
+ // Dispatched by the account shell after the same account signs back in; a new identity reloads instead.
+ addEventListener('jt:media-restore',restore);
  addEventListener('pageshow',event=>{if(event.persisted)location.reload()});
  return {bind,load,clear,unbind};
 })();

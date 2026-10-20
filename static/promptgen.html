@@ -170,7 +170,7 @@ body {background:transparent;isolation:isolate;color:var(--text)}
 
 .api-popover-anchor{display:flex;gap:8px;align-items:stretch;margin-top:9px}.api-popover-anchor #genApiBtn{flex:1;min-width:0;margin:0;position:relative;overflow:hidden;font-size:12px}.api-popover-anchor #apiDrawerOpen{width:68px;flex:0 0 68px;margin:0;border:1px solid #e4cda8;border-radius:12px;background:#fff;color:#8a5a22}.api-action-error{padding:7px 2px 0;color:#a33939;font-size:12px;line-height:1.5;overflow-wrap:anywhere}#genApiStatus[hidden]{display:none!important}#genApiBtn[data-state="running"]::after,#genApiBtn[data-state="recovering"]::after{content:"";position:absolute;bottom:0;left:0;width:30%;height:3px;background:#b7792e;animation:api-button-scan 1.6s ease-in-out infinite}#genApiBtn[data-state="error"]{color:#a33939;border-color:#d99a9a}@keyframes api-button-scan{0%{transform:translateX(-100%)}100%{transform:translateX(440%)}}@media(prefers-reduced-motion:reduce){#genApiBtn::after{animation:none!important}}
 </style><!-- singularity:start --><link rel="stylesheet" href="/static/singularity/theme.css?v=677f99157b7c"><script type="importmap">{"imports":{"three":"/static/singularity/vendor/build/three.module.js","three/addons/":"/static/singularity/vendor/examples/jsm/"}}</script><script type="module" src="/static/singularity/workbench.js?v=677f99157b7c"></script><!-- singularity:end --></head><body class="singularity"><div class="app-background" aria-hidden="true"></div><div class="app-shell">
-<header class="topbar"><a class="brand" href="/"><span class="brand-mark">JT</span><span>JT 灵感工作台</span></a><nav class="topnav"><a class="topnav-link active" href="/">创作台</a><a class="topnav-link" href="/realism">真人化</a><a class="topnav-link" href="/video">视频</a></nav><div class="topbar-tools"><span class="connection-dot" title="服务在线"></span><button class="topbar-action" id="favOpen">♥ 收藏</button><button class="topbar-action" id="histOpen">⌛ 历史</button></div></header>
+<header class="topbar"><a class="brand" href="/"><span class="brand-mark">JT</span><span>JT 灵感工作台</span></a><nav class="topnav"><a class="topnav-link active" href="/">创作台</a><a class="topnav-link" href="/realism">图片编辑</a><a class="topnav-link" href="/video">视频</a></nav><div class="topbar-tools"><span class="connection-dot" title="服务在线"></span><button class="topbar-action" id="favOpen">♥ 收藏</button><button class="topbar-action" id="histOpen">⌛ 历史</button></div></header>
 <main class="studio-grid">
 <aside class="creation-pane"><div class="creation-scroll"><div class="pane-heading"><div><span class="eyebrow">AI CREATION</span><h1>创作设置</h1></div></div>
 <span class="section-label">画风</span><section class="switch" id="styleSwitch"><button data-style="cold">冷脸萌</button><button data-style="sketch">铅绘</button><button data-style="original_sketch">原始铅绘</button><button data-style="graphic">古风</button><button data-style="original_graphic">原始古风</button><button data-style="hanmanga">古漫</button><button data-style="nff">NFF</button><button data-style="retro_manga_luxury">复古日漫</button><button data-style="style221">板绘</button><button data-style="style222">铜版</button></section>
@@ -255,7 +255,7 @@ function creatorCoinText(j){if(j.generation_backend==='local'||j.generation_back
 const galleryImageLoader=(()=>{
  const MAX_CONCURRENT=2,MAX_BYTES=48*1024*1024,MAX_ENTRIES=100,MAX_RETRIES=3;
  const retryStatuses=new Set([429,502,503,504]),entries=new Map(),queue=[],bindings=new Map();
- let active=0,totalBytes=0,sequence=0,epoch=0,pumpScheduled=false;
+ let active=0,totalBytes=0,sequence=0,epoch=0,pumpScheduled=false,restorable=[];
  const abortError=()=>new DOMException('图片请求已结束','AbortError');
  const normalize=raw=>{const url=new URL(raw,location.href);if(url.origin!==location.origin||!['http:','https:'].includes(url.protocol))throw Error('图片地址无效');return url.href};
  const tell=(entry,state)=>{for(const callback of entry.listeners)callback(state)};
@@ -304,7 +304,7 @@ const galleryImageLoader=(()=>{
  function bind(img,raw,{priority=0,onState}={}){
   for(const existing of bindings.keys())if(!existing.isConnected)unbind(existing);
   unbind(img);let url;try{url=normalize(raw)}catch(error){onState?.('error');return Promise.reject(error)}
-  const binding={url,epoch,onState};bindings.set(img,binding);img.dataset.mediaUrl=url;
+  const binding={url,epoch,onState,options:{priority,onState}};bindings.set(img,binding);img.dataset.mediaUrl=url;
   const current=()=>bindings.get(img)===binding&&binding.epoch===epoch;
   const notify=state=>{if(current())onState?.(state)};binding.onState=notify;notify('loading');
   return load(url,{priority,onState:notify}).then(blobUrl=>{
@@ -315,11 +315,16 @@ const galleryImageLoader=(()=>{
   }).catch(error=>{if(current())notify(error.name==='AbortError'?'cleared':'error');throw error});
  }
  function clear(){
+  // Keep only which images were on screen (never their bytes) so the same account can repaint them.
+  if(bindings.size)restorable=[...bindings].map(([img,binding])=>[img,binding.url,binding.options]);
   epoch++;queue.length=0;
   for(const entry of entries.values()){clearTimeout(entry.timer);entry.controller?.abort();if(entry.blobUrl)URL.revokeObjectURL(entry.blobUrl);if(!entry.finished)entry.reject(abortError());entry.listeners.clear()}
   entries.clear();totalBytes=0;for(const img of [...bindings.keys()])unbind(img);
  }
+ function restore(){const items=restorable;restorable=[];for(const [img,url,options] of items)if(img.isConnected&&!bindings.has(img))bind(img,url,options).catch(()=>{})}
  addEventListener('jt:media-clear',clear);addEventListener('jt:auth-expired',clear);addEventListener('pagehide',clear);
+ // Dispatched by the account shell after the same account signs back in; a new identity reloads instead.
+ addEventListener('jt:media-restore',restore);
  addEventListener('pageshow',event=>{if(event.persisted)location.reload()});
  return {bind,load,clear,unbind};
 })();
