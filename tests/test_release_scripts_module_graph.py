@@ -56,7 +56,7 @@ def payloads(monkeypatch, tmp_path):
     monkeypatch.setattr(transport, '_connect', refuse)
     monkeypatch.setattr(urllib.request, 'urlopen', refuse)
     # Entrypoints reconfigure the shared transactions; restore them for later tests.
-    for name in ('MODULES', 'DEFAULT_STATE', 'verify_frontend_scope', 'run_checks'):
+    for name in ('MODULES', 'DEFAULT_STATE', 'verify_frontend_scope'):
         monkeypatch.setattr(release_video_queue_plan, name, getattr(release_video_queue_plan, name))
     monkeypatch.setattr(release_video_queue_presets, 'STATE', release_video_queue_presets.STATE)
     # Audit state is untracked, so whether it exists depends on the checkout.

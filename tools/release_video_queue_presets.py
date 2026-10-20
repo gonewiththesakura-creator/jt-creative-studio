@@ -31,6 +31,8 @@ def main(extra_paths=()):
     paths+=[p for p in extra_paths if p not in paths]
     r.require_server_runtime_modules(paths)
     data={p:normalize_release_bytes(p,(t.BASE/p).read_bytes()) for p in paths}
+    # There is no read-only mode: every invocation publishes, so every one runs the whole gate.
+    r.run_feature_release_gate(data,normalize_release_bytes)
     c=t._connect(t.BASE/'tools/creds.json',r.DEPLOY_SSH_KEY_PATH);s=c.open_sftp()
     for p,raw in data.items():
         old=subprocess.run(['git','show','HEAD:'+p],cwd=t.BASE,capture_output=True)

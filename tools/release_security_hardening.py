@@ -35,8 +35,11 @@ def main():
     manifest=json.loads((t.BASE/'static/app-manifest.json').read_text(encoding='utf-8'))
     assets=[p.lstrip('/') for p in manifest['assets']]
     paths=r.require_server_runtime_modules([*assets,*MODULES,'static/app-manifest.json','static/app.html'])
-    data={p:(t.BASE/p).read_bytes() for p in paths}
-    data={p:raw.replace(b'\r\n',b'\n') if not p.endswith('.webp') else raw for p,raw in data.items()}
+    normalize=lambda p,raw:raw.replace(b'\r\n',b'\n') if not p.endswith('.webp') else raw
+    data={p:normalize(p,(t.BASE/p).read_bytes()) for p in paths}
+    if args.execute:
+        assert not STATE.exists(),'Inspect existing release state before retry'
+        r.run_feature_release_gate(data,normalize)
     client=t._connect(t.BASE/'tools/creds.json',r.DEPLOY_SSH_KEY_PATH)
     sftp=client.open_sftp()
     def read(p):
@@ -59,7 +62,6 @@ def main():
         r.require_release_start_draining_unset(client)
         print(json.dumps({'phase':'preflight','changed_count':len(changed),'queue':queue(client)}),flush=True)
         if not args.execute:return
-        assert not STATE.exists(),'Inspect existing release state before retry'
         tx=r.new_release_transaction()
         r.acquire_release_lock(client,tx);locked=True
         state={'phase':'preparing','transaction':tx,'watchdog':r.capture_watchdog_state(client),

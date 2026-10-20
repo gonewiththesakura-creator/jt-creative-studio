@@ -15,12 +15,16 @@ CORE = [*r.SERVER_RUNTIME_MODULE_PATHS, 'config.json', 'video_wf/h3_edit_multi_a
         'static/video.html', 'static/app.html', 'static/app-manifest.json']
 
 
+def normalize(path, raw):
+    return raw.replace(b'\r\n', b'\n')
+
+
 def payloads():
     manifest = json.loads((BASE/'static/app-manifest.json').read_text(encoding='utf8'))
     paths = set(CORE)
     paths.update(url.lstrip('/') for url in manifest['pages']['/video'].values() if url.startswith('/static/'))
     r.require_server_runtime_modules(paths)
-    return {path: (BASE/path).read_bytes().replace(b'\r\n', b'\n') for path in sorted(paths)}
+    return {path: normalize(path, (BASE/path).read_bytes()) for path in sorted(paths)}
 
 
 def baseline(client, data):
@@ -77,6 +81,8 @@ def main():
     parser.add_argument('--execute', action='store_true')
     args = parser.parse_args()
     data = payloads()
+    if args.execute:
+        r.run_feature_release_gate(data, normalize)
     client = transport._connect(BASE/'tools/creds.json', r.DEPLOY_SSH_KEY_PATH)
     try:
         baseline(client, data)

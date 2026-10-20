@@ -111,9 +111,11 @@ IDLE_STABILITY_INTERVAL = 1.0
 # 2026-10-20 after merging into 3e48d15: +tests/test_h3_optimized.py, +tests/test_h3_optimized_browser.py.
 # 2026-10-20 on 0680d80 (chore/release-scripts-module-graph): +tests/test_release_scripts_module_graph.py,
 # which checks that every tools/release_*.py that restarts the panel ships server.py's module closure.
+# 2026-10-20 on 70bcdfa (chore/release-scripts-full-gate): +tests/test_release_scripts_full_gate.py,
+# which checks that those scripts run this whole gate (run_feature_release_gate) before production.
 MIN_SCRIPT_CONTRACTS = 55
-MIN_PYTEST_FILES = 96
-RELEASE_TEST_INVENTORY_SHA256 = "5221d32d11a7a08ec8e2282c677014aba5428f4f071fe4620eaadecb7f96398a"
+MIN_PYTEST_FILES = 97
+RELEASE_TEST_INVENTORY_SHA256 = "5c374c5679bed538743ae3470db94acb6e5a400bf2d232ebf3d0f9ef8d9ed38a"
 DREAMAPI_CONTRACT_SHA256 = "d2e692e229a0525590fbbc5ffc4f466faebe70675278d263a44bfd0dffc6f0fa"
 HISTORICAL_DREAMAPI_CONTRACT_SHA256 = "665d283bd420f76f031d9530f1d757f022d6cc16a5c9e9bc315e4966da797959"
 DREAMAPI_NATIVE_MANIFEST = BASE / "audit" / "internal_canary_20260924" / "verification.json"
@@ -1322,6 +1324,29 @@ def run_release_tests(test_dir=None):
             failures.append({"file": "pytest", "output": result.stdout[-4000:]})
     if failures:
         raise RuntimeError("release tests failed: " + json.dumps(failures, ensure_ascii=False))
+
+
+def run_feature_release_gate(data, normalize, root=BASE):
+    """Run the full release test gate for a tools/release_*.py publish, before it contacts production.
+
+    Feature releases publish the working tree on top of the HEAD production runs, so the gate tests
+    that tree rather than a clean commit. `data` is the candidate exactly as the script will publish
+    it, read before the gate with the script's own `normalize(path, raw)`. It is re-read after the
+    ~10 minute run and any byte change aborts, so what ships equals what was on disk at both ends of
+    the run; re-run the release after editing. HEAD is the scripts' production drift baseline and
+    must not move either. Files outside the payload (tests, docs) do not ship and are not re-read.
+    """
+    root = pathlib.Path(root)
+    head = lambda: subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, text=True,
+                                  capture_output=True, check=True).stdout.strip()
+    reviewed_head = head()
+    print("Running the full release test gate before publishing", flush=True)
+    run_release_tests()
+    if head() != reviewed_head:
+        raise RuntimeError("HEAD changed while release tests were running")
+    changed = sorted(path for path, raw in data.items() if normalize(path, (root / path).read_bytes()) != raw)
+    if changed:
+        raise RuntimeError("Candidate changed during checks: " + ", ".join(changed))
 
 
 def auth_is_disabled(server_source):

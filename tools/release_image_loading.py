@@ -53,8 +53,11 @@ def main():
         r'static/assets/[A-Za-z0-9_-]+\.[0-9a-f]{12}\.(?:js|css|html|json|txt|webp)', p
     ) for p in assets), 'Unexpected asset path'
     paths = r.require_server_runtime_modules([*assets, *MODULES, 'static/app-manifest.json', 'static/app.html'])
-    data = {p: (t.BASE / p).read_bytes() for p in paths}
-    data = {p: raw if p.endswith('.webp') else raw.replace(b'\r\n', b'\n') for p, raw in data.items()}
+    normalize = lambda p, raw: raw if p.endswith('.webp') else raw.replace(b'\r\n', b'\n')
+    data = {p: normalize(p, (t.BASE / p).read_bytes()) for p in paths}
+    if args.execute:
+        assert not STATE.exists(), 'Inspect existing release state before retry'
+        r.run_feature_release_gate(data, normalize)
     client = t._connect(t.BASE / 'tools/creds.json', r.DEPLOY_SSH_KEY_PATH)
     sftp = client.open_sftp()
 
@@ -91,7 +94,6 @@ def main():
         print(json.dumps({'phase': 'preflight', 'changed_count': len(changed), 'queue': queue(client)}), flush=True)
         if not args.execute:
             return
-        assert not STATE.exists(), 'Inspect existing release state before retry'
         if not changed:
             print('IMAGE_LOADING_RELEASE_UNCHANGED', flush=True)
             return

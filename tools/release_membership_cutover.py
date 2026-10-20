@@ -151,12 +151,16 @@ def main(argv=None):
     parser.add_argument('--state',type=str,default=str(DEFAULT_STATE))
     args=parser.parse_args(argv)
     r.require_server_runtime_modules(RUNTIME_FILES)
+    state_path=t.BASE/args.state
+    if args.execute:
+        if state_path.exists():raise RuntimeError('Audit state already exists; inspect before another cutover')
+        # The cutover restarts production on exactly these files, as preflight hashes them.
+        normalize=lambda path,raw:raw.replace(b'\r\n',b'\n')
+        r.run_feature_release_gate({p:normalize(p,(t.BASE/p).read_bytes()) for p in RUNTIME_FILES},normalize)
     client=t._connect(t.BASE/'tools/creds.json',r.DEPLOY_SSH_KEY_PATH)
     checked=preflight(client)
     if not args.execute:
         print(json.dumps({'preflight':checked,'migration':migrate(client),'queue':queue(client)}));client.close();return
-    state_path=t.BASE/args.state
-    if state_path.exists():raise RuntimeError('Audit state already exists; inspect before another cutover')
     transaction=r.new_release_transaction();r.acquire_release_lock(client,transaction)
     state={'phase':'preparing','transaction':transaction,'watchdog':r.capture_watchdog_state(client),'preflight':checked}
     t._atomic_json(state_path,state)
