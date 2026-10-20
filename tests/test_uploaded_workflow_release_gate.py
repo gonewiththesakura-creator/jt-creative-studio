@@ -32,22 +32,19 @@ EXPECTED_PROVENANCE = {
 }
 
 
-# NEEDS OWNER DECISION: h3_edit_n's public controls changed after the reviewed release gate
-# (4a46084 reference images 2-4, 547e6cc LoRA slots, ad0a196 removed the 15 s duration cap without a
-# new max). Re-pinning UPLOADED_WORKFLOW_FIELDS / CONTROL_SCHEMA_SHA256 / live-schema evidence would
-# accept an uncapped duration, so the drift is pinned exactly here instead; any other drift, or the
-# owner resolving this one, fails the test.
-KNOWN_H3_EDIT_N_CONFIG_DRIFT = [
-    "invalid uploaded workflow public schema: h3_edit_n",
-    "uploaded workflow control metadata drift: h3_edit_n",
-]
+# NEEDS OWNER AUTHORIZATION: the 2026-09-12 live-schema evidence predates h3_edit_n's reference images
+# 2-4 (4a46084) and LoRA slots (547e6cc). Refreshing it needs a read-only RunningHub schema read with the
+# production account, so this one drift stays pinned exactly; any other drift, or a refresh, fails the test.
+# (The public control schema itself was re-pinned on 2026-10-20 once the owner capped duration at 25 s.)
 KNOWN_H3_EDIT_N_LIVE_DRIFT = ["uploaded workflow live mappings invalid: h3_edit_n"]
 
 
 def test_atomic_release_gates_all_six_uploaded_workflows():
     assert MODULE.UPLOADED_WORKFLOW_TARGETS == EXPECTED
     assert MODULE.UPLOADED_WORKFLOW_PROVENANCE == EXPECTED_PROVENANCE
-    assert MODULE.validate_uploaded_workflow_config(CONFIG) == KNOWN_H3_EDIT_N_CONFIG_DRIFT
+    assert MODULE.validate_uploaded_workflow_config(CONFIG) == []
+    duration = next(w for w in CONFIG["workflows"] if w["id"] == "h3_edit_n")["rh_params"]["duration"]
+    assert (duration["min"], duration["max"]) == (4, 25)
 
 
 def test_uploaded_release_gate_fails_closed_on_identity_or_schema_drift():

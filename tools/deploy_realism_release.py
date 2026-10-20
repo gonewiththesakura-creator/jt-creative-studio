@@ -244,8 +244,13 @@ UPLOADED_WORKFLOW_PROVENANCE = {
     "wan_action_stabilized": ("2098345513989357570", "a717d3b361b83729b3f706c9520061131c4be8dd96c315f5cd01e7b3670eb211", "b0475b22baf36f058514b49a335147667640ab45b55d92ca9d754a98e403344a"),
     "scail2_action_replace": ("2098345531529936898", "94d25510ae5d5380e235421d1fa6e8c79ef5d2b1e0a71c4a3b5d045be29bea71", "7fab1a5c29aabdc31e0a23a9ece6e227938906c1f030c54b8f02d009d0352c07"),
 }
+# 2026-10-20 owner capped h3_edit_n duration at 25 s, so its controls are re-pinned: optional reference
+# images 2-4 (4a46084) and server-bound LoRA slots (547e6cc) are part of the reviewed public schema.
 UPLOADED_WORKFLOW_FIELDS = {
-    "h3_edit_n": ({"reference_image", "source_video"}, {"prompt", "duration", "short_edge", "seed"}, "video"),
+    "h3_edit_n": ({"reference_image", "reference_image_2", "reference_image_3", "reference_image_4", "source_video"},
+                  {"prompt", "duration", "short_edge", "seed",
+                   "lora_1_model", "lora_1_strength", "lora_2_model", "lora_2_strength",
+                   "lora_3_model", "lora_3_strength"}, "video"),
     "h3_edit_t3": ({"source_video"}, {"prompt", "duration", "long_edge", "seed"}, "video"),
     "h3_edit_remove": ({"source_video"}, {"prompt", "duration", "long_edge", "seed"}, "video"),
     "qwen_image_edit_zip": ({"source_image"}, {"prompt", "batch", "seed"}, "rh_workflow"),
@@ -263,7 +268,7 @@ UPLOADED_WORKFLOW_RESULT_LABELS = {
 }
 
 UPLOADED_WORKFLOW_CONTROL_SCHEMA_SHA256 = {
-    "h3_edit_n": "da7daf1163aa42e8da1e10bdf6efff18c18f1161a4b9276ad1a110de74e01657",
+    "h3_edit_n": "fd63b9c228419f2b755e0f9353b68791eee39952d7890bb18c443f0550dd2ed2",
     "h3_edit_t3": "9c121960605a541ed5c722ba2ce1af80716ef3ccdc457f18d7f67a6622080cb5",
     "h3_edit_remove": "57358745e4100d8516b209ffe950d82ffa27e6282625edd61929e01444d2f0b0",
     "qwen_image_edit_zip": "5adf6399af4a2e6e652600420c69c2914ab8f950802d883b570c77ed3f435151",

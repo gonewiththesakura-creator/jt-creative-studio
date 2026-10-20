@@ -1373,6 +1373,7 @@
      "default": 5,
      "required": true,
      "min": 4,
+     "max": 25,
      "step": 1,
      "group": "common"
     },

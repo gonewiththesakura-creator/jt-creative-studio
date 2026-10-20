@@ -64,10 +64,8 @@ VIDEO_WORKFLOWS = [
 BOUNDED_KEYS = {"width", "height", "duration", "short_edge", "long_edge", "max_side"}
 
 
-# NEEDS OWNER DECISION: ad0a196 deliberately removed the 15 s cap on h3_edit_n duration and no new
-# maximum was chosen. Do not restore 15 s or invent a cap here; once the owner picks a value, add it to
-# config.json and delete this entry (the strict xfail below then turns red as a reminder).
-UNBOUNDED_PENDING_OWNER_DECISION = {("h3_edit_n", "duration")}
+# ad0a196 removed the 15 s cap on h3_edit_n duration; on 2026-10-20 the owner set the new cap to 25 s,
+# so every public video control is bounded again and no exemption remains.
 INTEGER_TYPES = {"int", "integer"}
 
 
@@ -90,9 +88,6 @@ def test_all_public_runninghub_video_dimensions_and_durations_are_bounded():
     assert VIDEO_WORKFLOWS
     for workflow in VIDEO_WORKFLOWS:
         for key, mapping in numeric_controls(workflow):
-            if (workflow["id"], key) in UNBOUNDED_PENDING_OWNER_DECISION:
-                assert "max" not in mapping, "owner set a cap: remove it from UNBOUNDED_PENDING_OWNER_DECISION"
-                continue
             assert {"min", "max"} <= mapping.keys(), (workflow["id"], key)
             assert control_step(mapping) is not None, (workflow["id"], key)
             assert mapping["min"] <= mapping["max"], (workflow["id"], key)
@@ -105,9 +100,7 @@ def test_all_public_runninghub_video_dimensions_and_durations_are_bounded():
 @pytest.mark.parametrize(
     "workflow,key",
     [
-        pytest.param(workflow, key, marks=pytest.mark.xfail(
-            strict=True, reason="h3_edit_n duration has no max since ad0a196; owner must choose the cap"))
-        if (workflow["id"], key) in UNBOUNDED_PENDING_OWNER_DECISION else (workflow, key)
+        (workflow, key)
         for workflow in VIDEO_WORKFLOWS
         for key, _ in numeric_controls(workflow)
     ],
