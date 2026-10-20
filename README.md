@@ -1,8 +1,18 @@
 # JT 灵感工作台
 
+## 当前状态（2026-10-20）
+
+- 开发分支：`fix/dreamapi-internal-service`，尚未配置远程上游。各提交是否已上线，以发布记录和线上核对为准。
+- 线上入口：`https://studio.dreamapi.club/`，登录域名 `auth.dreamapi.club`。会员、激活码与运维说明见 [membership-operations](docs/membership-operations.md)。
+- 测试门：`run_release_tests()`（`tools/deploy_realism_release.py`）在本地已恢复为绿色。真实回归和待决定事项见 [test-gate-triage](docs/test-gate-triage-20261019.md)。
+- 发布：正式发布器和全部按功能发布脚本，都按 `server.py` 的 import 关系推导要发布的 Python 模块；会重启面板的脚本默认只读，`--execute` 时先跑完整测试门。说明见 [release-scripts-full-gate](docs/release-scripts-full-gate-20261020.md)。
+- 备份：定时备份、异地副本与恢复演练的脚本已在仓库中，**尚未部署到服务器**，部署步骤见 [backup-operations](docs/backup-operations.md)。
+
+以下各节为历史快照，其中的分支、部署状态以上面和实时核对为准。
+
 ## App Shell 优化（2026-09-21，已部署）
 
-当前开发分支为 `feat/singularity-workbench`。统一 Shell、客户端路由、页面 Keep Alive、
+当时的开发分支为 `feat/singularity-workbench`。统一 Shell、客户端路由、页面 Keep Alive、
 黑洞常驻、画风拆包及静态资源缓存说明见 [性能交付文档](docs/app-shell-performance.md)。
 新增构建的最后一步为 `python tools/build_frontend.py`；旧 Builder 仍是业务权威源。
 用户追加上线及付费测试授权后，`962ece1` 已通过正式发布器上线。Image 2 单次真实测试

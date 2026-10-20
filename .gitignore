@@ -69,3 +69,8 @@ audit/internal_canary_20260924/raw-result.json
 !static/assets/preview.*.webp
 !static/assets/preview.*.png
 !static/assets/preview.*.jpg
+
+# Release transaction state and local verification runs (one directory per release since 2026-09).
+# Release scripts read their own state files locally; already-tracked evidence stays tracked, and a
+# summary worth keeping is committed explicitly with `git add -f`.
+/audit/*/
