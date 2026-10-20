@@ -11,7 +11,7 @@ import prepare_dreamapi_native_canary as transport
 r = transport.release
 BASE = r.BASE
 STATE = BASE / 'audit/h3_lora_revision_20260928/release-state.json'
-CORE = ['server.py', 'config.json', 'video_wf/h3_edit_multi_api.json',
+CORE = [*r.SERVER_RUNTIME_MODULE_PATHS, 'config.json', 'video_wf/h3_edit_multi_api.json',
         'static/video.html', 'static/app.html', 'static/app-manifest.json']
 
 
@@ -19,6 +19,7 @@ def payloads():
     manifest = json.loads((BASE/'static/app-manifest.json').read_text(encoding='utf8'))
     paths = set(CORE)
     paths.update(url.lstrip('/') for url in manifest['pages']['/video'].values() if url.startswith('/static/'))
+    r.require_server_runtime_modules(paths)
     return {path: (BASE/path).read_bytes().replace(b'\r\n', b'\n') for path in sorted(paths)}
 
 
@@ -108,8 +109,9 @@ def main():
                         client = transport._connect(BASE/'tools/creds.json', r.DEPLOY_SSH_KEY_PATH)
                         sftp = client.open_sftp()
                 print('STAGED', path, flush=True)
-            staged_server = r.transaction_file(tx, r.REMOTE_ROOT+'/server.py', 'stage')
-            r.command(client, 'python3 -m py_compile '+shlex.quote(staged_server))
+            staged_modules = [r.transaction_file(tx, r.REMOTE_ROOT+'/'+path, 'stage')
+                              for path in r.SERVER_RUNTIME_MODULE_PATHS]
+            r.command(client, 'python3 -m py_compile '+' '.join(map(shlex.quote, staged_modules)))
             manifest = r.backup_release(client, sftp, remotes, tx)
             r.write_transaction_phase(client, tx, 'prepared')
             admission_touched = True

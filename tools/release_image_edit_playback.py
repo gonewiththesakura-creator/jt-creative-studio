@@ -52,7 +52,7 @@ def checks():
 
 
 def main():
-    transaction.MODULES=('server.py','membership_media.py','config.json')
+    transaction.MODULES=(*transaction.RUNTIME_MODULES,'config.json')
     transaction.DEFAULT_STATE=BASE/'audit/image-edit-release-20261018/release.json'
     transaction.verify_frontend_scope=verify_scope
     transaction.run_checks=checks

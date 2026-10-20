@@ -45,7 +45,8 @@ def main():
     manifest = json.loads((t.BASE/'static/app-manifest.json').read_text(encoding='utf-8'))
     assets = [p.lstrip('/') for p in manifest['assets']]
     assert all(re.fullmatch(r'static/assets/[A-Za-z0-9_-]+\.[0-9a-f]{12}\.(?:js|css|html|json|txt|webp)', p) for p in assets)
-    paths = [*assets, 'membership_store.py', 'membership_http.py', 'static/app-manifest.json', 'static/app.html']
+    paths = r.require_server_runtime_modules(
+        [*assets, *r.SERVER_RUNTIME_MODULE_PATHS, 'static/app-manifest.json', 'static/app.html'])
     data = {p: (t.BASE/p).read_bytes() for p in paths}
     data = {p: raw.replace(b'\r\n', b'\n') if not p.endswith('.webp') else raw for p, raw in data.items()}
     client = t._connect(t.BASE/'tools/creds.json', r.DEPLOY_SSH_KEY_PATH)

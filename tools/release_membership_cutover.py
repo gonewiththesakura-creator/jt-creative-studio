@@ -22,7 +22,8 @@ DROPIN='/etc/systemd/system/comfy-panel.service.d/zz-membership.conf'
 NGINX='/etc/nginx/conf.d/jt-workbench.conf'
 PUBLIC='https://studio.dreamapi.club'
 DEFAULT_STATE=t.BASE/'audit/membership-cutover-20261009/release.json'
-RUNTIME_FILES=('server.py','membership_store.py','membership_auth.py','membership_http.py','membership_media.py','tools/migrate_membership_owner.py')
+# The cutover restarts the panel on the venv; production must already run every reviewed module.
+RUNTIME_FILES=(*r.SERVER_RUNTIME_MODULE_PATHS,'tools/migrate_membership_owner.py')
 DROPIN_TEXT='''# JT managed membership cutover
 [Service]
 EnvironmentFile=/opt/jt-identity/panel-membership.env
@@ -149,6 +150,7 @@ def main(argv=None):
     parser.add_argument('--execute',action='store_true')
     parser.add_argument('--state',type=str,default=str(DEFAULT_STATE))
     args=parser.parse_args(argv)
+    r.require_server_runtime_modules(RUNTIME_FILES)
     client=t._connect(t.BASE/'tools/creds.json',r.DEPLOY_SSH_KEY_PATH)
     checked=preflight(client)
     if not args.execute:

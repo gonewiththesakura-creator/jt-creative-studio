@@ -47,9 +47,12 @@ def checks():
     subprocess.run(['node','frontend/verify-contracts.mjs'],cwd=BASE,check=True)
 
 
-if __name__=='__main__':
-    transaction.MODULES=('server.py','config.json')
+def main():
+    transaction.MODULES=(*transaction.RUNTIME_MODULES,'config.json')
     transaction.DEFAULT_STATE=BASE/'audit/wardrobe-reference-toggle-20261018/release.json'
     transaction.verify_frontend_scope=verify_scope
     transaction.run_checks=checks
     transaction.main()
+
+
+if __name__=='__main__':main()

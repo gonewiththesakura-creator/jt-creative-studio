@@ -26,7 +26,10 @@ from release_membership_cutover import queue, remote_json
 r = t.release
 sys.path.insert(0, str(t.BASE))
 DATA = r.REMOTE_ROOT + '/panel_data'
-MODULES = ('membership_store.py', 'membership_http.py')
+# server.py's whole local-module closure. Releases built on this transaction append
+# only non-Python payload; unchanged modules match production and are never staged.
+RUNTIME_MODULES = r.SERVER_RUNTIME_MODULE_PATHS
+MODULES = RUNTIME_MODULES
 ENTRIES = ('static/app-manifest.json', 'static/app.html')
 DEFAULT_STATE = t.BASE / 'audit/video-queue-plan-20261017/release.json'
 
@@ -133,7 +136,7 @@ def main(argv=None):
     assets = [path.removeprefix('/') for path in manifest['assets']]
     assert assets and len(set(assets)) == len(assets), 'Invalid asset manifest'
     assert all(re.fullmatch(r'static/assets/[A-Za-z0-9_-]+\.[0-9a-f]{12}\.(?:js|css|html|json|txt|webp)', path) for path in assets), 'Unexpected asset path'
-    paths = [*assets, *MODULES, *ENTRIES]
+    paths = r.require_server_runtime_modules([*assets, *MODULES, *ENTRIES])
     normalize = lambda path, raw: raw if path.endswith('.webp') else raw.replace(b'\r\n', b'\n')
     data = {path: normalize(path, (t.BASE / path).read_bytes()) for path in paths}
     verify_frontend_scope(baseline, manifest, data)

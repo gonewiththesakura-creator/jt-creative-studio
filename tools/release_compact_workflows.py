@@ -32,7 +32,7 @@ def scope(baseline,manifest,data):
 def checks():
     backend_changed=any((BASE/path).read_bytes().replace(b'\r\n',b'\n')!=
                         subprocess.check_output(['git','show','HEAD:'+path],cwd=BASE).replace(b'\r\n',b'\n')
-                        for path in ('server.py','config.json'))
+                        for path in (*transaction.RUNTIME_MODULES,'config.json'))
     if backend_changed:previous_release.checks()
     tests=['tests/test_compact_workflow_forms.py']
     if not backend_changed:tests+=['tests/test_h3_remix_browser.py','tests/test_image_edit_browser.py','tests/test_app_shell.py']
@@ -41,9 +41,12 @@ def checks():
                         *tests,'--basetemp',str(Path(directory)/'pytest')],cwd=BASE,check=True)
 
 
-if __name__=='__main__':
-    transaction.MODULES=('server.py','config.json')
+def main():
+    transaction.MODULES=(*transaction.RUNTIME_MODULES,'config.json')
     transaction.DEFAULT_STATE=BASE/'audit/compact-workflow-20261018/release.json'
     transaction.verify_frontend_scope=scope
     transaction.run_checks=checks
     transaction.main()
+
+
+if __name__=='__main__':main()

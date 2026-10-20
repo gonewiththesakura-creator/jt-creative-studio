@@ -27,8 +27,9 @@ print(json.dumps({'active':[j['id'] for j in jobs.values() if j.get('status') in
 
 def main(extra_paths=()):
     manifest=json.loads((t.BASE/'static/app-manifest.json').read_text(encoding='utf8'))
-    paths=['server.py']+[p.lstrip('/') for p in manifest['pages']['/video'].values() if p.startswith('/static/')]+['static/video.html','static/app-manifest.json','static/app.html']
-    paths.extend(extra_paths)
+    paths=[*r.SERVER_RUNTIME_MODULE_PATHS]+[p.lstrip('/') for p in manifest['pages']['/video'].values() if p.startswith('/static/')]+['static/video.html','static/app-manifest.json','static/app.html']
+    paths+=[p for p in extra_paths if p not in paths]
+    r.require_server_runtime_modules(paths)
     data={p:normalize_release_bytes(p,(t.BASE/p).read_bytes()) for p in paths}
     c=t._connect(t.BASE/'tools/creds.json',r.DEPLOY_SSH_KEY_PATH);s=c.open_sftp()
     for p,raw in data.items():
@@ -47,7 +48,7 @@ def main(extra_paths=()):
     remotes=[r.REMOTE_ROOT+'/'+p for p in paths]
     try:
         for p,raw in data.items():r.stage_file_resilient(c,s,t.BASE/p,r.REMOTE_ROOT+'/'+p,tx,raw)
-        r.command(c,'python3 -m py_compile '+shlex.quote(r.transaction_file(tx,r.REMOTE_ROOT+'/server.py','stage')))
+        r.command(c,'python3 -m py_compile '+' '.join(shlex.quote(r.transaction_file(tx,r.REMOTE_ROOT+'/'+p,'stage')) for p in r.SERVER_RUNTIME_MODULE_PATHS))
         backup=r.backup_release(c,s,remotes,tx);r.write_transaction_phase(c,tx,'prepared')
         admission=True;r.set_release_start_draining(c,True);r.set_remote_release_drain(c,True)
         deadline=time.time()+900

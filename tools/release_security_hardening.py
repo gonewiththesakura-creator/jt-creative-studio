@@ -17,8 +17,7 @@ ORIGIN='https://studio.dreamapi.club'
 STATE=t.BASE/'audit/security-fix-20261011/release.json'
 DATA=r.REMOTE_ROOT+'/panel_data'
 HARDEN=r.REMOTE_ROOT+'/deploy/security/harden_host.py'
-MODULES=['server.py','membership_auth.py','membership_http.py','membership_store.py','membership_media.py',
-         'deploy/security/harden_host.py','deploy/security/disable_identity_signup.py']
+MODULES=[*r.SERVER_RUNTIME_MODULE_PATHS,'deploy/security/harden_host.py','deploy/security/disable_identity_signup.py']
 
 
 def fetch(path):
@@ -35,7 +34,7 @@ def main():
     args=parser.parse_args()
     manifest=json.loads((t.BASE/'static/app-manifest.json').read_text(encoding='utf-8'))
     assets=[p.lstrip('/') for p in manifest['assets']]
-    paths=[*assets,*MODULES,'static/app-manifest.json','static/app.html']
+    paths=r.require_server_runtime_modules([*assets,*MODULES,'static/app-manifest.json','static/app.html'])
     data={p:(t.BASE/p).read_bytes() for p in paths}
     data={p:raw.replace(b'\r\n',b'\n') if not p.endswith('.webp') else raw for p,raw in data.items()}
     client=t._connect(t.BASE/'tools/creds.json',r.DEPLOY_SSH_KEY_PATH)

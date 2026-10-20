@@ -109,9 +109,11 @@ IDLE_STABILITY_CHECKS = 3
 IDLE_STABILITY_INTERVAL = 1.0
 # Re-baselined 2026-10-19 at 7f10ec5 (chore/green-test-gate): 55 script contracts + 93 pytest files.
 # 2026-10-20 after merging into 3e48d15: +tests/test_h3_optimized.py, +tests/test_h3_optimized_browser.py.
+# 2026-10-20 on 0680d80 (chore/release-scripts-module-graph): +tests/test_release_scripts_module_graph.py,
+# which checks that every tools/release_*.py that restarts the panel ships server.py's module closure.
 MIN_SCRIPT_CONTRACTS = 55
-MIN_PYTEST_FILES = 95
-RELEASE_TEST_INVENTORY_SHA256 = "d70564093995012b385229fb4f6e7ecc41cb60ce544e16075a2a55ee10a7fab8"
+MIN_PYTEST_FILES = 96
+RELEASE_TEST_INVENTORY_SHA256 = "5221d32d11a7a08ec8e2282c677014aba5428f4f071fe4620eaadecb7f96398a"
 DREAMAPI_CONTRACT_SHA256 = "d2e692e229a0525590fbbc5ffc4f466faebe70675278d263a44bfd0dffc6f0fa"
 HISTORICAL_DREAMAPI_CONTRACT_SHA256 = "665d283bd420f76f031d9530f1d757f022d6cc16a5c9e9bc315e4966da797959"
 DREAMAPI_NATIVE_MANIFEST = BASE / "audit" / "internal_canary_20260924" / "verification.json"
@@ -325,6 +327,18 @@ def server_runtime_module_paths(root=BASE, entry="server.py"):
 
 
 SERVER_RUNTIME_MODULE_PATHS = server_runtime_module_paths()
+
+
+def require_server_runtime_modules(paths, root=BASE):
+    """Return a feature release's payload paths only if they include server.py's whole module closure.
+
+    tools/release_*.py restart the panel on whatever they upload; a server.py shipped without a
+    changed sibling module would start against the stale production copy of that module.
+    """
+    missing = sorted(set(server_runtime_module_paths(root)) - set(paths))
+    if missing:
+        raise RuntimeError("release omits server.py runtime modules: " + ", ".join(missing))
+    return paths
 
 RELEASE_RELATIVE_PATHS = (
     *SINGULARITY_ASSET_PATHS,
