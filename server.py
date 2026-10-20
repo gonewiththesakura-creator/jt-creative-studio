@@ -2275,7 +2275,22 @@ def normalize_rh_workflow_inputs(w, media, params):
         trusted_params[key] = result
     if w.get('id') == 'h3_remix_full':
         validate_h3_remix_inputs(trusted_media, trusted_params)
+    if w.get('id') == 'h3_reference_optimized':
+        validate_h3_optimized_inputs(trusted_media, trusted_params)
     return trusted_media, trusted_params
+
+
+def validate_h3_optimized_inputs(media, params):
+    if not any(key.startswith(('reference_image', 'source_video')) for key in media):
+        raise ValueError('请至少上传一张参考图或一个参考视频；音频需搭配图像或视频使用')
+    if len(media) > 12:
+        raise ValueError('图片、视频和音频合计最多上传 12 个素材')
+    if params['first_steps'] > params['total_steps']:
+        raise ValueError('一采步数不能超过总采样步数')
+    if params['second_pass'] and params['first_steps'] >= params['total_steps']:
+        raise ValueError('开启二次采样时，总采样步数必须大于一采步数')
+    if not (params['save_first'] or (params['second_pass'] and params['save_second'])):
+        raise ValueError('请至少保留一个已启用采样阶段的输出')
 
 
 def validate_h3_remix_inputs(media, params):
@@ -3267,8 +3282,65 @@ def rh_build_h3_remix_graph(job, w):
     return {node: value for node,value in graph.items() if node in keep}
 
 
+def rh_build_h3_optimized_graph(job, w):
+    """Restore only selected inputs/branches from the verified, server-owned graph."""
+    media, params = normalize_rh_workflow_inputs(w, job.get('provider_media') or {}, job.get('params') or {})
+    graph = json.loads(json.dumps(w['rh_graph']))
+    for key, mapping in w['rh_params'].items():
+        if mapping.get('node') and key in params:
+            graph[mapping['node']]['inputs'][mapping['field']] = params[key]
+    graph['263']['inputs']['text'] = params['prompt']
+    # Resolve random seeds to a valid uint before the provider sees the graph.
+    # Derivation by task id keeps an uncertain submission retry deterministic.
+    if params['seed'] < 0:
+        identity = str(job.get('id') or job.get('client_request_id') or 'offline-preview')
+        digest = hmac.new(SESSION_SECRET, ('h3-optimized-seed:'+identity).encode(), hashlib.sha256).digest()
+        graph['256']['inputs']['noise_seed'] = int.from_bytes(digest[:8], 'big') % (2**53)
+    references = graph['265']['inputs']
+    for key in list(references):
+        if key.startswith(('ref_images.', 'ref_videos.', 'ref_video_audios.', 'ref_audios.')):
+            del references[key]
+    counts = {'image':0, 'video':0, 'audio':0}
+    for key, mapping in w['rh_media'].items():
+        if key not in media:
+            continue
+        node, kind = mapping['node'], mapping['type']
+        graph[node]['inputs'][mapping['field']] = media[key]
+        index = counts[kind]; counts[kind] += 1
+        prefix = {'image':'ref_images.ref_image_', 'video':'ref_videos.ref_video_', 'audio':'ref_audios.ref_audio_'}[kind]
+        references[prefix+str(index)] = [node,0]
+        if kind == 'video' and params[key+'_audio']:
+            references['ref_video_audios.ref_video_audio_'+str(index)] = [node,2]
+    def bypass(node_id):
+        upstream = graph[node_id]['inputs']['model']
+        for row in graph.values():
+            for key, value in list(row['inputs'].items()):
+                if value == [node_id,0]:row['inputs'][key] = upstream
+    if not params['memory_attention']:bypass('58')
+    for slot, node in ((3,'322'),(2,'128'),(1,'53')):
+        if not params[f'lora_{slot}_enabled'] or params[f'lora_{slot}_strength'] == 0:
+            bypass(node)
+    roots = []
+    for node, enabled, prefix in [('264',params['save_first'],'JT_H3_Optimized_First'),
+                                 ('214',params['second_pass'] and params['save_second'],'JT_H3_Optimized_Second')]:
+        if enabled:
+            roots.append(node)
+            graph[node]['inputs'].update(filename_prefix=prefix,save_metadata=False,save_output=True,
+                frame_rate=24,pingpong=params['pingpong'],crf=params['crf'])
+    keep = set()
+    def visit(node):
+        if node in keep:return
+        keep.add(node)
+        for value in graph[node]['inputs'].values():
+            if isinstance(value,list) and len(value)==2 and isinstance(value[0],str) and isinstance(value[1],int):
+                visit(value[0])
+    for root in roots:visit(root)
+    return {key:row for key,row in graph.items() if key in keep}
+
+
 def rh_submit_h3_multi(job, w):
-    graph = rh_build_h3_remix_graph(job, w) if w.get('id') == 'h3_remix_full' else rh_build_h3_graph(job, w)
+    builders = {'h3_remix_full':rh_build_h3_remix_graph, 'h3_reference_optimized':rh_build_h3_optimized_graph}
+    graph = builders.get(w.get('id'), rh_build_h3_graph)(job, w)
     body = {'apiKey':RH_KEY,'workflowId':w['rh_workflow_id'],
             'workflow':json.dumps(graph,ensure_ascii=False),'nodeInfoList':[],
             'addMetadata':False,'usePersonalQueue':False,'instanceType':'default'}
@@ -3296,7 +3368,7 @@ def rh_run_video(job, w):
     node_list = rh_build_video_node_info(job, w)
     job["submit_started"] = time.time()
     job["provider_status"] = "SUBMITTING"
-    multi = w.get('id') in ('h3_edit_n', 'h3_remix_full')
+    multi = w.get('id') in ('h3_edit_n', 'h3_remix_full', 'h3_reference_optimized')
     task_id = rh_submit_h3_multi(job,w) if multi else rh_submit(wfid, node_list)
     persist_provider_task(job, task_id)
     job["progress_pct"] = 5

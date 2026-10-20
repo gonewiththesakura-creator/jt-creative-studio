@@ -87,7 +87,7 @@ function videoInputEnabled(workflow,mapping,params){
 }
 function enhanceRemixForm(form,workflow,state){
   form.onchange=null;form.classList.remove('remix-form');
-  if(workflow.id!=='h3_remix_full')return;
+  if(!['h3_remix_full','h3_reference_optimized'].includes(workflow.id))return;
   form.classList.add('remix-form');
   const groups=new Map(),fields=[];
   function group(name){
@@ -307,7 +307,7 @@ function mediaAccept(type){return type==='audio'?'.mp3,.wav,.flac,.m4a,.ogg,audi
 function validateSelectedMedia(file,m){const suffix=(String(file?.name||'').match(/\.[^.]+$/)||[''])[0].toLowerCase(),allowed=m.type==='audio'?['.mp3','.wav','.flac','.m4a','.ogg']:isVideoType(m.type)?['.mp4','.mov','.avi','.webm','.mkv']:['.png','.jpg','.jpeg','.webp'];if(!allowed.includes(suffix))return m.type==='audio'?'请选择 MP3、WAV、FLAC、M4A 或 OGG 音频':isVideoType(m.type)?'请选择 MP4、MOV、WebM、AVI 或 MKV 视频':'请选择 JPG、PNG 或 WebP 图片；HEIC 请先导出为 JPG';if(!Number.isFinite(file.size)||file.size>MAX_VIDEO_UPLOAD_BYTES)return'文件超过60MB限制';if(file.size===0)return'文件为空，请重新选择';return''}
 function revokeLocalMediaPreview(key,state){const value=state.previewUrls[key];if(value)URL.revokeObjectURL(value);delete state.previewUrls[key]}
 function revokeWorkflowMediaPreviews(workflowId){const state=mediaStateByWorkflow.get(workflowId);if(!state)return;Object.keys(state.previewUrls).forEach(key=>revokeLocalMediaPreview(key,state))}
-function replaceLocalMediaPreview(key,m,file,drop,state){revokeLocalMediaPreview(key,state);const existing=drop.querySelector('.local-media-preview');if(existing)drop.removeChild(existing);const media=document.createElement(m.type==='audio'?'audio':isVideoType(m.type)?'video':'img');media.className='local-media-preview';media.src=URL.createObjectURL(file);state.previewUrls[key]=media.src;state.files[key]=file;const remove=drop.querySelector('.media-remove');if(remove)remove.hidden=false;if(isVideoType(m.type)||m.type==='audio'){media.controls=true;media.playsInline=true;media.preload='metadata';if(isVideoType(m.type)){prepareVideoThumbnail(file);if(cur?.id!=='h3_remix_full'||key==='source_video')detectSourceDuration(media,key,file,drop,state)}}else media.alt='已选择的'+String(m.label||'图片');media.onerror=()=>{const note=drop.querySelector('.fn');if(note)note.textContent+=' · 当前浏览器无法预览此编码'};drop.append(media)}
+function replaceLocalMediaPreview(key,m,file,drop,state){revokeLocalMediaPreview(key,state);const existing=drop.querySelector('.local-media-preview');if(existing)drop.removeChild(existing);const media=document.createElement(m.type==='audio'?'audio':isVideoType(m.type)?'video':'img');media.className='local-media-preview';media.src=URL.createObjectURL(file);state.previewUrls[key]=media.src;state.files[key]=file;const remove=drop.querySelector('.media-remove');if(remove)remove.hidden=false;if(isVideoType(m.type)||m.type==='audio'){media.controls=true;media.playsInline=true;media.preload='metadata';if(isVideoType(m.type)){prepareVideoThumbnail(file);if(!['h3_remix_full','h3_reference_optimized'].includes(cur?.id)||key==='source_video')detectSourceDuration(media,key,file,drop,state)}}else media.alt='已选择的'+String(m.label||'图片');media.onerror=()=>{const note=drop.querySelector('.fn');if(note)note.textContent+=' · 当前浏览器无法预览此编码'};drop.append(media)}
 function detectSourceDuration(media,key,file,drop,state){
   if(!cur?.rh_params?.duration)return;
   const workflow=cur,version=renderVersion,previous=state.durationSelection;

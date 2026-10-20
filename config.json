@@ -4032,6 +4032,958 @@
      "step": 0.1
     }
    }
+  },
+  {
+   "id": "h3_reference_optimized",
+   "name": "MiniMax H3 · 多参考生视频（优化版）",
+   "kind": "video",
+   "backend": "runninghub",
+   "section": "MiniMax H3",
+   "desc": "支持最多 9 张参考图、3 段视频、3 段音频，混合最多 12 个素材。可选二次采样放大，输出固定为 24 帧/秒。",
+   "rh_workflow_id": "2111727257252290561",
+   "source_editor_workflow_id": "2112090338620891138",
+   "source_editor_json_sha256": "2912961c834da66ae1da6c50919324e15a6ccc734bca9a3cec107928d2132edd",
+   "source_api_json_sha256": "5182d336c7bb2d12fe259400f01f43de617d5a2303625149d3ea514716546e83",
+   "rh_graph": {
+    "49": {
+     "class_type": "LoadImage",
+     "inputs": {
+      "image": ""
+     }
+    },
+    "192": {
+     "class_type": "UNETLoader",
+     "inputs": {
+      "weight_dtype": "default",
+      "unet_name": "minimax_h3_hybrid_fl2va_ref2va_b25-49-int8.safetensors"
+     }
+    },
+    "250": {
+     "class_type": "ComfyMathExpression",
+     "inputs": {
+      "expression": "max(5, round(a * 24)) + (5 - (max(5, round(a * 24)) % 17)) % 17",
+      "values.a": [
+       "259",
+       0
+      ]
+     }
+    },
+    "252": {
+     "class_type": "ResolutionSelector",
+     "inputs": {
+      "aspect_ratio": "16:9 (Widescreen)",
+      "megapixels": 0.5,
+      "multiple": 32
+     }
+    },
+    "253": {
+     "class_type": "VAEDecode",
+     "inputs": {
+      "vae": [
+       "36",
+       0
+      ],
+      "samples": [
+       "226",
+       1
+      ]
+     }
+    },
+    "254": {
+     "class_type": "VAEDecodeAudio",
+     "inputs": {
+      "vae": [
+       "37",
+       0
+      ],
+      "samples": [
+       "226",
+       1
+      ]
+     }
+    },
+    "255": {
+     "class_type": "KSamplerSelect",
+     "inputs": {
+      "sampler_name": "euler"
+     }
+    },
+    "256": {
+     "class_type": "RandomNoise",
+     "inputs": {
+      "noise_seed": 648536226598917
+     }
+    },
+    "259": {
+     "class_type": "PrimitiveFloat",
+     "inputs": {
+      "value": 10
+     }
+    },
+    "50": {
+     "class_type": "LoadImage",
+     "inputs": {
+      "image": ""
+     }
+    },
+    "51": {
+     "class_type": "LoadImage",
+     "inputs": {
+      "image": ""
+     }
+    },
+    "53": {
+     "class_type": "LoraLoaderModelOnly",
+     "inputs": {
+      "lora_name": "minimax_h3_turbo_v4_step600_ema_pruned_comfyui.safetensors",
+      "strength_model": 1.0000000000000002,
+      "model": [
+       "128",
+       0
+      ]
+     }
+    },
+    "36": {
+     "class_type": "VAELoader",
+     "inputs": {
+      "vae_name": "minimax_h3_video_vae_int8_convrot.safetensors"
+     }
+    },
+    "58": {
+     "class_type": "MiniMaxH3MemoryEfficientSageAttentionPatch",
+     "inputs": {
+      "model": [
+       "192",
+       0
+      ]
+     }
+    },
+    "37": {
+     "class_type": "VAELoader",
+     "inputs": {
+      "vae_name": "minimax_h3_audio_vae_fp32.safetensors"
+     }
+    },
+    "38": {
+     "class_type": "CLIPLoader",
+     "inputs": {
+      "clip_name": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+      "type": "minimax",
+      "device": "default"
+     }
+    },
+    "261": {
+     "class_type": "BasicScheduler",
+     "inputs": {
+      "scheduler": "beta",
+      "denoise": 1,
+      "model": [
+       "53",
+       0
+      ],
+      "steps": 12
+     }
+    },
+    "283": {
+     "class_type": "easy float",
+     "inputs": {
+      "value": 1.5000000000000002
+     }
+    },
+    "263": {
+     "class_type": "Text",
+     "inputs": {
+      "text": ""
+     }
+    },
+    "264": {
+     "class_type": "VHS_VideoCombine",
+     "inputs": {
+      "images": [
+       "253",
+       0
+      ],
+      "pix_fmt": "yuv420p",
+      "format": "video/h264-mp4",
+      "frame_rate": 24,
+      "pingpong": false,
+      "save_output": false,
+      "filename_prefix": "JT_H3",
+      "loop_count": 0,
+      "save_metadata": false,
+      "crf": 19,
+      "trim_to_audio": false,
+      "no_preview": false,
+      "audio": [
+       "254",
+       0
+      ]
+     }
+    },
+    "265": {
+     "class_type": "MiniMaxH3ReferenceToVideo",
+     "inputs": {
+      "width": [
+       "252",
+       0
+      ],
+      "length": [
+       "250",
+       1
+      ],
+      "vae": [
+       "36",
+       0
+      ],
+      "prompt": [
+       "263",
+       0
+      ],
+      "ref_image_size": "max",
+      "audio_vae": [
+       "37",
+       0
+      ],
+      "clip": [
+       "38",
+       0
+      ],
+      "height": [
+       "252",
+       1
+      ]
+     }
+    },
+    "223": {
+     "class_type": "BasicGuider",
+     "inputs": {
+      "conditioning": [
+       "265",
+       0
+      ],
+      "model": [
+       "53",
+       0
+      ]
+     }
+    },
+    "289": {
+     "class_type": "SplitSigmas",
+     "inputs": {
+      "step": 8,
+      "sigmas": [
+       "261",
+       0
+      ]
+     }
+    },
+    "226": {
+     "class_type": "SamplerCustomAdvanced",
+     "inputs": {
+      "guider": [
+       "223",
+       0
+      ],
+      "latent_image": [
+       "265",
+       1
+      ],
+      "noise": [
+       "256",
+       0
+      ],
+      "sigmas": [
+       "289",
+       0
+      ],
+      "sampler": [
+       "255",
+       0
+      ]
+     }
+    },
+    "128": {
+     "class_type": "LoraLoaderModelOnly",
+     "inputs": {
+      "lora_name": "MysticXXX_MMH3-V1.safetensors",
+      "strength_model": 0.5000000000000001,
+      "model": [
+       "322",
+       0
+      ]
+     }
+    },
+    "139": {
+     "class_type": "LTXVSeparateAVLatent",
+     "inputs": {
+      "av_latent": [
+       "226",
+       1
+      ]
+     }
+    },
+    "140": {
+     "class_type": "MinimaxH3LatentUpscaler3D",
+     "inputs": {
+      "latent": [
+       "139",
+       0
+      ],
+      "mode.scale": [
+       "283",
+       0
+      ],
+      "model_name": "minimax_h3_latent_upscaler_3d_fp16.safetensors",
+      "mode": "scale by multiplier",
+      "align": 32,
+      "device": "cuda",
+      "precision": "fp16",
+      "enable_chunking": false
+     }
+    },
+    "142": {
+     "class_type": "LTXVConcatAVLatent",
+     "inputs": {
+      "video_latent": [
+       "140",
+       0
+      ],
+      "audio_latent": [
+       "139",
+       1
+      ]
+     }
+    },
+    "144": {
+     "class_type": "SamplerCustomAdvanced",
+     "inputs": {
+      "noise": [
+       "256",
+       0
+      ],
+      "guider": [
+       "223",
+       0
+      ],
+      "sampler": [
+       "255",
+       0
+      ],
+      "sigmas": [
+       "289",
+       1
+      ],
+      "latent_image": [
+       "142",
+       0
+      ]
+     }
+    },
+    "115": {
+     "class_type": "VAEDecodeAudio",
+     "inputs": {
+      "samples": [
+       "144",
+       1
+      ],
+      "vae": [
+       "37",
+       0
+      ]
+     }
+    },
+    "116": {
+     "class_type": "VAEDecode",
+     "inputs": {
+      "samples": [
+       "144",
+       1
+      ],
+      "vae": [
+       "36",
+       0
+      ]
+     }
+    },
+    "214": {
+     "class_type": "VHS_VideoCombine",
+     "inputs": {
+      "images": [
+       "116",
+       0
+      ],
+      "audio": [
+       "115",
+       0
+      ],
+      "frame_rate": 24,
+      "loop_count": 0,
+      "filename_prefix": "JT_H3",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "crf": 19,
+      "save_metadata": false,
+      "pingpong": false,
+      "save_output": true,
+      "no_preview": false,
+      "trim_to_audio": false
+     }
+    },
+    "322": {
+     "class_type": "LoraLoaderModelOnly",
+     "inputs": {
+      "model": [
+       "58",
+       0
+      ],
+      "lora_name": "wushu_spatial_physics_v2_1000_pruned.safetensors",
+      "strength_model": 0.30000000000000004
+     }
+    },
+    "43": {
+     "class_type": "LoadImage",
+     "inputs": {
+      "image": ""
+     }
+    },
+    "19": {
+     "class_type": "LoadImage",
+     "inputs": {
+      "image": ""
+     }
+    },
+    "23": {
+     "class_type": "LoadImage",
+     "inputs": {
+      "image": ""
+     }
+    },
+    "199": {
+     "class_type": "LoadImage",
+     "inputs": {
+      "image": ""
+     }
+    },
+    "200": {
+     "class_type": "LoadImage",
+     "inputs": {
+      "image": ""
+     }
+    },
+    "201": {
+     "class_type": "LoadImage",
+     "inputs": {
+      "image": ""
+     }
+    },
+    "27": {
+     "class_type": "VHS_LoadVideo",
+     "inputs": {
+      "video": "",
+      "force_rate": 24,
+      "force_size": "Disabled",
+      "custom_width": 0,
+      "custom_height": 0,
+      "frame_load_cap": 0,
+      "skip_first_frames": 0,
+      "select_every_nth": 1,
+      "format": "AnimateDiff"
+     }
+    },
+    "25": {
+     "class_type": "VHS_LoadVideo",
+     "inputs": {
+      "video": "",
+      "force_rate": 24,
+      "force_size": "Disabled",
+      "custom_width": 0,
+      "custom_height": 0,
+      "frame_load_cap": 0,
+      "skip_first_frames": 0,
+      "select_every_nth": 1,
+      "format": "AnimateDiff"
+     }
+    },
+    "26": {
+     "class_type": "VHS_LoadVideo",
+     "inputs": {
+      "video": "",
+      "force_rate": 24,
+      "force_size": "Disabled",
+      "custom_width": 0,
+      "custom_height": 0,
+      "frame_load_cap": 0,
+      "skip_first_frames": 0,
+      "select_every_nth": 1,
+      "format": "AnimateDiff"
+     }
+    },
+    "48": {
+     "class_type": "LoadAudio",
+     "inputs": {
+      "audio": ""
+     }
+    },
+    "14": {
+     "class_type": "LoadAudio",
+     "inputs": {
+      "audio": ""
+     }
+    },
+    "15": {
+     "class_type": "LoadAudio",
+     "inputs": {
+      "audio": ""
+     }
+    }
+   },
+   "rh_media": {
+    "reference_image": {
+     "node": "51",
+     "field": "image",
+     "type": "image",
+     "label": "参考图 1",
+     "required": false,
+     "group": "参考素材"
+    },
+    "reference_image_2": {
+     "node": "49",
+     "field": "image",
+     "type": "image",
+     "label": "参考图 2",
+     "required": false,
+     "group": "参考素材"
+    },
+    "reference_image_3": {
+     "node": "50",
+     "field": "image",
+     "type": "image",
+     "label": "参考图 3",
+     "required": false,
+     "group": "参考素材"
+    },
+    "reference_image_4": {
+     "node": "43",
+     "field": "image",
+     "type": "image",
+     "label": "参考图 4",
+     "required": false,
+     "group": "参考素材"
+    },
+    "reference_image_5": {
+     "node": "19",
+     "field": "image",
+     "type": "image",
+     "label": "参考图 5",
+     "required": false,
+     "group": "参考素材"
+    },
+    "reference_image_6": {
+     "node": "23",
+     "field": "image",
+     "type": "image",
+     "label": "参考图 6",
+     "required": false,
+     "group": "参考素材"
+    },
+    "reference_image_7": {
+     "node": "199",
+     "field": "image",
+     "type": "image",
+     "label": "参考图 7",
+     "required": false,
+     "group": "参考素材"
+    },
+    "reference_image_8": {
+     "node": "200",
+     "field": "image",
+     "type": "image",
+     "label": "参考图 8",
+     "required": false,
+     "group": "参考素材"
+    },
+    "reference_image_9": {
+     "node": "201",
+     "field": "image",
+     "type": "image",
+     "label": "参考图 9",
+     "required": false,
+     "group": "参考素材"
+    },
+    "source_video": {
+     "node": "27",
+     "field": "video",
+     "type": "video",
+     "label": "参考视频 1",
+     "required": false,
+     "group": "参考素材"
+    },
+    "source_video_2": {
+     "node": "25",
+     "field": "video",
+     "type": "video",
+     "label": "参考视频 2",
+     "required": false,
+     "group": "参考素材"
+    },
+    "source_video_3": {
+     "node": "26",
+     "field": "video",
+     "type": "video",
+     "label": "参考视频 3",
+     "required": false,
+     "group": "参考素材"
+    },
+    "reference_audio": {
+     "node": "48",
+     "field": "audio",
+     "type": "audio",
+     "label": "参考音频 1",
+     "required": false,
+     "group": "参考素材"
+    },
+    "reference_audio_2": {
+     "node": "14",
+     "field": "audio",
+     "type": "audio",
+     "label": "参考音频 2",
+     "required": false,
+     "group": "参考素材"
+    },
+    "reference_audio_3": {
+     "node": "15",
+     "field": "audio",
+     "type": "audio",
+     "label": "参考音频 3",
+     "required": false,
+     "group": "参考素材"
+    }
+   },
+   "rh_params": {
+    "prompt": {
+     "label": "提示词",
+     "type": "text",
+     "default": "保持参考人物、服装与场景一致，镜头缓慢推进，人物自然地转身并微笑。",
+     "group": "基本设置",
+     "required": true,
+     "max_length": 10000,
+     "description": "用 <Picture 1>、<Video 1>、<Audio 1> 按类型引用已上传素材。",
+     "node": "263",
+     "field": "text"
+    },
+    "duration": {
+     "label": "时长（秒）",
+     "type": "float",
+     "default": 10,
+     "group": "基本设置",
+     "min": 0.2,
+     "max": 30,
+     "step": 0.1,
+     "node": "259",
+     "field": "value"
+    },
+    "aspect_ratio": {
+     "label": "画面比例",
+     "type": "select",
+     "default": "16:9 (Widescreen)",
+     "group": "基本设置",
+     "options": [
+      {
+       "value": "1:1 (Square)",
+       "label": "1:1 方形"
+      },
+      {
+       "value": "2:3 (Portrait Photo)",
+       "label": "2:3 竖图"
+      },
+      {
+       "value": "3:2 (Photo)",
+       "label": "3:2 横图"
+      },
+      {
+       "value": "3:4 (Portrait Standard)",
+       "label": "3:4 竖屏"
+      },
+      {
+       "value": "4:3 (Standard)",
+       "label": "4:3 横屏"
+      },
+      {
+       "value": "9:16 (Portrait Widescreen)",
+       "label": "9:16 竖屏"
+      },
+      {
+       "value": "16:9 (Widescreen)",
+       "label": "16:9 横屏"
+      },
+      {
+       "value": "21:9 (Ultrawide)",
+       "label": "21:9 超宽"
+      }
+     ],
+     "node": "252",
+     "field": "aspect_ratio"
+    },
+    "megapixels": {
+     "label": "一采分辨率（MP）",
+     "type": "float",
+     "default": 0.5,
+     "group": "基本设置",
+     "min": 0.1,
+     "max": 4,
+     "step": 0.1,
+     "description": "0.5 MP 的 16:9 画面约为 960×544；提高分辨率会增加耗时。",
+     "node": "252",
+     "field": "megapixels"
+    },
+    "second_pass": {
+     "label": "开启二次采样放大",
+     "type": "boolean",
+     "default": false,
+     "group": "基本设置",
+     "description": "放大一采潜空间后继续采样；关闭时仅输出一采。"
+    },
+    "seed": {
+     "label": "随机种子（-1 为随机）",
+     "type": "int",
+     "default": -1,
+     "group": "一采与高级设置",
+     "min": -1,
+     "max": 9007199254740991,
+     "node": "256",
+     "field": "noise_seed"
+    },
+    "total_steps": {
+     "label": "总采样步数",
+     "type": "int",
+     "default": 12,
+     "group": "一采与高级设置",
+     "min": 1,
+     "max": 60,
+     "node": "261",
+     "field": "steps"
+    },
+    "first_steps": {
+     "label": "一采步数",
+     "type": "int",
+     "default": 8,
+     "group": "一采与高级设置",
+     "min": 1,
+     "max": 60,
+     "description": "建议一采至少 6 步；开启二采时建议总步数比一采多 4 步。",
+     "node": "289",
+     "field": "step"
+    },
+    "denoise": {
+     "label": "去噪强度",
+     "type": "float",
+     "default": 1,
+     "group": "一采与高级设置",
+     "min": 0.01,
+     "max": 1,
+     "step": 0.01,
+     "node": "261",
+     "field": "denoise"
+    },
+    "ref_image_size": {
+     "label": "参考图处理尺寸",
+     "type": "select",
+     "default": "max",
+     "group": "一采与高级设置",
+     "options": [
+      {
+       "value": "match",
+       "label": "匹配输出尺寸 · 更快"
+      },
+      {
+       "value": "max",
+       "label": "高保真参考 · 更慢"
+      }
+     ],
+     "node": "265",
+     "field": "ref_image_size"
+    },
+    "memory_attention": {
+     "label": "节省显存注意力",
+     "type": "boolean",
+     "default": true,
+     "group": "一采与高级设置"
+    },
+    "second_scale": {
+     "label": "二采放大倍数",
+     "type": "float",
+     "default": 1.5,
+     "group": "二次采样设置",
+     "min": 1,
+     "max": 4,
+     "step": 0.1,
+     "node": "283",
+     "field": "value"
+    },
+    "second_chunking": {
+     "label": "分块放大以节省显存",
+     "type": "boolean",
+     "default": false,
+     "group": "二次采样设置",
+     "node": "140",
+     "field": "enable_chunking"
+    },
+    "lora_1_enabled": {
+     "label": "Turbo LoRA · 启用",
+     "type": "boolean",
+     "default": true,
+     "group": "LoRA 设置"
+    },
+    "lora_1_strength": {
+     "label": "Turbo LoRA · 权重",
+     "type": "float",
+     "default": 1.0,
+     "group": "LoRA 设置",
+     "min": -2,
+     "max": 2,
+     "step": 0.05,
+     "node": "53",
+     "field": "strength_model"
+    },
+    "lora_2_enabled": {
+     "label": "LoRA 2（原配置） · 启用",
+     "type": "boolean",
+     "default": true,
+     "group": "LoRA 设置"
+    },
+    "lora_2_strength": {
+     "label": "LoRA 2（原配置） · 权重",
+     "type": "float",
+     "default": 0.5,
+     "group": "LoRA 设置",
+     "min": -2,
+     "max": 2,
+     "step": 0.05,
+     "node": "128",
+     "field": "strength_model"
+    },
+    "lora_3_enabled": {
+     "label": "动作 LoRA · 启用",
+     "type": "boolean",
+     "default": false,
+     "group": "LoRA 设置"
+    },
+    "lora_3_strength": {
+     "label": "动作 LoRA · 权重",
+     "type": "float",
+     "default": 0.3,
+     "group": "LoRA 设置",
+     "min": -2,
+     "max": 2,
+     "step": 0.05,
+     "node": "322",
+     "field": "strength_model"
+    },
+    "save_first": {
+     "label": "保留一采结果",
+     "type": "boolean",
+     "default": true,
+     "group": "输出设置"
+    },
+    "save_second": {
+     "label": "保留二采结果",
+     "type": "boolean",
+     "default": true,
+     "group": "输出设置"
+    },
+    "pingpong": {
+     "label": "往返播放输出",
+     "type": "boolean",
+     "default": false,
+     "group": "输出设置"
+    },
+    "crf": {
+     "label": "视频压缩质量（越小越清晰）",
+     "type": "int",
+     "default": 19,
+     "group": "输出设置",
+     "min": 0,
+     "max": 35
+    },
+    "source_video_skip": {
+     "label": "参考视频 1 · 跳过帧数",
+     "type": "int",
+     "default": 0,
+     "group": "参考素材截取",
+     "min": 0,
+     "max": 100000,
+     "node": "27",
+     "field": "skip_first_frames"
+    },
+    "source_video_frames": {
+     "label": "参考视频 1 · 最多读取帧数（0 为全部）",
+     "type": "int",
+     "default": 0,
+     "group": "参考素材截取",
+     "min": 0,
+     "max": 720,
+     "node": "27",
+     "field": "frame_load_cap"
+    },
+    "source_video_audio": {
+     "label": "参考视频 1 · 使用音轨参考",
+     "type": "boolean",
+     "default": false,
+     "group": "参考素材截取"
+    },
+    "source_video_2_skip": {
+     "label": "参考视频 2 · 跳过帧数",
+     "type": "int",
+     "default": 0,
+     "group": "参考素材截取",
+     "min": 0,
+     "max": 100000,
+     "node": "25",
+     "field": "skip_first_frames"
+    },
+    "source_video_2_frames": {
+     "label": "参考视频 2 · 最多读取帧数（0 为全部）",
+     "type": "int",
+     "default": 0,
+     "group": "参考素材截取",
+     "min": 0,
+     "max": 720,
+     "node": "25",
+     "field": "frame_load_cap"
+    },
+    "source_video_2_audio": {
+     "label": "参考视频 2 · 使用音轨参考",
+     "type": "boolean",
+     "default": false,
+     "group": "参考素材截取"
+    },
+    "source_video_3_skip": {
+     "label": "参考视频 3 · 跳过帧数",
+     "type": "int",
+     "default": 0,
+     "group": "参考素材截取",
+     "min": 0,
+     "max": 100000,
+     "node": "26",
+     "field": "skip_first_frames"
+    },
+    "source_video_3_frames": {
+     "label": "参考视频 3 · 最多读取帧数（0 为全部）",
+     "type": "int",
+     "default": 0,
+     "group": "参考素材截取",
+     "min": 0,
+     "max": 720,
+     "node": "26",
+     "field": "frame_load_cap"
+    },
+    "source_video_3_audio": {
+     "label": "参考视频 3 · 使用音轨参考",
+     "type": "boolean",
+     "default": false,
+     "group": "参考素材截取"
+    }
+   }
   }
  ],
  "default_prompt_reset": true

@@ -5,7 +5,7 @@ function videoInputEnabled(workflow,mapping,params){
 }
 function enhanceRemixForm(form,workflow,state){
   form.onchange=null;form.classList.remove('remix-form');
-  if(workflow.id!=='h3_remix_full')return;
+  if(!['h3_remix_full','h3_reference_optimized'].includes(workflow.id))return;
   form.classList.add('remix-form');
   const groups=new Map(),fields=[];
   function group(name){

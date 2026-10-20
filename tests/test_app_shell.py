@@ -29,6 +29,7 @@ def test_packaging_preserves_business_functions_and_backend_contracts():
                          'rh_build_generic_node_info','rh_build_single_image_graph','rh_submit_single_image_graph','rh_run_generic',
                          # Remix branches and audio admission have dedicated graph/HTTP tests.
                          'validate_h3_remix_inputs','rh_build_h3_remix_graph','rh_submit_h3_multi',
+                         'validate_h3_optimized_inputs','rh_build_h3_optimized_graph',
                          'rh_run_video','_upload_media_content_type_from_header'}
         tree.body=[n for n in tree.body if not (
             isinstance(n,ast.FunctionDef) and n.name in queue_functions) and not (
@@ -44,7 +45,7 @@ def test_packaging_preserves_business_functions_and_backend_contracts():
     added=[w for w in candidate['workflows'] if w['id']=='qwen21_wardrobe']
     assert len(added)==1
     assert len([w for w in candidate['workflows'] if w['id']=='h3_remix_full'])==1
-    candidate['workflows']=[w for w in candidate['workflows'] if w['id'] not in ('qwen21_wardrobe','h3_remix_full')]
+    candidate['workflows']=[w for w in candidate['workflows'] if w['id'] not in ('qwen21_wardrobe','h3_remix_full','h3_reference_optimized')]
     assert candidate==previous, 'Existing workflow definitions must remain intact'
 
 
