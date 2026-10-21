@@ -214,7 +214,8 @@ def test_login_uses_saved_appearance_before_gpu_initialization(browser):
         page.goto('http://fixture.test/')
         expect(page.locator('#accountLoginCode')).to_be_visible()
         style=page.locator('.account-gate-card').evaluate('el=>({background:getComputedStyle(el).backgroundColor,blur:getComputedStyle(el).backdropFilter})')
-        assert style=={'background':'rgba(15, 16, 20, 0.44)','blur':'blur(7px)'}
+        # Saved glass opacity and blur apply before the GPU starts; the tint is the accretion warm black.
+        assert style=={'background':'rgba(16, 12, 10, 0.44)','blur':'blur(7px)'}
         assert page.evaluate("document.body.style.getPropertyValue('--appearance-opacity')")=='0.63'
         assert page.evaluate("localStorage.getItem('jt-singularity-appearance-v1')")==raw
         assert page.locator('.login-scene-orbit').count()==0

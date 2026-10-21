@@ -1,10 +1,10 @@
 import {accountFetch,configureAccountRequests} from "/static/assets/api.1e898baa005a.js";
 import {setStorageAccount} from "/static/assets/account-storage.0c5081b9ad66.js";
 import {initializeMembershipAdmin} from "/static/assets/membership-admin.abf0e0dba296.js";
-import {showLoginScene,markLoginTransition,consumeLoginTransition,prepareLoginEntry,revealWorkbenchImmediately} from "/static/assets/login-scene.cff13271858e.js";
+import {showLoginScene,markLoginTransition,consumeLoginTransition,prepareLoginEntry,revealWorkbenchImmediately} from "/static/assets/login-scene.659131d536e8.js";
 
 const template=`<section class="account-gate" id="accountGate" aria-labelledby="accountGateTitle">
- <div class="account-gate-card"><span class="account-monogram" aria-hidden="true">JT</span><p class="account-eyebrow">YOUR CREATIVE SPACE</p><h1 id="accountGateTitle">欢迎来到 JT 创作台</h1><p class="account-intro">一个激活码，就是你的专属创作账号。</p>
+ <div class="account-gate-card"><span class="account-monogram" aria-hidden="true">JT</span><p class="account-eyebrow">YOUR CREATIVE SPACE</p><h1 id="accountGateTitle">欢迎来到 JT 灵感工作台</h1><p class="account-intro">一个激活码，就是你的专属创作账号。</p>
  <p id="accountGateStatus" role="status" aria-live="polite">正在安全连接…</p><form id="accountCodeLoginForm" class="account-login-form" hidden><label for="accountLoginCode">登录激活码</label><input id="accountLoginCode" name="code" type="password" autocomplete="current-password" autocapitalize="none" spellcheck="false" maxlength="160" required placeholder="输入管理员提供的激活码" aria-describedby="accountLoginHelp accountGateStatus"><button type="submit" class="account-primary" id="accountLogin">进入创作台</button><p id="accountLoginHelp" class="account-help">以后继续使用同一个激活码登录，套餐、历史与收藏都会保留。请妥善保管，不要分享。</p></form><button type="button" class="account-secondary" id="accountRetry" hidden>重新连接</button><button type="button" class="account-admin-login" id="accountAdminLogin" hidden>工作台管理员登录</button></div>
 </section>
 <dialog class="account-dialog" id="accountDialog" aria-labelledby="accountTitle"><div class="account-dialog-head"><div><p class="account-eyebrow">JT ACCOUNT</p><h2 id="accountTitle">我的账号</h2></div><button type="button" class="account-close" id="accountClose" aria-label="关闭账号面板">×</button></div>

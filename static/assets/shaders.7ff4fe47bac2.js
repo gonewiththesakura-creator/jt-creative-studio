@@ -7,7 +7,7 @@ precision highp float;
 varying vec2 vUv;
 uniform vec2 resolution;
 uniform vec3 cameraPositionBH, cameraRight, cameraUp, cameraForward;
-uniform float time, mass, flow, temperature, lensing, flashEnergy, focal, mobile;
+uniform float time, mass, flow, temperature, lensing, flashEnergy, ringPulse, focal, mobile;
 uniform float starMotion;
 uniform vec2 centerOffset;
 #define PI 3.14159265359
@@ -20,10 +20,14 @@ float noise(vec3 x){
 }
 float turbulence(vec3 p){return .55*noise(p)+.28*noise(p*2.03)+.13*noise(p*4.07);}
 vec3 blackbody(float t){
- vec3 amber=vec3(1.,.24,.025);
- vec3 gold=vec3(1.,.62,.19);
- vec3 ivory=vec3(1.,.88,.65);
- return mix(mix(amber,gold,smoothstep(0.,.5,t)),ivory,smoothstep(.4,1.25,t));
+ // Accretion palette: ember outside, amber, then white-hot near the inner edge.
+ vec3 ember=vec3(.9,.2,.03);
+ vec3 amber=vec3(1.,.4,.07);
+ vec3 gold=vec3(1.,.6,.2);
+ vec3 hot=vec3(1.,.86,.66);
+ vec3 c=mix(ember,amber,smoothstep(0.,.45,t));
+ c=mix(c,gold,smoothstep(.4,.85,t));
+ return mix(c,hot,smoothstep(.8,1.35,t));
 }
 vec3 sky(vec3 rd){
  // Stars live on a celestial sphere, therefore warp along deflected rays.
@@ -122,7 +126,8 @@ void main(){
  float critical=2.598076*rs;
  float aa=length(fwidth(screen))*length(cameraPositionBH)/focal;
  float photon=exp(-abs(impact-critical)/max(.022*rs,aa*.85));
- color+=vec3(1.,.54,.19)*photon*.25;
+ // A finished task flashes the photon ring; a running one keeps it a little brighter.
+ color+=vec3(1.,.62,.3)*photon*(.25+.12*flashEnergy+1.6*ringPulse);
  float halo=exp(-abs(impact-critical)*1.8/rs)*.007;
  color+=vec3(1.,.31,.065)*halo;
  // Keep the captured center truly dark; this is not a glowing sphere.

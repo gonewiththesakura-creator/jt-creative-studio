@@ -66,21 +66,21 @@ def gpu(browser,width):
     page.wait_for_function("['ready','fallback'].includes(document.body.dataset.singularity)",timeout=60000)
     assert page.evaluate('document.body.dataset.singularity')=='ready',errors
     counts=page.evaluate('({...gpuCounts,renderers:jtApp.metrics.renderers})')
-    page.locator('#singularityMotion').click()
+    page.locator('#sceneMenuOpen').click();page.locator('#singularityMotion').click()
     for route in ['/realism','/video','/']:
         page.locator(f'body > .app-shell > .topbar a[href="{route}"]').click()
         page.wait_for_function('document.body.dataset.page === '+json.dumps(route))
     assert counts==page.evaluate('({...gpuCounts,renderers:jtApp.metrics.renderers})')
     assert counts['contexts']==counts['renderers']==1,counts
-    # A task in a hidden keep-alive page still pauses the only renderer.
+    # A task in a hidden keep-alive page feeds the only renderer: the disk speeds up instead of pausing.
     page.evaluate("jtApp.router.pages.get('/').shadow.querySelector('#genApiBtn').setAttribute('aria-busy','true')")
     page.wait_for_function('jtApp.metrics.businessBusy===true')
     page.locator('body > .app-shell > .topbar a[href="/video"]').click()
     assert page.evaluate('jtApp.metrics.businessBusy')
-    page.locator('#singularityMotion').click()
-    page.wait_for_timeout(300)
+    page.locator('#sceneMenuOpen').click();page.locator('#singularityMotion').click()
+    page.wait_for_function('jtApp.metrics.energy>.5',timeout=30000)
     sim=page.evaluate('jtApp.metrics.sim');page.wait_for_timeout(400)
-    assert page.evaluate('jtApp.metrics.sim')==sim
+    assert page.evaluate('jtApp.metrics.sim')>sim
     page.evaluate("jtApp.router.pages.get('/').shadow.querySelector('#genApiBtn').removeAttribute('aria-busy')")
     page.wait_for_function('jtApp.metrics.businessBusy===false')
     page.wait_for_timeout(300)

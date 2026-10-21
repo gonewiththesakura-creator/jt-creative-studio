@@ -6,14 +6,14 @@ const fields = [
  ['构图','radius','观察距离',13,40,.1,20],['构图','azimuth','环绕角度',-180,180,1,0],
  ['构图','elevation','俯仰角度',4,65,1,12],['构图','tilt','画面倾斜角度（°）',-180,180,1,0],['构图','zoom','画面缩放',.5,1.8,.01,1],
  ['光场','mass','黑洞质量',.7,1.35,.01,1],['光场','lensing','引力弯曲',.5,1.5,.01,1],
- ['光场','temperature','吸积盘色温',.3,1.6,.01,.95],['光场','exposure','曝光亮度',.2,1.8,.01,.95],
- ['光场','bloom','光晕强度',0,.5,.005,.075],['光场','opacity','背景不透明度',0,1,.01,.9],
+ ['光场','temperature','吸积盘色温',.3,1.6,.01,.62],['光场','exposure','曝光亮度',.2,1.8,.01,.8],
+ ['光场','bloom','光晕强度',0,.5,.005,.1],['光场','opacity','背景不透明度',0,1,.01,.9],
  ['动态','speed','时间速度',0,2,.05,1],['动态','flow','盘面流速',0,2,.05,1],
  ['动态','starMotion','星点漂移与闪烁',0,3,.1,1],
  ['动态','quality','渲染精度',.5,1.5,.1,1],
- ['玻璃','glassOpacity','面板不透明度',.05,1,.01,.78],['玻璃','glassBlur','毛玻璃模糊',0,40,1,20],
- ['玻璃','fieldOpacity','输入区域不透明度',.05,1,.01,.85],['玻璃','chromeOpacity','顶栏不透明度',.05,1,.01,.68],
- ['玻璃','edge','玻璃边缘亮度',0,.6,.01,.16]
+ ['玻璃','glassOpacity','面板不透明度',.05,1,.01,.74],['玻璃','glassBlur','毛玻璃模糊',0,40,1,20],
+ ['玻璃','fieldOpacity','输入区域不透明度',.05,1,.01,.55],['玻璃','chromeOpacity','顶栏不透明度',.05,1,.01,.62],
+ ['玻璃','edge','玻璃边缘亮度',0,.6,.01,.15]
 ];
 const defaults = Object.fromEntries(fields.map(([,key,,,,,value])=>[key,value]));
 function normalize(data) {
@@ -30,11 +30,11 @@ export function readAppearance(){
 }
 export function applyAppearanceStyles(settings){
  const style=document.body.style;
- style.setProperty('--appearance-glass',`rgba(15,16,20,${settings.glassOpacity})`);
- style.setProperty('--appearance-field',`rgba(17,18,22,${settings.fieldOpacity})`);
- style.setProperty('--appearance-chrome',`rgba(6,7,10,${settings.chromeOpacity})`);
+ style.setProperty('--appearance-glass',`rgba(16,12,10,${settings.glassOpacity})`);
+ style.setProperty('--appearance-field',`rgba(10,7,6,${settings.fieldOpacity})`);
+ style.setProperty('--appearance-chrome',`rgba(0,0,0,${settings.chromeOpacity})`);
  style.setProperty('--appearance-blur',settings.glassBlur+'px');
- style.setProperty('--appearance-edge',`rgba(255,230,200,${settings.edge})`);
+ style.setProperty('--appearance-edge',`rgba(255,236,214,${settings.edge})`);
  style.setProperty('--appearance-opacity',settings.opacity);
 }
 

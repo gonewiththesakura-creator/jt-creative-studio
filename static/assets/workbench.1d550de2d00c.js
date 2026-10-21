@@ -7,7 +7,7 @@ document.body.prepend(canvas);
 // Scene settings share one topbar entry; the work entries (favorites, history, account) stay first-level.
 const sceneMenu = document.createElement('div');
 sceneMenu.className = 'scene-menu-anchor';
-sceneMenu.innerHTML = '<button type="button" class="topbar-action scene-menu-toggle" id="sceneMenuOpen" aria-expanded="false" aria-controls="sceneMenu" title="背景光场、沉浸与外观">场景</button>';
+sceneMenu.innerHTML = '<button type="button" class="topbar-action scene-menu-toggle" id="sceneMenuOpen" aria-expanded="false" aria-controls="sceneMenu" title="背景光场、沉浸与外观"><span>场景</span></button>';
 const controls = document.createElement('div');
 controls.className = 'scene-menu';
 controls.id = 'sceneMenu';
@@ -42,17 +42,31 @@ const motion = controls.querySelector('#singularityMotion');
 const focus = controls.querySelector('#singularityFocus');
 const reduced = matchMedia('(prefers-reduced-motion: reduce)');
 let paused = reduced.matches, immersive = false, draw = () => {}, available = false, businessBusy = false;
+// Accretion: a running task feeds the disk instead of freezing it. energy eases
+// toward 1 while any page is busy; pulse flashes the photon ring once a task ends.
+let energy = 0, pulse = 0;
 const pageRoots = new Set([shell]);
-const busySelector='.primary.is-loading, .primary[aria-busy="true"], .task-spin:not(.done):not(.err)';
+// Generating in any page counts: creator buttons, and image-edit / video task cards.
+const busySelector='.primary.is-loading, .primary[aria-busy="true"], .task-spin:not(.done):not(.err), .task-card[data-status="running"], .task-card[data-status="recovering"]';
+function markBusy(root) {
+  const body = root === shell ? document.body : root.querySelector?.('.jt-page-body');
+  body?.classList.toggle('accretion-busy', businessBusy);
+}
 function checkBusy() {
   const busy = [...pageRoots].some(root=>root.querySelector(busySelector));
   if(window.jtApp)window.jtApp.metrics.businessBusy=!!busy;
-  if (busy !== businessBusy) { businessBusy = busy; draw(); }
+  if (busy !== businessBusy) {
+    if (!busy) pulse = 1;
+    businessBusy = busy;
+    pageRoots.forEach(markBusy);
+    draw();
+  }
 }
 function observePage(root) {
   if (!root || typeof root.querySelector !== 'function') return;
   pageRoots.add(root);
-  new MutationObserver(checkBusy).observe(root, {subtree:true, childList:true, attributes:true, attributeFilter:['class','aria-busy']});
+  markBusy(root);
+  new MutationObserver(checkBusy).observe(root, {subtree:true, childList:true, attributes:true, attributeFilter:['class','aria-busy','data-status']});
   checkBusy();
 }
 observePage(shell);
@@ -80,7 +94,7 @@ addEventListener('keydown', e => { if (e.key === 'Escape' && immersive) setImmer
 reduced.addEventListener('change', e => { paused = e.matches; updateMotion(); draw(); });
 updateMotion();
 let appearance, applySceneSettings = () => {};
-const {installAppearance,installPreview} = await import("/static/assets/appearance.60b7d84995d5.js");
+const {installAppearance,installPreview} = await import("/static/assets/appearance.4502ac7e3877.js");
 appearance=installAppearance(controls,values=>applySceneSettings(values));
 installPreview();
 function attachPage(root,scope) { observePage(root);installPreview(scope.document,scope.page?.styleBoot); }
@@ -103,7 +117,7 @@ async function startScene() {
     const [THREE, {EffectComposer}, {RenderPass}, {UnrealBloomPass}, {OutputPass}, shaders] = await Promise.all([
       import("/static/assets/three-module.71e909ad3fc6.js"), import("/static/assets/EffectComposer.88857d0d9347.js"),
       import("/static/assets/RenderPass.5c6b1fa147e5.js"), import("/static/assets/UnrealBloomPass.6b2ef6cf2ccd.js"),
-      import("/static/assets/OutputPass.f59d09171ad0.js"), import("/static/assets/shaders.96809084e5fe.js")
+      import("/static/assets/OutputPass.f59d09171ad0.js"), import("/static/assets/shaders.7ff4fe47bac2.js")
     ]);
     const renderer = new THREE.WebGLRenderer({canvas, antialias:innerWidth>820, powerPreference:'low-power'});
     const gl=renderer.getContext();
@@ -116,7 +130,7 @@ async function startScene() {
       resolution:{value:new THREE.Vector2()}, cameraPositionBH:{value:new THREE.Vector3()},
       cameraRight:{value:new THREE.Vector3()}, cameraUp:{value:new THREE.Vector3()}, cameraForward:{value:new THREE.Vector3()},
       time:{value:0}, mass:{value:1}, flow:{value:1}, temperature:{value:.95}, lensing:{value:1},
-      flashEnergy:{value:0}, starMotion:{value:1}, focal:{value:1.35}, mobile:{value:0}, centerOffset:{value:new THREE.Vector2(.19,.075)}
+      flashEnergy:{value:0}, ringPulse:{value:0}, starMotion:{value:1}, focal:{value:1.35}, mobile:{value:0}, centerOffset:{value:new THREE.Vector2(.19,.075)}
     };
     const quad = new THREE.Mesh(new THREE.PlaneGeometry(2,2), new THREE.ShaderMaterial({
       uniforms, vertexShader:shaders.vertexShader, fragmentShader:shaders.fragmentShader, depthTest:false, depthWrite:false
@@ -159,8 +173,15 @@ async function startScene() {
       if (!available || document.hidden || entryActive) return;
       if (last && now-last < (width<=820?50:33)) { frameId=requestAnimationFrame(render); return; }
       const dt=Math.max(0,(now-(last||now))/1000);last=now;
-      if (!paused && !businessBusy) sim+=dt*settings.speed;
+      const target=businessBusy?1:0;
+      // A paused or reduced-motion scene shows the end state in one still frame.
+      if (paused) { energy=target; pulse=0; }
+      else { energy+=(target-energy)*Math.min(1,dt*1.6); pulse=Math.max(0,pulse-dt*.9); }
+      if (!paused) sim+=dt*settings.speed*(1+2.4*energy);
       uniforms.time.value=sim;
+      uniforms.flashEnergy.value=energy*1.4+pulse*2.2;
+      uniforms.ringPulse.value=pulse;
+      uniforms.temperature.value=settings.temperature*(1+.22*energy+.12*pulse);
       uniforms.centerOffset.value.set(immersive?0:width<=820?settings.mobileX:settings.offsetX,immersive?.01:width<=820?settings.mobileY:settings.offsetY);
       const a=azimuth*Math.PI/180,b=elevation*Math.PI/180;
       uniforms.cameraPositionBH.value.set(Math.sin(a)*Math.cos(b)*radius,Math.sin(b)*radius,Math.cos(a)*Math.cos(b)*radius);
@@ -171,14 +192,15 @@ async function startScene() {
       const before=performance.now();
       try {composer.render();displayUniforms.image.value=composer.readBuffer.texture;display();hasFrame=true;} catch(error) { fallback(error); return; }
       if (!available) return;
-      if(window.jtApp){window.jtApp.metrics.frames=(window.jtApp.metrics.frames||0)+1;window.jtApp.metrics.sim=sim;window.jtApp.metrics.pixelBudget=budget;}
+      if(window.jtApp){window.jtApp.metrics.frames=(window.jtApp.metrics.frames||0)+1;window.jtApp.metrics.sim=sim;window.jtApp.metrics.energy=energy;window.jtApp.metrics.pixelBudget=budget;}
       // GPU commands are asynchronous: CPU submission time alone misses a slow
       // compositor. Also observe consecutive active frame intervals.
-      if (performance.now()-before>60 || (!paused&&!businessBusy&&dt>.1)) slowFrames++; else slowFrames=Math.max(0,slowFrames-1);
+      if (performance.now()-before>60 || (!paused&&dt>.1)) slowFrames++; else slowFrames=Math.max(0,slowFrames-1);
       if (slowFrames>8 && budget>300000) { budget=Math.max(300000,budget*.6);slowFrames=0;resize(); }
       document.body.dataset.singularity='ready';
       if(window.jtApp&&!window.jtApp.metrics.firstFrame)window.jtApp.metrics.firstFrame=performance.now();
-      if (!paused && !businessBusy && settings.speed>0 && settings.opacity>0 && !frameId){
+      const settling=Math.abs(target-energy)>.005||pulse>0;
+      if (!paused && (settings.speed>0||settling) && settings.opacity>0 && !frameId){
         // Keep at most one expensive frame in flight. A slow GPU must not build
         // up a backlog that later blocks input or the login transition.
         pendingFrame=gl.fenceSync?.(gl.SYNC_GPU_COMMANDS_COMPLETE,0);gl.flush();

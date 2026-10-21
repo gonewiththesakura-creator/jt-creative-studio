@@ -19,8 +19,9 @@ def test_details_hover_scroll_history_and_pending_favorite(browser):
         expect(page.locator('#galleryJobHint')).to_be_hidden()
         hint=page.locator('#galleryJobHint');expect(hint).to_be_visible()
         hint.hover();page.wait_for_timeout(400);expect(hint).to_be_visible()
+        # mouse.wheel returns before the compositor applies the scroll; wait for it.
         page.mouse.wheel(0,600)
-        assert hint.evaluate('(e)=>e.scrollTop')>0
+        page.wait_for_function("document.querySelector('.page-host:not([hidden])').shadowRoot.getElementById('galleryJobHint').scrollTop>0",timeout=3000)
         page.locator('#galleryMain .gallery-actions button').click()
         expect(page.locator('#galleryMain .gallery-actions button')).to_have_text('已加入收藏 · 后台保存中')
         page.locator('#favOpen').first.click();expect(page.locator('#favList')).to_contain_text('后台保存中')

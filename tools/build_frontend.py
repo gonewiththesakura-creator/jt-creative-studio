@@ -46,6 +46,14 @@ def scoped_css(css):
     return re.sub(r'(?<![\w-])html(?![\w-])|:root', ':host', css)
 
 
+def page_theme(theme):
+    # Pages live in ShadowRoots: the shell's topbar, scene menu, canvas and
+    # appearance console are out of their reach, and the icon variables are
+    # inherited from the shell body. Their copy drops that block and comments.
+    theme = re.sub(r'/\* shell-only:start \*/.*?/\* shell-only:end \*/\n?', '', theme, flags=re.S)
+    return re.sub(r'/\*.*?\*/', '', theme, flags=re.S)
+
+
 def build():
     USED.clear()
     OUT.mkdir(parents=True, exist_ok=True)
@@ -98,7 +106,7 @@ def build():
         manifest['pages'][route] = {
             'module': asset(name, compiled, 'js'),
             'markup': asset(name, body, 'html'),
-            'css': asset(name, scoped_css(css + '\n' + theme) + '\n' + (FRONT/'styles/page.css').read_text(encoding='utf8'), 'css'),
+            'css': asset(name, scoped_css(css + '\n' + page_theme(theme)) + '\n' + (FRONT/'styles/page.css').read_text(encoding='utf8'), 'css'),
             'title': title,
         }
     shell = (FRONT / 'index.html').read_text(encoding='utf8').replace('__APP_CSS__', styles).replace('__APP_MAIN__', manifest['main']).replace('__APP_MANIFEST__', json.dumps(manifest,ensure_ascii=False).replace('<','\\u003c'))

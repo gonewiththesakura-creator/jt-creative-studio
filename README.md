@@ -1,8 +1,10 @@
 # JT 灵感工作台
 
-## 当前状态（2026-10-20）
+## 当前状态（2026-10-22）
 
 - 开发分支：`fix/dreamapi-internal-service`，尚未配置远程上游。各提交是否已上线，以发布记录和线上核对为准。
+- 界面分支（未合并、未部署）：`ui/mobile-sticky-generate`（`7cf531c`，手机生成按钮吸底、顶栏收成 4 个入口）之上的
+  `ui/accretion-theme`（吸积主题、任务进行时黑洞加速）。说明见 [accretion-theme](docs/accretion-theme-20261022.md)。
 - 线上入口：`https://studio.dreamapi.club/`，登录域名 `auth.dreamapi.club`。会员、激活码与运维说明见 [membership-operations](docs/membership-operations.md)。
 - 测试门：`run_release_tests()`（`tools/deploy_realism_release.py`）在本地已恢复为绿色。真实回归和待决定事项见 [test-gate-triage](docs/test-gate-triage-20261019.md)。
 - 发布：正式发布器和全部按功能发布脚本，都按 `server.py` 的 import 关系推导要发布的 Python 模块；会重启面板的脚本默认只读，`--execute` 时先跑完整测试门。说明见 [release-scripts-full-gate](docs/release-scripts-full-gate-20261020.md)。
