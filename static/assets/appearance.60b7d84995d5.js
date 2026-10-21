@@ -58,7 +58,8 @@ export function installAppearance(controls, onChange) {
   onChange({...settings});
  }
  function sync(){for(const [key,list] of inputs)for(const input of list)input.value=settings[key];apply();}
- function close(){panel.hidden=true;button.setAttribute('aria-expanded','false');button.focus();}
+ // Inside a closed scene menu the entry is hidden, so focus returns to that menu's toggle.
+ function close(){panel.hidden=true;button.setAttribute('aria-expanded','false');(controls.hidden&&document.querySelector(`[aria-controls="${controls.id}"]`)||button).focus();}
  button.onclick=()=>{panel.hidden=!panel.hidden;button.setAttribute('aria-expanded',String(!panel.hidden));if(!panel.hidden){panel.scrollTop=0;panel.querySelector('header button').focus();}};
  panel.querySelector('header button').onclick=close;
  document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!panel.hidden){e.stopImmediatePropagation();close();}},true);

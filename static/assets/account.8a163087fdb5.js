@@ -1,7 +1,7 @@
 import {accountFetch,configureAccountRequests} from "/static/assets/api.1e898baa005a.js";
 import {setStorageAccount} from "/static/assets/account-storage.0c5081b9ad66.js";
-import {initializeMembershipAdmin} from "/static/assets/membership-admin.fa3bce75105e.js";
-import {showLoginScene,markLoginTransition,consumeLoginTransition,prepareLoginEntry,revealWorkbenchImmediately} from "/static/assets/login-scene.e6464d51d36a.js";
+import {initializeMembershipAdmin} from "/static/assets/membership-admin.abf0e0dba296.js";
+import {showLoginScene,markLoginTransition,consumeLoginTransition,prepareLoginEntry,revealWorkbenchImmediately} from "/static/assets/login-scene.cff13271858e.js";
 
 const template=`<section class="account-gate" id="accountGate" aria-labelledby="accountGateTitle">
  <div class="account-gate-card"><span class="account-monogram" aria-hidden="true">JT</span><p class="account-eyebrow">YOUR CREATIVE SPACE</p><h1 id="accountGateTitle">欢迎来到 JT 创作台</h1><p class="account-intro">一个激活码，就是你的专属创作账号。</p>

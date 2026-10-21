@@ -189,6 +189,61 @@ def test_direct_route_refresh_and_scene_failure(browser,path):
     finally:page.close()
 
 
+@pytest.mark.parametrize('path',['/','/realism','/video'])
+def test_phone_generate_dock_stays_reachable_without_covering_the_form(browser,path):
+    page=browser.new_page(viewport={'width':390,'height':844},reduced_motion='reduce')
+    requests=serve_page(page)
+    try:
+        page.goto('http://fixture.test'+path)
+        expect(current(page).locator('.creation-footer')).to_be_visible()
+        # A form several screens long: a static footer would start far below the first screen.
+        current(page).evaluate("host=>host.shadowRoot.querySelector('.creation-scroll').insertAdjacentHTML('beforeend','<div id=\"dockFixture\" style=\"height:2400px\"></div>')")
+        dock=current(page).evaluate('''host=>{const footer=host.shadowRoot.querySelector('.creation-footer'),style=getComputedStyle(footer);
+            const generate=[...footer.querySelectorAll('button.primary')].find(button=>button.offsetParent).getBoundingClientRect();
+            return {position:style.position,background:style.backgroundColor,top:generate.top,bottom:generate.bottom,footerBottom:footer.getBoundingClientRect().bottom}}''')
+        assert dock['position']=='sticky' and dock['top']>=0 and dock['bottom']<=844 and dock['footerBottom']<=845, dock
+        assert dock['background'].startswith('rgb('), dock
+        # At the end of the pane the dock is back in flow, below the last control.
+        end=current(page).evaluate('''host=>{const root=host.shadowRoot,pane=root.querySelector('.creation-pane');
+            scrollTo(0,scrollY+pane.getBoundingClientRect().bottom-innerHeight);
+            return {fixture:root.querySelector('#dockFixture').getBoundingClientRect().bottom,footer:root.querySelector('.creation-footer').getBoundingClientRect().top}}''')
+        assert end['fixture']<=end['footer']+1, end
+        assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
+        assert not [r for r in requests if r[0]!='GET']
+    finally:page.close()
+
+
+def test_scene_controls_share_one_topbar_menu(browser):
+    page=browser.new_page(viewport={'width':1440,'height':900},reduced_motion='reduce')
+    serve_page(page)
+    try:
+        page.goto('http://fixture.test/')
+        toggle=page.locator('#sceneMenuOpen')
+        expect(toggle).to_be_visible()
+        visible=page.locator('body > .app-shell > .topbar .topbar-tools').evaluate("el=>[...el.querySelectorAll('button')].filter(b=>b.offsetParent).map(b=>b.id)")
+        assert visible==['favOpen','histOpen','sceneMenuOpen'], visible
+        items=['#singularityMotion','#singularityFocus','#appearanceOpen']
+        for item in items:expect(page.locator(item)).to_be_hidden()
+        toggle.click()
+        expect(toggle).to_have_attribute('aria-expanded','true')
+        for item in items:expect(page.locator('#sceneMenu '+item)).to_be_visible()
+        page.keyboard.press('Escape')
+        expect(page.locator('#sceneMenu')).to_be_hidden()
+        expect(toggle).to_have_attribute('aria-expanded','false')
+        expect(toggle).to_be_focused()
+        toggle.click()
+        page.locator('#appearanceOpen').click()
+        expect(page.locator('#appearancePanel')).to_be_visible()
+        expect(page.locator('#sceneMenu')).to_be_hidden()
+        page.keyboard.press('Escape')
+        expect(page.locator('#appearancePanel')).to_be_hidden()
+        expect(toggle).to_be_focused()
+        toggle.click()
+        page.locator('body > .app-shell > .topbar .brand').click()
+        expect(page.locator('#sceneMenu')).to_be_hidden()
+    finally:page.close()
+
+
 def test_creator_loads_only_selected_style_then_switches(browser):
     page=browser.new_page();requests=serve_page(page,block_scene=True)
     try:
@@ -261,6 +316,7 @@ def test_scoped_api_settings_and_shared_appearance(browser):
         current(page).locator('#apiModel').select_option('gpt-image-2')
         page.keyboard.press('Escape')
         expect(current(page).locator('#apiDrawer')).to_be_hidden()
+        page.locator('#sceneMenuOpen').click()
         expect(page.locator('#appearanceOpen')).to_be_visible()
         page.locator('#appearanceOpen').click()
         page.locator('input[type=number][data-appearance=glassBlur]').fill('7')

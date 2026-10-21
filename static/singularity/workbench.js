@@ -4,10 +4,35 @@ const canvas = document.createElement('canvas');
 canvas.id = 'singularityCanvas';
 canvas.setAttribute('aria-hidden', 'true');
 document.body.prepend(canvas);
+// Scene settings share one topbar entry; the work entries (favorites, history, account) stay first-level.
+const sceneMenu = document.createElement('div');
+sceneMenu.className = 'scene-menu-anchor';
+sceneMenu.innerHTML = '<button type="button" class="topbar-action scene-menu-toggle" id="sceneMenuOpen" aria-expanded="false" aria-controls="sceneMenu" title="背景光场、沉浸与外观">场景</button>';
 const controls = document.createElement('div');
-controls.className = 'singularity-controls';
+controls.className = 'scene-menu';
+controls.id = 'sceneMenu';
+controls.hidden = true;
 controls.innerHTML = '<button type="button" class="topbar-action" id="singularityMotion" aria-pressed="false" title="暂停或继续黑洞背景动画">暂停光场</button><button type="button" class="topbar-action" id="singularityFocus" title="进入黑洞场景，可拖动旋转、滚轮缩放">沉浸</button>';
-document.querySelector('.topbar-tools')?.prepend(controls);
+sceneMenu.append(controls);
+const tools = document.querySelector('.topbar-tools');
+const historyEntry = tools?.querySelector('#histOpen');
+if (historyEntry) historyEntry.after(sceneMenu); else tools?.prepend(sceneMenu);
+const sceneToggle = sceneMenu.querySelector('#sceneMenuOpen');
+function setSceneMenu(open, restoreFocus = false) {
+  controls.hidden = !open;
+  sceneToggle.setAttribute('aria-expanded', String(open));
+  if (open) controls.querySelector('button:not(:disabled)')?.focus();
+  else if (restoreFocus) sceneToggle.focus();
+}
+sceneToggle.onclick = () => setSceneMenu(controls.hidden);
+// Items keep their own handlers. The menu closes after an action, except the motion toggle, whose new label stays visible.
+controls.addEventListener('click', e => {
+  const item = e.target.closest('button');
+  if (item && item.id !== 'singularityMotion') setSceneMenu(false, document.activeElement === item);
+});
+sceneMenu.addEventListener('focusout', e => { if (!controls.hidden && e.relatedTarget && !sceneMenu.contains(e.relatedTarget)) setSceneMenu(false); });
+document.addEventListener('pointerdown', e => { if (!controls.hidden && !sceneMenu.contains(e.target)) setSceneMenu(false); });
+addEventListener('keydown', e => { if (e.key === 'Escape' && !controls.hidden) setSceneMenu(false, true); });
 const exit = document.createElement('button');
 exit.type = 'button';
 exit.className = 'singularity-exit';
@@ -46,7 +71,7 @@ function setImmersive(value) {
   document.body.classList.toggle('scene-focus', value);
   shell.inert = value;
   canvas.setAttribute('aria-hidden', String(!value));
-  (value ? exit : focus).focus();
+  (value ? exit : sceneToggle).focus();
   draw();
 }
 focus.onclick = () => setImmersive(true);

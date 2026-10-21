@@ -3,7 +3,7 @@ import pytest
 from playwright.sync_api import expect
 
 from test_app_shell import browser, serve_page
-from test_membership_browser import account, strict_csp_shell
+from test_membership_browser import account, open_admin, strict_csp_shell
 
 
 LOGIN_CODE = 'JT-TEST-LOGIN-AAAAAAAA-BBBBBBBB-CCCCCCCC'
@@ -182,7 +182,7 @@ def test_admin_issues_distinct_login_and_renewal_codes_and_revokes_used_login(br
     page.route('**/api/admin/membership/access-codes/revoke', revoke)
     try:
         page.goto('http://fixture.test/video')
-        page.locator('#membershipAdminOpen').click()
+        open_admin(page)
         page.locator('[data-admin-tab=codes]').click()
         expect(page.locator('#adminCodesRows')).to_contain_text('使用中')
         expect(page.locator('#adminCodesRows')).to_contain_text('<img src=x onerror=alert(1)>')
@@ -222,7 +222,7 @@ def test_admin_rotates_existing_account_only_after_confirmation_and_clears_secre
     page.route('**/api/admin/membership/users/rotate-code', rotate)
     try:
         page.goto('http://fixture.test/video')
-        page.locator('#membershipAdminOpen').click()
+        open_admin(page)
         page.locator('[data-admin-tab=users]').click()
         button = page.locator('#adminUsersRows').get_by_role('button', name='更换登录码')
         expect(button).to_be_visible()

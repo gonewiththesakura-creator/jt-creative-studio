@@ -17,6 +17,12 @@ def account(user_id='alice', admin=False):
                            'image_available': 98, 'video_available': 9}}
 
 
+def open_admin(page):
+    """The admin entry sits in the account dialog; the topbar keeps one account entry."""
+    page.locator('#accountOpen').click()
+    page.locator('#accountDialog #membershipAdminOpen').click()
+
+
 def strict_csp_shell(page):
     page.route('http://fixture.test/video', lambda route: route.fulfill(
         body=(ROOT/'static/app.html').read_bytes(), content_type='text/html', headers={
@@ -138,7 +144,7 @@ def test_identity_refresh_expiry_closes_open_admin_dialog(browser):
     page.route('**/api/admin/membership/plans', lambda route: route.fulfill(json={'plans': []}))
     try:
         page.goto('http://fixture.test/video')
-        page.locator('#membershipAdminOpen').click()
+        open_admin(page)
         expect(page.locator('#membershipAdmin')).to_be_visible()
         identity['authenticated'] = False
         page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
@@ -216,7 +222,7 @@ def test_admin_plan_and_activation_code_flow(browser, tmp_path):
     page.route('**/api/admin/membership/access-codes*', code_route)
     try:
         page.goto('http://fixture.test/video')
-        page.locator('#membershipAdminOpen').click()
+        open_admin(page)
         form = page.locator('#adminPlanForm')
         form.locator('[name=name]').fill('创作月卡')
         form.locator('[name=price_display]').fill('99 元 / 月')
@@ -267,7 +273,7 @@ def test_admin_reservation_settlement_requires_note_and_confirmation(browser, su
     page.route('**/api/admin/membership/reservations/settle', settle)
     try:
         page.goto('http://fixture.test/video')
-        page.locator('#membershipAdminOpen').click()
+        open_admin(page)
         expect(page.locator('#membershipAdminStatus')).to_have_text('')
         page.locator('[data-admin-tab=reservations]').click()
         row = page.locator('[data-reservation=uncertain]')

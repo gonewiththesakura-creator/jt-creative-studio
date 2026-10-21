@@ -8,6 +8,7 @@ from playwright.sync_api import expect
 
 from test_app_shell import browser, serve_page
 from test_access_code_browser import identity
+from test_membership_browser import open_admin
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -131,7 +132,8 @@ def test_admin_code_login_needs_verification_before_management(browser):
     page.route('**/api/auth/login?*', lambda route: route.fulfill(body='offline identity verification'))
     try:
         page.goto('http://fixture.test/video')
-        # a28b141: the admin entry stays visible; verification happens inside the dialog.
+        # a28b141: the admin entry stays available (now inside the account dialog); verification happens inside the admin dialog.
+        page.locator('#accountOpen').click()
         expect(page.locator('#membershipAdminOpen')).to_be_visible()
         page.locator('#membershipAdminOpen').click()
         expect(page.locator('#membershipAdminVerify')).to_be_visible()
@@ -152,7 +154,7 @@ def test_admin_verification_expiry_clears_issued_secrets(browser):
     page.route('**/api/admin/membership/users?*', lambda route: route.fulfill(status=403, json={'code': 'admin_verification_required', 'error': '管理操作需要重新验证管理员身份'}))
     try:
         page.goto('http://fixture.test/video')
-        page.locator('#membershipAdminOpen').click()
+        open_admin(page)
         expect(page.locator('#membershipAdminStatus')).to_have_text('')
         page.locator('#adminIssuedCodes').evaluate("el=>el.value='offline-newly-issued-code'")
         page.locator('[data-admin-tab=users]').click()

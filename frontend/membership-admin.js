@@ -1,7 +1,7 @@
 import {accountFetch} from './api.js';
 
 export function initializeMembershipAdmin({verify}={}){
- const trigger=document.createElement('button');trigger.type='button';trigger.id='membershipAdminOpen';trigger.className='topbar-action';trigger.textContent='管理后台';document.querySelector('.topbar-tools').append(trigger);
+ const trigger=document.createElement('button');trigger.type='button';trigger.id='membershipAdminOpen';trigger.className='account-secondary account-admin-entry';trigger.textContent='管理后台';document.querySelector('#accountDialog .account-dialog-footer').prepend(trigger);
  const dialog=document.createElement('dialog');dialog.className='account-dialog membership-admin';dialog.id='membershipAdmin';dialog.setAttribute('aria-labelledby','membershipAdminTitle');
  dialog.innerHTML=`<div class="account-dialog-head"><div><p class="account-eyebrow">JT ADMIN</p><h2 id="membershipAdminTitle">用户与套餐管理</h2></div><button type="button" class="account-close" id="membershipAdminClose" aria-label="关闭管理后台">×</button></div>
  <p id="membershipAdminStatus" role="status" aria-live="polite"></p><section id="membershipAdminVerification" class="admin-verification"><h3>验证工作台管理员身份</h3><p>请使用工作台管理员账号 <strong>owner</strong> 登录，验证后可管理套餐、激活码和用户。</p><p class="account-help">验证有效期为 15 分钟。验证完成后会回到当前管理页签。</p><button type="button" id="membershipAdminVerify" class="account-primary">验证并进入管理后台</button></section><div id="membershipAdminContent" hidden inert><nav class="admin-tabs" aria-label="管理功能"><button type="button" data-admin-tab="plans" aria-pressed="true">套餐设置</button><button type="button" data-admin-tab="codes" aria-pressed="false">登录激活码</button><button type="button" data-admin-tab="renewals" aria-pressed="false">续费码</button><button type="button" data-admin-tab="users" aria-pressed="false">用户</button><button type="button" data-admin-tab="reservations" aria-pressed="false">额度核对</button></nav>
@@ -58,7 +58,7 @@ export function initializeMembershipAdmin({verify}={}){
  async function loadTab(){await loadPlans();if(tab==='codes'||tab==='renewals')await loadCodes();if(tab==='users')await loadUsers();if(tab==='reservations')await loadReservations()}
  function selectTab(selected){tab=tabs.has(selected)?selected:'plans';dialog.querySelectorAll('[data-admin-tab]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.adminTab===tab)));dialog.querySelectorAll('[data-admin-panel]').forEach(panel=>panel.hidden=panel.dataset.adminPanel!==(tab==='renewals'?'codes':tab))}
  function open(selected=tab){if(!isAdmin)return;if(!allowed())setVerification(true,0,true);if(!dialog.open){invalidate();dialog.showModal()}selectTab(selected);if(allowed())action(async()=>{await loadTab();status.textContent=''})}
- trigger.onclick=()=>open();el('membershipAdminClose').onclick=()=>{invalidate();dialog.close()};
+ trigger.onclick=()=>{trigger.closest('dialog')?.close();open()};el('membershipAdminClose').onclick=()=>{invalidate();dialog.close()};
  dialog.addEventListener('cancel',invalidate);dialog.addEventListener('close',invalidate);
  window.addEventListener('jt:auth-expired',()=>setVerification(true,0,false));
  dialog.querySelectorAll('[data-admin-tab]').forEach(button=>button.onclick=()=>{if(busy||!allowed())return;selectTab(button.dataset.adminTab);action(async()=>{await loadTab();status.textContent=''})});

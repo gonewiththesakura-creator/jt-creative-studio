@@ -3,7 +3,7 @@ import pytest
 from playwright.sync_api import expect
 
 from test_app_shell import browser, serve_page
-from test_membership_browser import account
+from test_membership_browser import account, open_admin
 
 
 @pytest.mark.parametrize('width', [320, 390, 1440])
@@ -31,7 +31,7 @@ def test_admin_video_queue_limit_round_trip_defaults_and_validation(browser, tmp
     page.route('**/api/admin/membership/plans', plan_route)
     try:
         page.goto('http://fixture.test/video')
-        page.locator('#membershipAdminOpen').click()
+        open_admin(page)
         expect(page.locator('#membershipAdminStatus')).to_have_text('')
         form = page.locator('#adminPlanForm')
         queue = form.get_by_label('视频排队数', exact=True)
@@ -90,7 +90,7 @@ def test_admin_video_queue_limit_round_trip_defaults_and_validation(browser, tmp
             expect(queue).to_have_value(str(limit))
 
         page.reload()
-        page.locator('#membershipAdminOpen').click()
+        open_admin(page)
         expect(page.locator('#membershipAdminStatus')).to_have_text('')
         selector.select_option('new-plan')
         expect(queue).to_have_value('3')

@@ -6,7 +6,7 @@ import pytest
 from playwright.sync_api import expect
 
 from test_app_shell import browser, serve_page
-from test_membership_browser import account
+from test_membership_browser import account, open_admin
 
 
 ADMIN_TABS = ('plans', 'codes', 'renewals', 'users', 'reservations')
@@ -77,7 +77,7 @@ def test_expired_admin_keeps_entry_without_loading_management_data(browser):
         expect(page.locator('#membershipAdminOpen')).to_have_text('管理后台')
         expect(page.locator('#accountOpen')).to_have_text('我的账号')
         assert page.locator('.topbar-tools #membershipAdminVerify').count() == 0
-        page.locator('#membershipAdminOpen').click()
+        open_admin(page)
         expect(page.locator('#membershipAdmin')).to_be_visible()
         expect(page.locator('#membershipAdminVerification')).to_be_visible()
         expect(page.locator('#membershipAdminVerification')).to_contain_text('owner')
@@ -86,7 +86,7 @@ def test_expired_admin_keeps_entry_without_loading_management_data(browser):
         assert page.locator('#membershipAdminContent').evaluate('el => el.inert')
         assert calls == []
         page.locator('#membershipAdminClose').click()
-        page.locator('#membershipAdminOpen').click()
+        open_admin(page)
         expect(page.locator('#membershipAdminVerification')).to_be_visible()
         assert calls == []
     finally:
@@ -113,17 +113,19 @@ def test_admin_verification_returns_to_same_tab_and_consumes_query(browser, tab)
     page.route('**/api/auth/login?*', verify_and_return)
     try:
         page.goto('http://fixture.test/video?keep=fixture')
-        page.locator('#membershipAdminOpen').click()
+        open_admin(page)
         expect_tab(page, 'plans')
         if tab != 'plans':
             page.locator(f'[data-admin-tab="{tab}"]').click()
             expect_tab(page, tab)
         calls_before_expiry = list(calls)
         page.evaluate("window.dispatchEvent(new CustomEvent('jt:admin-verification-required'))")
+        # The account dialog refreshes /api/auth/me, which now reports the expiry too.
+        identity['data'] = admin_account(required=True)
         expect(page.locator('#membershipAdminVerification')).to_be_visible()
         expect(page.locator('#membershipAdminContent')).to_be_hidden()
         page.locator('#membershipAdminClose').click()
-        page.locator('#membershipAdminOpen').click()
+        open_admin(page)
         assert calls == calls_before_expiry
         page.locator('#membershipAdminVerify').click()
         page.locator('#offlineIdentityReturn').click()
@@ -178,7 +180,8 @@ def test_member_cannot_open_admin_by_query(browser, tab):
 
 def test_admin_api_403_clears_issued_code_and_stops_management_requests(browser):
     page = browser.new_page()
-    calls = serve_admin(page, {'data': admin_account()})
+    identity = {'data': admin_account()}
+    calls = serve_admin(page, identity)
 
     def issue_code(route):
         if route.request.method == 'POST':
@@ -187,11 +190,15 @@ def test_admin_api_403_clears_issued_code_and_stops_management_requests(browser)
             route.fulfill(json={'codes': []})
 
     page.route('**/api/admin/membership/access-codes*', issue_code)
-    page.route('**/api/admin/membership/users?*', lambda route: route.fulfill(
-        status=403, json={'code': 'admin_verification_required', 'error': '请重新验证管理员身份'}))
+    def verification_expired(route):
+        # The account dialog refreshes /api/auth/me, which reports the same expiry.
+        identity['data'] = admin_account(required=True)
+        route.fulfill(status=403, json={'code': 'admin_verification_required', 'error': '请重新验证管理员身份'})
+
+    page.route('**/api/admin/membership/users?*', verification_expired)
     try:
         page.goto('http://fixture.test/video')
-        page.locator('#membershipAdminOpen').click()
+        open_admin(page)
         expect_tab(page, 'plans')
         page.locator('[data-admin-tab=codes]').click()
         expect_tab(page, 'codes')
@@ -201,11 +208,11 @@ def test_admin_api_403_clears_issued_code_and_stops_management_requests(browser)
         page.locator('[data-admin-tab=users]').click()
         expect(page.locator('#membershipAdminVerification')).to_be_visible()
         expect(page.locator('#membershipAdminContent')).to_be_hidden()
-        expect(page.locator('#membershipAdminOpen')).to_be_visible()
+        assert page.locator('#membershipAdminOpen').evaluate('el => !el.hidden')
         assert_no_plaintext_code(page)
         count = len(calls)
         page.locator('#membershipAdminClose').click()
-        page.locator('#membershipAdminOpen').click()
+        open_admin(page)
         expect(page.locator('#membershipAdminVerification')).to_be_visible()
         assert len(calls) == count
         assert_no_plaintext_code(page)
@@ -228,7 +235,7 @@ def test_late_issued_code_cannot_reappear_after_boundary(browser, boundary):
     page.route('**/api/admin/membership/access-codes*', issue_code)
     try:
         page.goto('http://fixture.test/video')
-        page.locator('#membershipAdminOpen').click()
+        open_admin(page)
         expect_tab(page, 'plans')
         page.locator('[data-admin-tab=codes]').click()
         expect_tab(page, 'codes')
@@ -243,7 +250,7 @@ def test_late_issued_code_cannot_reappear_after_boundary(browser, boundary):
         else:
             page.locator('#membershipAdminClose').click()
             expect(page.locator('#membershipAdmin')).to_be_hidden()
-            page.locator('#membershipAdminOpen').click()
+            open_admin(page)
             expect_tab(page, 'codes')
         with page.expect_response(lambda response: response.request.method == 'POST'
                                   and response.url.endswith('/api/admin/membership/access-codes')) as completed:
@@ -270,9 +277,12 @@ def test_mobile_admin_tabs_remain_usable_without_horizontal_overflow(browser, wi
     serve_admin(page, {'data': admin_account()})
     try:
         page.goto('http://fixture.test/video')
-        expect(page.locator('#membershipAdminOpen')).to_be_in_viewport()
         expect(page.locator('#accountOpen')).to_be_in_viewport()
-        page.locator('#membershipAdminOpen').click()
+        assert page.locator('.topbar-tools #membershipAdminOpen').count() == 0
+        page.locator('#accountOpen').click()
+        expect(page.locator('#accountDialog #membershipAdminOpen')).to_be_in_viewport()
+        page.locator('#accountDialog #membershipAdminOpen').click()
+        expect(page.locator('#accountDialog')).to_be_hidden()
         expect_tab(page, 'plans')
         for tab in ADMIN_TABS:
             button = page.locator(f'[data-admin-tab="{tab}"]')

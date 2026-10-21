@@ -1,4 +1,4 @@
-import {readAppearance,applyAppearanceStyles} from "/static/assets/appearance.6cffb92f339e.js";
+import {readAppearance,applyAppearanceStyles} from "/static/assets/appearance.60b7d84995d5.js";
 
 // This marker controls presentation only. It contains no identity or credential.
 const ENTRY_KEY='jt-login-transition';
