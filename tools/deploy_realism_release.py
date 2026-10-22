@@ -604,7 +604,8 @@ def _h3_submission_sends_complete_graph(tree, submit):
         if (isinstance(node, ast.Call) and ast.unparse(node.func) == "builders.get" and len(node.args) == 2
                 and ast.unparse(node.args[1]) == "rh_build_h3_graph"):
             default_builder = True
-    routed = False
+    # Both halves are required: h3_edit_n sets multi, and multi dispatches to rh_submit_h3_multi.
+    assigned = dispatched = False
     for function in tree.body:
         if isinstance(function, ast.FunctionDef) and function.name == "rh_run_video":
             for node in ast.walk(function):
@@ -613,11 +614,11 @@ def _h3_submission_sends_complete_graph(tree, submit):
                         and any(isinstance(item, ast.Constant) and item.value == "h3_edit_n"
                                 for comparator in node.value.comparators if isinstance(comparator, ast.Tuple)
                                 for item in comparator.elts)):
-                    routed = True
+                    assigned = True
                 if (isinstance(node, ast.IfExp) and ast.unparse(node.test) == "multi"
                         and isinstance(node.body, ast.Call) and ast.unparse(node.body.func) == "rh_submit_h3_multi"):
-                    routed = routed and True
-    return payload and default_builder and routed
+                    dispatched = True
+    return payload and default_builder and assigned and dispatched
 
 
 def _h3_graph_errors(graph, job, workflow, template, images, slots, models, base_model, consumers):

@@ -595,8 +595,13 @@ def test_h3_server_graph_contract_rejects_builder_tampering(old, new, error):
     assert error in repinned and "h3 server graph builder drift" not in repinned
 
 
-def test_h3_server_graph_contract_requires_the_server_graph_route():
-    source = tampered_server("multi = w.get('id') in ('h3_edit_n', ", "multi = w.get('id') in (")
+@pytest.mark.parametrize("old,new", [
+    ("multi = w.get('id') in ('h3_edit_n', ", "multi = w.get('id') in ("),
+    ("task_id = rh_submit_h3_multi(job,w) if multi else rh_submit(wfid, node_list)",
+     "task_id = rh_submit(wfid, node_list)"),
+], ids=["not-multi", "no-dispatch"])
+def test_h3_server_graph_contract_requires_the_server_graph_route(old, new):
+    source = tampered_server(old, new)
     assert "h3 submission no longer sends the complete server graph" in MODULE.validate_h3_server_graph_contract(
         h3_workflow(), server_source=source)
 
