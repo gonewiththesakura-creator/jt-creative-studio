@@ -13,7 +13,9 @@ ROUTES="['/','/realism','/video']"
 # re-login fix and the 图片编辑 nav label. Users reach "/" through the App Shell, budgeted separately below.
 CREATOR_BUDGET=452_000
 # What "/" actually downloads for the creator route (module, markup, css), gzip as served. 29,728 on 2026-10-20.
-SHELL_CREATOR_GZIP_BUDGET=32_000
+# 2026-10-22: the accretion command dock (frontend/styles/accretion.css) replaces the two-column layout in shell
+# pages; with legacy-only theme rules dropped and comments stripped the route measures 33,532. Budget 32,000 -> 34,000.
+SHELL_CREATOR_GZIP_BUDGET=34_000
 MANIFEST=json.loads((ROOT/"static"/"app-manifest.json").read_text(encoding="utf8"))
 SHELL_CREATOR_GZIP=sum(len(gzip.compress((ROOT/path.lstrip('/')).read_bytes().replace(b'\r\n',b'\n'),6,mtime=0))
                        for path in MANIFEST['pages']['/'].values() if path.startswith('/static/'))

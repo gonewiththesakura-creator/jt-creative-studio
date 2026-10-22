@@ -1,4 +1,5 @@
 import './retired-upload-storage.js';
+import './accretion-layout.js';
 import {createRouter} from './router.js';
 import {initializeAccount} from './account.js';
 import {initializeLoginScene,revealWorkbenchFromLogin} from './login-scene.js';

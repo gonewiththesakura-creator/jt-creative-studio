@@ -1,4 +1,5 @@
 import "/static/assets/retired-upload-storage.04c0ee0da954.js";
+import "/static/assets/accretion-layout.5484af2cb822.js";
 import {createRouter} from "/static/assets/router.9d20830207ba.js";
 import {initializeAccount} from "/static/assets/account.4f779c82a332.js";
 import {initializeLoginScene,revealWorkbenchFromLogin} from "/static/assets/login-scene.659131d536e8.js";

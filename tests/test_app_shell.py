@@ -153,6 +153,7 @@ def test_keep_alive_navigation_and_back_forward(browser,width):
         expect(current(page).locator('#genApiBtn')).to_be_enabled()
         current(page).locator('input[name=promptModeRadio][value=manual]').check()
         current(page).locator('#manualPositive').fill('状态保留测试')
+        current(page).locator('.acc-chip[data-group=params]').click()
         current(page).locator('#genSeed').fill('123456')
         page.locator('body > .app-shell > .topbar a[href="/realism"]').click()
         expect(current(page).locator('#workflowSelect')).to_be_visible()
@@ -191,21 +192,28 @@ def test_direct_route_refresh_and_scene_failure(browser,path):
 
 @pytest.mark.parametrize('path',['/','/realism','/video'])
 def test_phone_generate_dock_stays_reachable_without_covering_the_form(browser,path):
+    """Accretion dock: generate stays on screen; a long form scrolls in its own panel above the dock."""
     page=browser.new_page(viewport={'width':390,'height':844},reduced_motion='reduce')
     requests=serve_page(page)
     try:
         page.goto('http://fixture.test'+path)
         expect(current(page).locator('.creation-footer')).to_be_visible()
-        # A form several screens long: a static footer would start far below the first screen.
-        current(page).evaluate("host=>host.shadowRoot.querySelector('.creation-scroll').insertAdjacentHTML('beforeend','<div id=\"dockFixture\" style=\"height:2400px\"></div>')")
-        dock=current(page).evaluate('''host=>{const footer=host.shadowRoot.querySelector('.creation-footer'),style=getComputedStyle(footer);
+        if path=='/':current(page).locator('.acc-chip[data-group=person]').click()
+        expect(current(page).locator('.creation-scroll')).to_be_visible()
+        # A form several screens long must neither push generate off screen nor slide under the dock.
+        # The creator shows one group at a time; its long group is the character options.
+        target='#drawers' if path=='/' else '.creation-scroll'
+        current(page).evaluate("(host,target)=>host.shadowRoot.querySelector(target).insertAdjacentHTML('beforeend','<div id=\"dockFixture\" style=\"height:2400px\"></div>')",target)
+        dock=current(page).evaluate('''host=>{const root=host.shadowRoot,pane=root.querySelector('.creation-pane'),footer=root.querySelector('.creation-footer'),panel=root.querySelector('.creation-scroll');
             const generate=[...footer.querySelectorAll('button.primary')].find(button=>button.offsetParent).getBoundingClientRect();
-            return {position:style.position,background:style.backgroundColor,top:generate.top,bottom:generate.bottom,footerBottom:footer.getBoundingClientRect().bottom}}''')
-        assert dock['position']=='sticky' and dock['top']>=0 and dock['bottom']<=844 and dock['footerBottom']<=845, dock
-        assert dock['background'].startswith('rgb('), dock
-        # At the end of the pane the dock is back in flow, below the last control.
-        end=current(page).evaluate('''host=>{const root=host.shadowRoot,pane=root.querySelector('.creation-pane');
-            scrollTo(0,scrollY+pane.getBoundingClientRect().bottom-innerHeight);
+            return {position:getComputedStyle(pane).position,background:getComputedStyle(pane).backgroundColor,top:generate.top,bottom:generate.bottom,
+              footerTop:footer.getBoundingClientRect().top,panelTop:panel.getBoundingClientRect().top,panelBottom:panel.getBoundingClientRect().bottom,scrollable:panel.scrollHeight>panel.clientHeight}}''')
+        assert dock['position']=='fixed' and dock['top']>=0 and dock['bottom']<=844, dock
+        assert dock['panelTop']>=0 and dock['panelBottom']<=dock['footerTop']+1 and dock['scrollable'], dock
+        # Opaque enough to read over the scene.
+        assert float((dock['background'].split(',')+['1'])[3].strip(' )') if dock['background'].startswith('rgba') else 1)>=.85, dock
+        # The end of the form scrolls into the panel, above the dock.
+        end=current(page).evaluate('''host=>{const root=host.shadowRoot,panel=root.querySelector('.creation-scroll');panel.scrollTop=panel.scrollHeight;
             return {fixture:root.querySelector('#dockFixture').getBoundingClientRect().bottom,footer:root.querySelector('.creation-footer').getBoundingClientRect().top}}''')
         assert end['fixture']<=end['footer']+1, end
         assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
@@ -252,6 +260,7 @@ def test_creator_loads_only_selected_style_then_switches(browser):
         styles=[r[1] for r in requests if '/assets/style-' in r[1]]
         assert len(styles)==1,styles
         assert not any('style-configs.' in r[1] for r in requests)
+        current(page).locator('.acc-chip[data-group=style]').click()
         current(page).locator('[data-style=graphic]').click()
         expect(current(page).locator('[data-style=graphic]')).to_have_class('active')
         assert len([r for r in requests if '/assets/style-' in r[1]])==2
@@ -311,6 +320,8 @@ def test_scoped_api_settings_and_shared_appearance(browser):
     try:
         page.goto('http://fixture.test/')
         expect(current(page).locator('#genApiBtn')).to_be_enabled()
+        current(page).locator('.acc-chip[data-group=engine]').click()
+        current(page).locator('.acc-option[data-engine=api]').click()
         current(page).locator('#apiDrawerOpen').click()
         expect(current(page).locator('#apiModel')).to_be_visible()
         current(page).locator('#apiModel').select_option('gpt-image-2')

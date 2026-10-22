@@ -3,24 +3,24 @@
     "/": {
       "module": "/static/assets/index.a244d7e12c46.js",
       "markup": "/static/assets/index.14cdf23edb85.html",
-      "css": "/static/assets/index.3a8e1c63869c.css",
+      "css": "/static/assets/index.94076d54a567.css",
       "title": "JT 灵感工作台"
     },
     "/realism": {
       "module": "/static/assets/realism.94778e2bbc92.js",
       "markup": "/static/assets/realism.34ed1d9f90d8.html",
-      "css": "/static/assets/realism.5251fbc9c02c.css",
+      "css": "/static/assets/realism.0b9f172ea6f3.css",
       "title": "图片编辑 · JT 灵感工作台"
     },
     "/video": {
       "module": "/static/assets/video.5872a7bc91ea.js",
       "markup": "/static/assets/video.2795d23060ae.html",
-      "css": "/static/assets/video.491444cd20c2.css",
+      "css": "/static/assets/video.2b667bc2b132.css",
       "title": "JT 视频工作台"
     }
   },
   "singularity": "/static/assets/workbench.1d550de2d00c.js",
-  "main": "/static/assets/main.d2bdf209fe13.js",
+  "main": "/static/assets/main.ee4649e7ebb8.js",
   "assets": [
     "/static/assets/CopyShader.a33057d5ac91.js",
     "/static/assets/EffectComposer.88857d0d9347.js",
@@ -34,14 +34,15 @@
     "/static/assets/UnrealBloomPass.6b2ef6cf2ccd.js",
     "/static/assets/account-storage.0c5081b9ad66.js",
     "/static/assets/account.4f779c82a332.js",
+    "/static/assets/accretion-layout.5484af2cb822.js",
     "/static/assets/api.1e898baa005a.js",
-    "/static/assets/app.9f826b0b72a2.css",
+    "/static/assets/app.4a405affc62d.css",
     "/static/assets/appearance.4502ac7e3877.js",
     "/static/assets/index.14cdf23edb85.html",
-    "/static/assets/index.3a8e1c63869c.css",
+    "/static/assets/index.94076d54a567.css",
     "/static/assets/index.a244d7e12c46.js",
     "/static/assets/login-scene.659131d536e8.js",
-    "/static/assets/main.d2bdf209fe13.js",
+    "/static/assets/main.ee4649e7ebb8.js",
     "/static/assets/membership-admin.abf0e0dba296.js",
     "/static/assets/page-scope.347478376310.js",
     "/static/assets/preview.0270fd69a8bc.webp",
@@ -72,8 +73,8 @@
     "/static/assets/preview.de1d1cf19403.webp",
     "/static/assets/preview.ed7e8d525912.webp",
     "/static/assets/preview.f3423c1c4545.webp",
+    "/static/assets/realism.0b9f172ea6f3.css",
     "/static/assets/realism.34ed1d9f90d8.html",
-    "/static/assets/realism.5251fbc9c02c.css",
     "/static/assets/realism.94778e2bbc92.js",
     "/static/assets/retired-upload-storage.04c0ee0da954.js",
     "/static/assets/router.9d20830207ba.js",
@@ -92,7 +93,7 @@
     "/static/assets/three-core.9edde002b066.js",
     "/static/assets/three-module.71e909ad3fc6.js",
     "/static/assets/video.2795d23060ae.html",
-    "/static/assets/video.491444cd20c2.css",
+    "/static/assets/video.2b667bc2b132.css",
     "/static/assets/video.5872a7bc91ea.js",
     "/static/assets/workbench.1d550de2d00c.js"
   ]
