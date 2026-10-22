@@ -1,0 +1,62 @@
+{
+  "verification": "PASS",
+  "scope": "production-loopback direct Image 2 low 9:16 canary",
+  "connection_mode": "direct",
+  "tested_release_commit": "ec0c01c8668a15337199d489bb01f2328302c6db",
+  "runtime_payload": {
+    "format": "framed-v1",
+    "files": [
+      "comfy_watchdog.py",
+      "server.py",
+      "static/index.html",
+      "static/promptgen.html",
+      "tools/start_comfy_watchdog.ps1",
+      "config.json",
+      "static/video.html",
+      "static/realism.html",
+      "static/style-configs.1701e5988310.json"
+    ],
+    "sha256": "42d65bd06d6062f6ac6fb0056e123fb4a30a8cfcdd6143ef20fbebf6c797e8d9"
+  },
+  "frontend_payload": {
+    "format": "framed-v1",
+    "sha256": "dc61119babad111decc51b15669e7660ac0aac804a6ae311929a4799808586c8"
+  },
+  "request_contract": {
+    "method": "POST",
+    "path": "/v1/images/generations",
+    "model": "gpt-image-2",
+    "quality": "low",
+    "size": "864x1536",
+    "n": 1,
+    "output_format": "png"
+  },
+  "job": {
+    "id": "a190e498799f",
+    "status": "done",
+    "provider_status": "API_DONE",
+    "elapsed": 24.8,
+    "width": 864,
+    "height": 1536,
+    "generation_backend": "api",
+    "api_model": "gpt-image-2",
+    "api_quality": "low",
+    "api_ratio": "9:16",
+    "api_fit": "contain",
+    "api_transport": "images",
+    "api_action_mode": "direct",
+    "api_provider_size": "864x1536",
+    "dreamapi_contract_sha256": "d2e692e229a0525590fbbc5ffc4f466faebe70675278d263a44bfd0dffc6f0fa"
+  },
+  "submit_attempts": 1,
+  "artifact": {
+    "file": "image2-low-9x16.png",
+    "bytes": 1629388,
+    "sha256": "f2dd930934386134bf99fd734ebd02da61c6d70b9275653a4e9d1ba09cfdfcae"
+  },
+  "visual_review": {
+    "status": "PASS",
+    "not_blank_or_corrupt": true,
+    "complete_subject": true
+  }
+}

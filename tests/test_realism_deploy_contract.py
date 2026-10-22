@@ -54,10 +54,7 @@ def test_native_evidence_passes_for_the_reviewed_runtime(monkeypatch):
     assert module.validate_native_dreamapi_evidence() == []
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "NEEDS OWNER DECISION: server/frontend runtime bytes changed after the reviewed native DreamAPI "
-    "canary (DREAMAPI_TESTED_RELEASE_COMMIT f7c1798); refreshing this evidence needs an owner-authorized "
-    "paid canary, which the test-gate repair must not submit."))
+# Refreshed 2026-10-22 by the owner-authorized accretion canary (audit/accretion_canary_20261022).
 def test_app_shell_has_reviewed_paid_evidence():
     assert load_module().validate_native_dreamapi_evidence() == []
 
