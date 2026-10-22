@@ -597,13 +597,56 @@ def test_h3_server_graph_contract_rejects_builder_tampering(old, new, error):
 
 @pytest.mark.parametrize("old,new", [
     ("multi = w.get('id') in ('h3_edit_n', ", "multi = w.get('id') in ("),
+    ("multi = w.get('id') in (", "multi = w.get('id') not in ("),
+    ("multi = w.get('id') in (", "multi = job.get('id') in ("),
+    ("    task_id = rh_submit_h3_multi(job,w) if multi else rh_submit(wfid, node_list)",
+     "    multi = False\n    task_id = rh_submit_h3_multi(job,w) if multi else rh_submit(wfid, node_list)"),
     ("task_id = rh_submit_h3_multi(job,w) if multi else rh_submit(wfid, node_list)",
      "task_id = rh_submit(wfid, node_list)"),
-], ids=["not-multi", "no-dispatch"])
+    ("'instanceType':'default'}\n    req = urllib.request.Request('https://www.runninghub.ai/task/openapi/create',",
+     "'instanceType':'default'}\n    body.pop('workflow')\n    req = urllib.request.Request('https://www.runninghub.ai/task/openapi/create',"),
+], ids=["not-multi", "not-in", "wrong-object", "overridden", "no-dispatch", "workflow-dropped"])
 def test_h3_server_graph_contract_requires_the_server_graph_route(old, new):
+    # The real dispatch and submit run offline, so re-pinning the tampered source does not help.
     source = tampered_server(old, new)
-    assert "h3 submission no longer sends the complete server graph" in MODULE.validate_h3_server_graph_contract(
-        h3_workflow(), server_source=source)
+    for digest in (None, MODULE.h3_server_graph_functions_sha256(source)):
+        errors = MODULE.validate_h3_server_graph_contract(h3_workflow(), server_source=source, functions_sha256=digest)
+        assert "h3 submission no longer sends the complete server graph" in errors, errors
+
+
+def test_h3_server_graph_contract_pins_the_lora_catalog():
+    workflow = json.loads(json.dumps(h3_workflow()))
+    workflow["rh_lora_catalog"]["minimax-n6"] = "unreviewed-model.safetensors"
+    assert "h3 LoRA catalog drift" in MODULE.validate_h3_server_graph_contract(workflow)
+    assert "h3 LoRA catalog drift" in MODULE.validate_uploaded_workflow_live_schema_manifest(
+        h3_config(lambda w: w["rh_lora_catalog"].update({"minimax-n6": "unreviewed-model.safetensors"})))
+
+
+def test_h3_server_graph_contract_exercises_defaults_and_every_model_in_every_slot():
+    cases = list(MODULE._h3_cases(h3_workflow()))
+    assert len(cases) == 241
+    assert any(not any(key.startswith("lora_") for key in params) for _, params in cases)
+    options = [o.get("value") if isinstance(o, dict) else o for o in h3_workflow()["rh_params"]["lora_1_model"]["options"]]
+    options = [o for o in options if o != "none"]
+    for slot in (1, 2, 3):
+        assert {params.get(f"lora_{slot}_model") for _, params in cases} >= set(options)
+    # A fault that only affects the default first-slot model is still found after re-pinning.
+    source = tampered_server("        filename = w['rh_lora_catalog'][selected]",
+                             "        filename = w['rh_lora_catalog'][selected if selected != 'minimax-n6' else 'minimax-n5']")
+    errors = MODULE.validate_h3_server_graph_contract(
+        h3_workflow(), server_source=source, functions_sha256=MODULE.h3_server_graph_functions_sha256(source))
+    assert "h3 server graph LoRA wiring invalid: slot 1" in errors
+
+
+def test_h3_server_graph_contract_keeps_the_source_audio_even_with_a_repinned_template(tmp_path):
+    template = json.loads((ROOT / MODULE.H3_SERVER_GRAPH_TEMPLATE).read_text(encoding="utf8"))
+    template["223"]["inputs"]["audio"] = ["218", 0]
+    raw = json.dumps(template).encode("utf8")
+    (tmp_path / "video_wf").mkdir()
+    (tmp_path / MODULE.H3_SERVER_GRAPH_TEMPLATE).write_bytes(raw)
+    errors = MODULE.validate_h3_server_graph_contract(h3_workflow(), base=tmp_path, server_source=SERVER_SOURCE,
+                                                      template_sha256=hashlib.sha256(raw).hexdigest())
+    assert "h3 server graph output or source audio rewired" in errors
 
 
 def test_h3_server_graph_contract_rejects_template_tampering(tmp_path):

@@ -301,7 +301,8 @@ UPLOADED_WORKFLOW_ALLOWED_LIVE_DIFFERENCES = {
 # rh_submit_h3_multi, with an empty nodeInfoList). The saved RunningHub workflow carries six of its
 # controls; these nine are bound by the server into its own graph, so a provider schema read can never
 # list them and they are never recorded as live_present. Instead the gate pins the graph template and
-# the builder source, runs the builder offline and checks every final graph it can produce
+# the dispatch, submit and builder source, executes them offline with every outbound call stubbed, and checks
+# each request body and graph over 241 cases
 # (validate_h3_server_graph_contract). Reviewed 2026-10-22 against the owner's diagnosis.
 UPLOADED_WORKFLOW_SERVER_BOUND_MAPPINGS = {
     "h3_edit_n": frozenset({
@@ -313,8 +314,11 @@ UPLOADED_WORKFLOW_SERVER_BOUND_MAPPINGS = {
 }
 H3_SERVER_GRAPH_TEMPLATE = "video_wf/h3_edit_multi_api.json"
 H3_SERVER_GRAPH_TEMPLATE_SHA256 = "76d3d7d4c01e21f9fabfb52d5ca7464d2b8a8c94a464af7327849a29e3216e99"
-H3_SERVER_GRAPH_FUNCTIONS = ("_coerce_rh_control", "rh_build_video_node_info", "rh_build_h3_graph", "rh_submit_h3_multi")
-H3_SERVER_GRAPH_FUNCTIONS_SHA256 = "aeed386c7446ce6b7d0593ba58a6327234043bfda3d2c6f2b370179ec4bcba27"
+H3_SERVER_GRAPH_FUNCTIONS = ("_coerce_rh_control", "rh_build_video_node_info", "rh_build_h3_graph",
+                             "rh_submit_h3_multi", "rh_run_video")
+H3_SERVER_GRAPH_FUNCTIONS_SHA256 = "a814a486cc881c33309284d893f76f0a89d4b7af8e00cee61a6e3fe75bdd6965"
+# Model id -> file name; the expected lora_name comes from this reviewed catalog, not only from config.json.
+H3_LORA_CATALOG_SHA256 = "99a993c391c54a06331b2ff581fbf769003d7475598ab74be7b55b3f4ffa6b99"
 H3_SERVER_GRAPH_MEDIA = ("reference_image", "source_video", "reference_image_2", "reference_image_3", "reference_image_4")
 H3_SERVER_GRAPH_PARAMS = ("prompt", "duration", "short_edge", "seed")
 # The LoRA chain starts from node 285's model input and must reach both model consumers (guider, scheduler).
@@ -575,53 +579,132 @@ def validate_e2e_manifest(config):
 
 def _h3_server_functions(source):
     tree = ast.parse(source)
-    return tree, {node.name: node for node in tree.body
-                  if isinstance(node, ast.FunctionDef) and node.name in H3_SERVER_GRAPH_FUNCTIONS}
+    return {node.name: node for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name in H3_SERVER_GRAPH_FUNCTIONS}
 
 
 def h3_server_graph_functions_sha256(source):
-    """Digest of the reviewed builder and submit source (not ast.dump, which varies by Python version)."""
+    """Digest of the reviewed builder, submit and dispatch source (not ast.dump, which varies by Python version)."""
     source = source.replace("\r\n", "\n")
-    _, functions = _h3_server_functions(source)
+    functions = _h3_server_functions(source)
     if set(functions) != set(H3_SERVER_GRAPH_FUNCTIONS):
         raise ValueError("h3 server graph functions missing")
     text = "\n\n".join(ast.get_source_segment(source, functions[name]) for name in H3_SERVER_GRAPH_FUNCTIONS)
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def _h3_submission_sends_complete_graph(tree, submit):
-    """rh_run_video routes h3_edit_n to rh_submit_h3_multi, which sends json.dumps(graph) and no nodeInfoList."""
-    payload = default_builder = False
-    for node in ast.walk(submit):
-        if isinstance(node, ast.Dict):
-            fields = {key.value: value for key, value in zip(node.keys, node.values) if isinstance(key, ast.Constant)}
-            workflow, node_info = fields.get("workflow"), fields.get("nodeInfoList")
-            payload |= (isinstance(node_info, ast.List) and not node_info.elts and isinstance(workflow, ast.Call)
-                        and ast.unparse(workflow.func) == "json.dumps" and bool(workflow.args)
-                        and ast.unparse(workflow.args[0]) == "graph")
-            if "h3_edit_n" in fields:
-                return False
-        if (isinstance(node, ast.Call) and ast.unparse(node.func) == "builders.get" and len(node.args) == 2
-                and ast.unparse(node.args[1]) == "rh_build_h3_graph"):
-            default_builder = True
-    # Both halves are required: h3_edit_n sets multi, and multi dispatches to rh_submit_h3_multi.
-    assigned = dispatched = False
-    for function in tree.body:
-        if isinstance(function, ast.FunctionDef) and function.name == "rh_run_video":
-            for node in ast.walk(function):
-                if (isinstance(node, ast.Assign) and [ast.unparse(target) for target in node.targets] == ["multi"]
-                        and isinstance(node.value, ast.Compare)
-                        and any(isinstance(item, ast.Constant) and item.value == "h3_edit_n"
-                                for comparator in node.value.comparators if isinstance(comparator, ast.Tuple)
-                                for item in comparator.elts)):
-                    assigned = True
-                if (isinstance(node, ast.IfExp) and ast.unparse(node.test) == "multi"
-                        and isinstance(node.body, ast.Call) and ast.unparse(node.body.func) == "rh_submit_h3_multi"):
-                    dispatched = True
-    return payload and default_builder and assigned and dispatched
+def h3_lora_catalog_sha256(catalog):
+    return hashlib.sha256(json.dumps(catalog, ensure_ascii=False, sort_keys=True,
+                                     separators=(",", ":")).encode("utf-8")).hexdigest()
 
 
-def _h3_graph_errors(graph, job, workflow, template, images, slots, models, base_model, consumers):
+class _H3Dispatched(Exception):
+    """Raised by the offline persistence stub once the provider task id is known, before any polling."""
+
+
+def _h3_offline_runner(functions, base):
+    """Run the real rh_run_video, rh_submit_h3_multi and builder with every outbound call replaced by a recorder.
+
+    No network, credentials, job ledger or server import: the request object, provider call, saved-workflow
+    submit, persistence and polling are local stubs. Returns a function that reports which submit path ran
+    and the exact JSON body it would have sent.
+    """
+    import math
+    import types
+    calls = []
+
+    class Request:
+        def __init__(self, url, data=None, headers=None, method=None):
+            self.full_url, self.data = url, data
+
+    def provider_request(request, timeout=None):
+        calls.append(("complete_graph", request.full_url, json.loads(request.data.decode("utf-8"))))
+        return {"code": 0, "data": {"taskId": "offline-gate-task"}}
+
+    def saved_workflow(workflow_id, node_list):
+        calls.append(("saved_workflow", workflow_id, node_list))
+        return "offline-gate-task"
+
+    def persist(job, task_id):
+        raise _H3Dispatched(task_id)
+
+    def forbidden(*args, **kwargs):
+        raise RuntimeError("h3_edit_n reached a builder or poll it must not use")
+
+    namespace = {
+        "BASE": base, "json": json, "math": math, "re": re, "time": time,
+        "urllib": types.SimpleNamespace(request=types.SimpleNamespace(Request=Request)),
+        "RH_KEY": "offline-gate-key", "RH_TIMEOUT_SUBMIT": 1,
+        "_provider_json_request": provider_request, "rh_submit": saved_workflow,
+        "persist_provider_task": persist, "_rh_wait_task": forbidden, "_rh_results_to_images": forbidden,
+        "rh_build_h3_remix_graph": forbidden, "rh_build_h3_optimized_graph": forbidden,
+        "ProviderStateUncertain": RuntimeError, "ProviderTaskFailed": RuntimeError,
+    }
+    module = ast.Module(body=[functions[name] for name in H3_SERVER_GRAPH_FUNCTIONS], type_ignores=[])
+    exec(compile(module, "server.py", "exec"), namespace)
+
+    def run(job, workflow):
+        calls.clear()
+        try:
+            namespace["rh_run_video"](job, workflow)
+        except _H3Dispatched:
+            pass
+        return list(calls)
+    return run
+
+
+def _h3_cases(workflow):
+    """216 feature states, the schema defaults, every allowed model in every slot, and each model in all slots."""
+    import itertools
+    options = workflow["rh_params"]["lora_1_model"].get("options") or []
+    models = [option.get("value") if isinstance(option, dict) else option for option in options]
+    models = [model for model in models if model != "none"]
+    fixed = {"duration": 7, "short_edge": 512, "seed": 123456}
+    for images in itertools.product((False, True), repeat=3):
+        for states in itertools.product(("none", "zero", "enabled"), repeat=3):
+            params = dict(fixed)
+            for slot, state in enumerate(states, 1):
+                params[f"lora_{slot}_model"] = "none" if state == "none" else models[slot - 1]
+                params[f"lora_{slot}_strength"] = 0 if state == "zero" else round(0.1 * slot, 2)
+            yield images, params
+    yield (True, True, True), dict(fixed)
+    for slot in (1, 2, 3):
+        for model in models:
+            params = dict(fixed, **{f"lora_{other}_model": "none" for other in (1, 2, 3)})
+            params[f"lora_{slot}_model"] = model
+            params[f"lora_{slot}_strength"] = round(0.31 + 0.1 * slot, 2)
+            yield (False, False, False), params
+    for model in models:
+        params = dict(fixed)
+        for slot in (1, 2, 3):
+            params[f"lora_{slot}_model"] = model
+            params[f"lora_{slot}_strength"] = round(0.5 + 0.1 * slot, 2)
+        yield (True, False, True), params
+
+
+def _h3_expected_slots(workflow, params):
+    slots = []
+    for slot in (1, 2, 3):
+        model_schema = workflow["rh_params"][f"lora_{slot}_model"]
+        strength_schema = workflow["rh_params"][f"lora_{slot}_strength"]
+        model = params.get(f"lora_{slot}_model", model_schema["default"])
+        strength = params.get(f"lora_{slot}_strength", strength_schema["default"])
+        slots.append(None if model == "none" or strength == 0 else (model, strength))
+    return slots
+
+
+def _graph_ancestors(graph, start):
+    seen, stack = set(), [start]
+    while stack:
+        for value in ((graph.get(stack.pop()) or {}).get("inputs") or {}).values():
+            if (isinstance(value, list) and len(value) == 2 and isinstance(value[0], str)
+                    and value[0] not in seen):
+                seen.add(value[0])
+                stack.append(value[0])
+    return seen
+
+
+def _h3_graph_errors(graph, job, workflow, template, images, slots, consumers):
     errors = []
     for key, value in job["provider_media"].items():
         mapping = workflow["rh_media"].get(key) or {}
@@ -640,23 +723,33 @@ def _h3_graph_errors(graph, job, workflow, template, images, slots, models, base
                 errors.append(f"h3 server graph reference wiring invalid: reference_image_{index}")
         elif node in graph or field in references:
             errors.append(f"h3 server graph reference not bypassed: reference_image_{index}")
-    chain = base_model
-    for slot, state in enumerate(slots, 1):
+    chain = H3_SERVER_GRAPH_MODEL_SOURCE
+    for slot, expected in enumerate(slots, 1):
         node = str(300 + slot)
-        if state != "enabled":
+        if expected is None:
             if node in graph:
                 errors.append(f"h3 server graph LoRA not bypassed: slot {slot}")
             continue
         row = graph.get(node) or {}
         inputs = row.get("inputs") or {}
         if (row.get("class_type") != "LoraLoaderModelOnly"
-                or inputs.get("lora_name") != workflow["rh_lora_catalog"][models[slot - 1]]
-                or inputs.get("strength_model") != job["params"][f"lora_{slot}_strength"]
-                or inputs.get("model") != chain):
+                or inputs.get("lora_name") != workflow["rh_lora_catalog"][expected[0]]
+                or inputs.get("strength_model") != expected[1] or inputs.get("model") != chain):
             errors.append(f"h3 server graph LoRA wiring invalid: slot {slot}")
         chain = [node, 0]
     if "285" in graph or any((graph.get(node) or {}).get("inputs", {}).get(field) != chain for node, field in consumers):
         errors.append("h3 server graph model chain does not reach its consumers")
+    # Independent of the template: the saved video keeps the source audio and depends on every input.
+    output = graph.get("228") or {}
+    if (output.get("class_type") != "SaveVideo" or (output.get("inputs") or {}).get("video") != ["223", 0]
+            or ((graph.get("223") or {}).get("inputs") or {}).get("audio") != ["275", 2]
+            or ((graph.get("221") or {}).get("inputs") or {}).get("conditioning") != ["225", 0]):
+        errors.append("h3 server graph output or source audio rewired")
+    required = ({"225", "244", "293", "275", "221", "224", "284"}
+                | {str(292 + index) for index, uploaded in enumerate(images, 2) if uploaded}
+                | {str(300 + slot) for slot, expected in enumerate(slots, 1) if expected})
+    if not required <= _graph_ancestors(graph, "228"):
+        errors.append("h3 server graph output does not depend on all of its inputs")
     # Apart from mapped values, reference slots and the model consumers, the template is untouched.
     allowed = ({(str(mapping["node"]), mapping.get("field")) for scope in ("rh_media", "rh_params")
                 for mapping in workflow[scope].values() if mapping.get("node")}
@@ -671,7 +764,7 @@ def _h3_graph_errors(graph, job, workflow, template, images, slots, models, base
                 for field in set(row["inputs"]) | set(built_inputs)):
             errors.append("h3 server graph rewired a template node")
             break
-    if len(graph) != len(template) - 1 + sum(images) + slots.count("enabled"):
+    if len(graph) != len(template) - 1 + sum(images) + sum(expected is not None for expected in slots):
         errors.append("h3 server graph has unexpected nodes")
     if any(isinstance(value, list) and len(value) == 2 and isinstance(value[0], str)
            and isinstance(value[1], int) and value[0] not in graph
@@ -681,17 +774,18 @@ def _h3_graph_errors(graph, job, workflow, template, images, slots, models, base
 
 
 def validate_h3_server_graph_contract(workflow, base=None, server_source=None,
-                                      template_sha256=None, functions_sha256=None):
-    """Run the reviewed server graph builder offline and check every graph h3_edit_n can submit.
+                                      template_sha256=None, functions_sha256=None, catalog_sha256=None):
+    """Execute h3_edit_n's real dispatch, submit and graph builder offline and check what would be sent.
 
-    Covers optional reference images 2-4 present/absent and each LoRA slot off, at zero strength and
-    enabled (216 graphs). Never imports server.py, reads credentials or contacts a provider.
+    Cases: the 216 feature states (references 2-4 present/absent, each LoRA slot off, at zero strength,
+    enabled), the schema defaults, every allowed model in every slot, and each model in all three slots.
+    For each, the captured request must carry the complete graph with an empty nodeInfoList, and that
+    graph must pass the semantic checks. Never imports server.py, reads credentials or contacts a provider.
     """
-    import itertools
-    import math
     base = pathlib.Path(base or BASE)
     template_sha256 = template_sha256 or H3_SERVER_GRAPH_TEMPLATE_SHA256
     functions_sha256 = functions_sha256 or H3_SERVER_GRAPH_FUNCTIONS_SHA256
+    catalog_sha256 = catalog_sha256 or H3_LORA_CATALOG_SHA256
     errors = []
     try:
         source = (server_source if server_source is not None
@@ -699,44 +793,43 @@ def validate_h3_server_graph_contract(workflow, base=None, server_source=None,
         template_bytes = (base / H3_SERVER_GRAPH_TEMPLATE).read_bytes().replace(b"\r\n", b"\n")
         if hashlib.sha256(template_bytes).hexdigest() != template_sha256:
             errors.append("h3 server graph template drift")
-        tree, functions = _h3_server_functions(source)
+        if h3_lora_catalog_sha256(workflow.get("rh_lora_catalog") or {}) != catalog_sha256:
+            errors.append("h3 LoRA catalog drift")
+        functions = _h3_server_functions(source)
         if set(functions) != set(H3_SERVER_GRAPH_FUNCTIONS):
             return errors + ["h3 server graph functions missing"]
         if h3_server_graph_functions_sha256(source) != functions_sha256:
             errors.append("h3 server graph builder drift")
-        if not _h3_submission_sends_complete_graph(tree, functions["rh_submit_h3_multi"]):
-            errors.append("h3 submission no longer sends the complete server graph")
-        namespace = {"BASE": base, "json": json, "math": math, "re": re}
-        builders = [functions[name] for name in ("_coerce_rh_control", "rh_build_video_node_info", "rh_build_h3_graph")]
-        exec(compile(ast.Module(body=builders, type_ignores=[]), "server.py", "exec"), namespace)
-        build = namespace["rh_build_h3_graph"]
         template = json.loads(template_bytes)
-        models = sorted(key for key in (workflow.get("rh_lora_catalog") or {}) if key != "none")
-        base_model = ((template.get("285") or {}).get("inputs") or {}).get("model")
         consumers = [(node_id, field) for node_id, row in template.items() if node_id != "285"
                      for field, value in row["inputs"].items() if value == ["285", 0]]
-        if (len(models) < 3 or base_model != H3_SERVER_GRAPH_MODEL_SOURCE
+        if (((template.get("285") or {}).get("inputs") or {}).get("model") != H3_SERVER_GRAPH_MODEL_SOURCE
                 or tuple(sorted(consumers)) != H3_SERVER_GRAPH_MODEL_CONSUMERS):
             return errors + ["h3 server graph template or LoRA catalog invalid"]
+        run = _h3_offline_runner(functions, base)
         frozen = json.dumps(workflow, sort_keys=True)
         found = set()
-        for images in itertools.product((False, True), repeat=3):
-            for slots in itertools.product(("none", "zero", "enabled"), repeat=3):
-                media = {"reference_image": "api/gate-ref-1.png", "source_video": "api/gate-video.mp4"}
-                media.update({f"reference_image_{index}": f"api/gate-ref-{index}.png"
-                              for index, uploaded in enumerate(images, 2) if uploaded})
-                params = {"duration": 7, "short_edge": 512, "seed": 123456}
-                for slot, state in enumerate(slots, 1):
-                    params[f"lora_{slot}_model"] = "none" if state == "none" else models[slot - 1]
-                    params[f"lora_{slot}_strength"] = 0 if state == "zero" else slot / 10
-                job = {"provider_media": media, "params": params, "prompt": "release gate graph check"}
-                try:
-                    graph = build(json.loads(json.dumps(job)), workflow)
-                except Exception as error:
-                    found.add(f"h3 server graph build failed: {type(error).__name__}")
-                    continue
-                found.update(_h3_graph_errors(graph, job, workflow, template, images, slots,
-                                              models, base_model, consumers))
+        for images, params in _h3_cases(workflow):
+            media = {"reference_image": "api/gate-ref-1.png", "source_video": "api/gate-video.mp4"}
+            media.update({f"reference_image_{index}": f"api/gate-ref-{index}.png"
+                          for index, uploaded in enumerate(images, 2) if uploaded})
+            job = {"provider_media": media, "params": params, "prompt": "release gate graph check"}
+            try:
+                calls = run(json.loads(json.dumps(job)), workflow)
+            except Exception as error:
+                found.add(f"h3 server graph build failed: {type(error).__name__}")
+                continue
+            if [call[0] for call in calls] != ["complete_graph"]:
+                found.add("h3 submission no longer sends the complete server graph")
+                continue
+            _, url, body = calls[0]
+            if (url != "https://www.runninghub.ai/task/openapi/create" or body.get("nodeInfoList") != []
+                    or body.get("workflowId") != workflow.get("rh_workflow_id")
+                    or not isinstance(body.get("workflow"), str)):
+                found.add("h3 submission no longer sends the complete server graph")
+                continue
+            found.update(_h3_graph_errors(json.loads(body["workflow"]), job, workflow, template, images,
+                                          _h3_expected_slots(workflow, params), consumers))
         if json.dumps(workflow, sort_keys=True) != frozen:
             found.add("h3 server graph builder mutated its configuration")
         errors.extend(sorted(found))
