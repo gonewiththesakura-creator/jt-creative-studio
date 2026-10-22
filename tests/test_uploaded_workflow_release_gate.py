@@ -668,6 +668,31 @@ def test_h3_server_graph_contract_runs_changed_code_without_io(tmp_path, stateme
     assert not marker.exists()
 
 
+def test_h3_server_graph_contract_rejects_a_decorated_protected_function():
+    # Third read-only review (interrupted): the pinned source starts at `def` and omits decorators.
+    source = tampered_server("def rh_submit_h3_multi(job, w):",
+                             "def _gate_wrap(function):\n    return function\n\n\n@_gate_wrap\ndef rh_submit_h3_multi(job, w):")
+    assert MODULE.h3_server_graph_functions_sha256(source) == MODULE.H3_SERVER_GRAPH_FUNCTIONS_SHA256
+    assert "h3 server module decorates rh_submit_h3_multi" in MODULE.validate_h3_server_graph_contract(
+        h3_workflow(), server_source=source)
+
+
+def test_h3_server_graph_contract_only_opens_the_template_read_only(tmp_path):
+    # os.open reports mode None, so the isolated run must also check the open flags.
+    (tmp_path / "video_wf").mkdir()
+    template = tmp_path / MODULE.H3_SERVER_GRAPH_TEMPLATE
+    original = (ROOT / MODULE.H3_SERVER_GRAPH_TEMPLATE).read_bytes()
+    template.write_bytes(original)
+    anchor = "    # The graph is server-owned; never accept executable workflow JSON from a browser.\n"
+    source = tampered_server(anchor, anchor + "    _os = type(BASE).__new__.__globals__['os']; "
+                             "_os.close(_os.open(str(BASE / 'video_wf/h3_edit_multi_api.json'), _os.O_WRONLY | _os.O_APPEND))\n")
+    errors = MODULE.validate_h3_server_graph_contract(
+        h3_workflow(), base=tmp_path, server_source=source,
+        functions_sha256=MODULE.h3_server_graph_functions_sha256(source))
+    assert "h3 server graph build failed: PermissionError" in errors, errors
+    assert template.read_bytes() == original
+
+
 def test_h3_server_graph_contract_pins_the_lora_catalog():
     workflow = json.loads(json.dumps(h3_workflow()))
     workflow["rh_lora_catalog"]["minimax-n6"] = "unreviewed-model.safetensors"

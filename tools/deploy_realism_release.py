@@ -620,7 +620,8 @@ def _h3_binding_errors(tree):
         for statement in statements:
             if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                 top = isinstance(statement, ast.FunctionDef) and statement in tree.body
-                record(statement.name, "def" if top else "other")
+                # The pinned source starts at `def`, so a decorator could replace the function unseen.
+                record(statement.name, ("decorated" if statement.decorator_list else "def") if top else "other")
                 continue
             if isinstance(statement, ast.Import):
                 for alias in statement.names:
@@ -647,7 +648,9 @@ def _h3_binding_errors(tree):
     for name in sorted(protected):
         kinds = bindings.get(name, [])
         valid = kinds == ["def"] if name in H3_PROTECTED_FUNCTIONS else (kinds and set(kinds) == {"import"})
-        if not valid:
+        if kinds == ["decorated"]:
+            errors.append(f"h3 server module decorates {name}")
+        elif not valid:
             errors.append(f"h3 server module rebinds {name}")
     for node in ast.walk(tree):
         if isinstance(node, (ast.Global, ast.Nonlocal)) and protected & set(node.names):
@@ -715,8 +718,13 @@ code = compile("\n\n".join(payload["functions"]), "server.py", "exec")
 
 def audit(event, args):
     if event == "open":
-        path, mode = args[0], (args[1] if len(args) > 1 else "r") or "r"
-        if (isinstance(path, (str, bytes, os.PathLike)) and mode in ("r", "rb", "rt")
+        # os.open reports mode None and only flags, so both must say read-only.
+        path = args[0]
+        mode = args[1] if len(args) > 1 else None
+        flags = args[2] if len(args) > 2 else None
+        writes = os.O_WRONLY | os.O_RDWR | os.O_APPEND | os.O_CREAT | os.O_TRUNC
+        if (isinstance(path, (str, bytes, os.PathLike)) and mode in (None, "r", "rb", "rt")
+                and isinstance(flags, int) and not flags & writes
                 and os.path.normcase(os.path.abspath(os.fsdecode(path))) == template):
             return
         raise PermissionError("offline h3 contract blocked open")
