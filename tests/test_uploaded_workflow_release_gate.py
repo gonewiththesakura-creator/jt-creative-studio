@@ -588,7 +588,7 @@ def test_h3_server_graph_contract_passes_every_combination_of_the_current_build(
 def test_h3_server_graph_contract_rejects_builder_tampering(old, new, error):
     source = tampered_server(old, new)
     pinned = MODULE.validate_h3_server_graph_contract(h3_workflow(), server_source=source)
-    assert "h3 server graph builder drift" in pinned and error in pinned
+    assert pinned == ["h3 server graph builder drift"]
     # Re-pinning the tampered source does not help: the semantic checks reject it on their own.
     repinned = MODULE.validate_h3_server_graph_contract(
         h3_workflow(), server_source=source, functions_sha256=MODULE.h3_server_graph_functions_sha256(source))
@@ -607,11 +607,65 @@ def test_h3_server_graph_contract_rejects_builder_tampering(old, new, error):
      "'instanceType':'default'}\n    body.pop('workflow')\n    req = urllib.request.Request('https://www.runninghub.ai/task/openapi/create',"),
 ], ids=["not-multi", "not-in", "wrong-object", "overridden", "no-dispatch", "workflow-dropped"])
 def test_h3_server_graph_contract_requires_the_server_graph_route(old, new):
-    # The real dispatch and submit run offline, so re-pinning the tampered source does not help.
+    # The real dispatch and submit run in an isolated process, so re-pinning the tampered source does not help.
     source = tampered_server(old, new)
-    for digest in (None, MODULE.h3_server_graph_functions_sha256(source)):
-        errors = MODULE.validate_h3_server_graph_contract(h3_workflow(), server_source=source, functions_sha256=digest)
-        assert "h3 submission no longer sends the complete server graph" in errors, errors
+    assert MODULE.validate_h3_server_graph_contract(h3_workflow(), server_source=source) == [
+        "h3 server graph builder drift"]
+    errors = MODULE.validate_h3_server_graph_contract(
+        h3_workflow(), server_source=source, functions_sha256=MODULE.h3_server_graph_functions_sha256(source))
+    assert "h3 submission no longer sends the complete server graph" in errors, errors
+
+
+@pytest.mark.parametrize("old,new", [
+    # A later submit after the first persistence, and a GET instead of POST (second read-only review).
+    ("if multi else rh_submit(wfid, node_list)\n    persist_provider_task(job, task_id)\n",
+     "if multi else rh_submit(wfid, node_list)\n    persist_provider_task(job, task_id)\n"
+     "    task_id = rh_submit(wfid, node_list)\n    persist_provider_task(job, task_id)\n"),
+    ("'instanceType':'default'}\n    req = urllib.request.Request('https://www.runninghub.ai/task/openapi/create',",
+     "'instanceType':'default'}\n    req = urllib.request.Request('https://www.runninghub.ai/task/openapi/create', method='GET',"),
+], ids=["second-submit", "get-method"])
+def test_h3_server_graph_contract_checks_the_whole_submission_until_polling(old, new):
+    source = tampered_server(old, new)
+    errors = MODULE.validate_h3_server_graph_contract(
+        h3_workflow(), server_source=source, functions_sha256=MODULE.h3_server_graph_functions_sha256(source))
+    assert "h3 submission no longer sends the complete server graph" in errors, errors
+
+
+@pytest.mark.parametrize("old,new,name", [
+    ("def rh_run_video(job, w):",
+     "rh_submit_h3_multi = lambda job, w: rh_submit(w['rh_workflow_id'], rh_build_video_node_info(job, w))\n\n\n"
+     "def rh_run_video(job, w):", "rh_submit_h3_multi"),
+    ("def rh_run_video(job, w):", "import urllib.request as urllib\n\n\ndef rh_run_video(job, w):", "urllib"),
+    ("def _video_waiting():", "def _video_waiting():\n    global rh_build_h3_graph", None),
+], ids=["module-assignment", "import-alias", "global"])
+def test_h3_server_graph_contract_rejects_rebinding_outside_the_pinned_functions(old, new, name):
+    source = tampered_server(old, new)
+    # The pinned function source is unchanged, so only the binding check can see this.
+    assert MODULE.h3_server_graph_functions_sha256(source) == MODULE.H3_SERVER_GRAPH_FUNCTIONS_SHA256
+    errors = MODULE.validate_h3_server_graph_contract(h3_workflow(), server_source=source)
+    expected = (f"h3 server module rebinds {name}" if name
+                else "h3 server module rebinds a protected name through global")
+    assert expected in errors, errors
+
+
+@pytest.mark.parametrize("statement", [
+    "open(MARKER, 'w').write('x')",
+    "import socket; socket.getaddrinfo('offline.invalid', 443)",
+    "__import__('subprocess').run(['cmd', '/c', 'echo'])",
+], ids=["file-write", "network", "process"])
+def test_h3_server_graph_contract_runs_changed_code_without_io(tmp_path, statement):
+    marker = tmp_path / "marker.txt"
+    anchor = "    # The graph is server-owned; never accept executable workflow JSON from a browser.\n"
+    source = tampered_server(anchor, anchor + "    " + statement.replace("MARKER", repr(str(marker))) + "\n")
+    # Unreviewed (drifted) code is never executed at all.
+    assert MODULE.validate_h3_server_graph_contract(h3_workflow(), server_source=source) == [
+        "h3 server graph builder drift"]
+    assert not marker.exists()
+    # Even when re-pinned, the isolated run blocks the I/O and reports the failure.
+    errors = MODULE.validate_h3_server_graph_contract(
+        h3_workflow(), server_source=source, functions_sha256=MODULE.h3_server_graph_functions_sha256(source))
+    assert "h3 server graph build failed: PermissionError" in errors, errors
+    assert not marker.exists()
 
 
 def test_h3_server_graph_contract_pins_the_lora_catalog():

@@ -302,7 +302,7 @@ UPLOADED_WORKFLOW_ALLOWED_LIVE_DIFFERENCES = {
 # controls; these nine are bound by the server into its own graph, so a provider schema read can never
 # list them and they are never recorded as live_present. Instead the gate pins the graph template and
 # the dispatch, submit and builder source, executes them offline with every outbound call stubbed, and checks
-# each request body and graph over 241 cases
+# each request body and graph over 241 cases in an isolated process; drift fails before execution
 # (validate_h3_server_graph_contract). Reviewed 2026-10-22 against the owner's diagnosis.
 UPLOADED_WORKFLOW_SERVER_BOUND_MAPPINGS = {
     "h3_edit_n": frozenset({
@@ -598,59 +598,163 @@ def h3_lora_catalog_sha256(catalog):
                                      separators=(",", ":")).encode("utf-8")).hexdigest()
 
 
-class _H3Dispatched(Exception):
-    """Raised by the offline persistence stub once the provider task id is known, before any polling."""
+# Names whose runtime binding decides how h3_edit_n is built and sent. Each protected function must be
+# bound exactly once, by its own top-level def; the modules only by plain imports. Module-level
+# reassignment, aliases, nested or conditional redefinition and `global` rebinding are rejected, because
+# the offline run below assembles these functions on their own and would not see such a rebinding.
+H3_PROTECTED_FUNCTIONS = H3_SERVER_GRAPH_FUNCTIONS + (
+    "rh_submit", "persist_provider_task", "_provider_json_request", "_rh_wait_task", "_rh_results_to_images",
+    "rh_build_h3_remix_graph", "rh_build_h3_optimized_graph")
+H3_PROTECTED_MODULES = ("json", "urllib", "time", "re", "math")
 
 
-def _h3_offline_runner(functions, base):
-    """Run the real rh_run_video, rh_submit_h3_multi and builder with every outbound call replaced by a recorder.
+def _h3_binding_errors(tree):
+    protected = set(H3_PROTECTED_FUNCTIONS) | set(H3_PROTECTED_MODULES)
+    bindings = {}
 
-    No network, credentials, job ledger or server import: the request object, provider call, saved-workflow
-    submit, persistence and polling are local stubs. Returns a function that reports which submit path ran
-    and the exact JSON body it would have sent.
-    """
-    import math
-    import types
-    calls = []
+    def record(name, kind):
+        if name in protected:
+            bindings.setdefault(name, []).append(kind)
 
-    class Request:
-        def __init__(self, url, data=None, headers=None, method=None):
-            self.full_url, self.data = url, data
+    def scope(statements):
+        for statement in statements:
+            if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                top = isinstance(statement, ast.FunctionDef) and statement in tree.body
+                record(statement.name, "def" if top else "other")
+                continue
+            if isinstance(statement, ast.Import):
+                for alias in statement.names:
+                    record((alias.asname or alias.name).split(".")[0],
+                           "import" if alias.asname is None else "other")
+                continue
+            if isinstance(statement, ast.ImportFrom):
+                for alias in statement.names:
+                    record(alias.asname or alias.name, "other")
+                continue
+            nested = [getattr(statement, field) for field in ("body", "orelse", "finalbody", "handlers", "cases")
+                      if isinstance(getattr(statement, field, None), list)]
+            for node in ast.walk(statement):
+                if isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)):
+                    record(node.id, "other")
+            for block in nested:
+                scope([item for item in block if isinstance(item, ast.stmt)])
+                for handler in block:
+                    if isinstance(handler, (ast.ExceptHandler, ast.match_case)):
+                        scope(handler.body)
 
-    def provider_request(request, timeout=None):
-        calls.append(("complete_graph", request.full_url, json.loads(request.data.decode("utf-8"))))
-        return {"code": 0, "data": {"taskId": "offline-gate-task"}}
+    scope(tree.body)
+    errors = []
+    for name in sorted(protected):
+        kinds = bindings.get(name, [])
+        valid = kinds == ["def"] if name in H3_PROTECTED_FUNCTIONS else (kinds and set(kinds) == {"import"})
+        if not valid:
+            errors.append(f"h3 server module rebinds {name}")
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Global, ast.Nonlocal)) and protected & set(node.names):
+            errors.append("h3 server module rebinds a protected name through global")
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in ("globals", "vars"):
+            errors.append("h3 server module reaches its globals dynamically")
+    return sorted(set(errors))
 
-    def saved_workflow(workflow_id, node_list):
-        calls.append(("saved_workflow", workflow_id, node_list))
-        return "offline-gate-task"
 
-    def persist(job, task_id):
-        raise _H3Dispatched(task_id)
+# Runs in a separate `python -I` process. A deny-by-default audit hook allows only a read-only open of
+# the graph template: no network, processes, file writes or new imports, even for code that changed.
+# Outbound calls are local recorders; the run stops at the first poll, after submit and persistence.
+_H3_CHILD = r'''
+import json, math, os, pathlib, re, sys, time, types
+payload = json.loads(sys.stdin.read())
+template = os.path.normcase(os.path.abspath(payload["template"]))
+calls = []
 
-    def forbidden(*args, **kwargs):
-        raise RuntimeError("h3_edit_n reached a builder or poll it must not use")
 
-    namespace = {
-        "BASE": base, "json": json, "math": math, "re": re, "time": time,
-        "urllib": types.SimpleNamespace(request=types.SimpleNamespace(Request=Request)),
-        "RH_KEY": "offline-gate-key", "RH_TIMEOUT_SUBMIT": 1,
-        "_provider_json_request": provider_request, "rh_submit": saved_workflow,
-        "persist_provider_task": persist, "_rh_wait_task": forbidden, "_rh_results_to_images": forbidden,
-        "rh_build_h3_remix_graph": forbidden, "rh_build_h3_optimized_graph": forbidden,
-        "ProviderStateUncertain": RuntimeError, "ProviderTaskFailed": RuntimeError,
-    }
-    module = ast.Module(body=[functions[name] for name in H3_SERVER_GRAPH_FUNCTIONS], type_ignores=[])
-    exec(compile(module, "server.py", "exec"), namespace)
+class Halt(Exception):
+    pass
 
-    def run(job, workflow):
+
+class Request:
+    def __init__(self, url, data=None, headers=None, origin_req_host=None, unverifiable=False, method=None):
+        self.full_url, self.data, self.headers, self.method = url, data, dict(headers or {}), method
+
+
+def provider_request(request, timeout=None):
+    calls.append({"kind": "complete_graph", "url": request.full_url, "method": request.method,
+                  "headers": request.headers, "body": json.loads(request.data.decode("utf-8"))})
+    return {"code": 0, "data": {"taskId": "offline-gate-task"}}
+
+
+def saved_workflow(workflow_id, node_list):
+    calls.append({"kind": "saved_workflow"})
+    return "offline-saved-task"
+
+
+def persist(job, task_id):
+    calls.append({"kind": "persist", "task_id": task_id})
+
+
+def poll(job, task_id, *args, **kwargs):
+    calls.append({"kind": "poll", "task_id": task_id})
+    raise Halt()
+
+
+def forbidden(*args, **kwargs):
+    calls.append({"kind": "forbidden"})
+    raise Halt()
+
+
+namespace = {
+    "BASE": pathlib.Path(payload["base"]), "json": json, "math": math, "re": re, "time": time,
+    "urllib": types.SimpleNamespace(request=types.SimpleNamespace(Request=Request)),
+    "RH_KEY": "offline-gate-key", "RH_TIMEOUT_SUBMIT": 1,
+    "_provider_json_request": provider_request, "rh_submit": saved_workflow, "persist_provider_task": persist,
+    "_rh_wait_task": poll, "_rh_results_to_images": forbidden,
+    "rh_build_h3_remix_graph": forbidden, "rh_build_h3_optimized_graph": forbidden,
+    "ProviderStateUncertain": RuntimeError, "ProviderTaskFailed": RuntimeError,
+}
+code = compile("\n\n".join(payload["functions"]), "server.py", "exec")
+
+
+def audit(event, args):
+    if event == "open":
+        path, mode = args[0], (args[1] if len(args) > 1 else "r") or "r"
+        if (isinstance(path, (str, bytes, os.PathLike)) and mode in ("r", "rb", "rt")
+                and os.path.normcase(os.path.abspath(os.fsdecode(path))) == template):
+            return
+        raise PermissionError("offline h3 contract blocked open")
+    if event != "exec":
+        raise PermissionError("offline h3 contract blocked " + event)
+
+
+sys.addaudithook(audit)
+results = []
+try:
+    exec(code, namespace)
+    for job in payload["cases"]:
         calls.clear()
         try:
-            namespace["rh_run_video"](job, workflow)
-        except _H3Dispatched:
+            namespace["rh_run_video"](job, payload["workflow"])
+            calls.append({"kind": "returned"})
+        except Halt:
             pass
-        return list(calls)
-    return run
+        except Exception as error:
+            calls.append({"kind": "error", "type": type(error).__name__})
+        results.append(list(calls))
+except Exception as error:
+    results = [[{"kind": "error", "type": type(error).__name__}]]
+sys.stdout.write(json.dumps(results))
+'''
+
+
+def _h3_run_isolated(source, functions, base, workflow, jobs):
+    segments = [ast.get_source_segment(source, functions[name]) for name in H3_SERVER_GRAPH_FUNCTIONS]
+    payload = {"functions": segments, "template": str(base / H3_SERVER_GRAPH_TEMPLATE), "base": str(base),
+               "workflow": workflow, "cases": jobs}
+    with tempfile.TemporaryDirectory() as folder:
+        completed = subprocess.run([sys.executable, "-I", "-c", _H3_CHILD], input=json.dumps(payload),
+                                   capture_output=True, text=True, encoding="utf-8", timeout=300, cwd=folder,
+                                   env={key: os.environ[key] for key in ("SYSTEMROOT", "PATH") if key in os.environ})
+    if completed.returncode:
+        raise RuntimeError("offline h3 runner failed")
+    return json.loads(completed.stdout)
 
 
 def _h3_cases(workflow):
@@ -775,12 +879,14 @@ def _h3_graph_errors(graph, job, workflow, template, images, slots, consumers):
 
 def validate_h3_server_graph_contract(workflow, base=None, server_source=None,
                                       template_sha256=None, functions_sha256=None, catalog_sha256=None):
-    """Execute h3_edit_n's real dispatch, submit and graph builder offline and check what would be sent.
+    """Execute h3_edit_n's real dispatch, submit and graph builder in an isolated process; check what is sent.
 
-    Cases: the 216 feature states (references 2-4 present/absent, each LoRA slot off, at zero strength,
-    enabled), the schema defaults, every allowed model in every slot, and each model in all three slots.
-    For each, the captured request must carry the complete graph with an empty nodeInfoList, and that
-    graph must pass the semantic checks. Never imports server.py, reads credentials or contacts a provider.
+    Pins (template, LoRA catalog, function source) and module bindings are checked first; any drift fails
+    here without executing the changed code. Cases: the 216 feature states (references 2-4 present/absent,
+    each LoRA slot off, at zero strength, enabled), the schema defaults, every allowed model in every slot,
+    and each model in all three slots. Each run must submit the complete graph once by POST with an empty
+    nodeInfoList, persist that task once, then poll; the sent graph must pass the semantic checks.
+    Never imports server.py, reads credentials or contacts a provider.
     """
     base = pathlib.Path(base or BASE)
     template_sha256 = template_sha256 or H3_SERVER_GRAPH_TEMPLATE_SHA256
@@ -795,37 +901,52 @@ def validate_h3_server_graph_contract(workflow, base=None, server_source=None,
             errors.append("h3 server graph template drift")
         if h3_lora_catalog_sha256(workflow.get("rh_lora_catalog") or {}) != catalog_sha256:
             errors.append("h3 LoRA catalog drift")
+        tree = ast.parse(source)
         functions = _h3_server_functions(source)
         if set(functions) != set(H3_SERVER_GRAPH_FUNCTIONS):
             return errors + ["h3 server graph functions missing"]
         if h3_server_graph_functions_sha256(source) != functions_sha256:
             errors.append("h3 server graph builder drift")
+        errors.extend(_h3_binding_errors(tree))
         template = json.loads(template_bytes)
         consumers = [(node_id, field) for node_id, row in template.items() if node_id != "285"
                      for field, value in row["inputs"].items() if value == ["285", 0]]
         if (((template.get("285") or {}).get("inputs") or {}).get("model") != H3_SERVER_GRAPH_MODEL_SOURCE
                 or tuple(sorted(consumers)) != H3_SERVER_GRAPH_MODEL_CONSUMERS):
-            return errors + ["h3 server graph template or LoRA catalog invalid"]
-        run = _h3_offline_runner(functions, base)
-        frozen = json.dumps(workflow, sort_keys=True)
-        found = set()
-        for images, params in _h3_cases(workflow):
+            errors.append("h3 server graph template or LoRA catalog invalid")
+        if errors:
+            # Unreviewed code or data is never executed.
+            return errors
+        cases = list(_h3_cases(workflow))
+        jobs = []
+        for images, params in cases:
             media = {"reference_image": "api/gate-ref-1.png", "source_video": "api/gate-video.mp4"}
             media.update({f"reference_image_{index}": f"api/gate-ref-{index}.png"
                           for index, uploaded in enumerate(images, 2) if uploaded})
-            job = {"provider_media": media, "params": params, "prompt": "release gate graph check"}
-            try:
-                calls = run(json.loads(json.dumps(job)), workflow)
-            except Exception as error:
-                found.add(f"h3 server graph build failed: {type(error).__name__}")
+            jobs.append({"provider_media": media, "params": params, "prompt": "release gate graph check"})
+        frozen = json.dumps(workflow, sort_keys=True)
+        results = _h3_run_isolated(source, functions, base, workflow, jobs)
+        if len(results) != len(jobs):
+            return errors + ["h3 server graph build failed: " + str((results[0][0] if results and results[0] else {}).get("type"))]
+        found = set()
+        for (images, params), job, calls in zip(cases, jobs, results):
+            kinds = [call["kind"] for call in calls]
+            if "error" in kinds:
+                found.add("h3 server graph build failed: " + next(call["type"] for call in calls if call["kind"] == "error"))
                 continue
-            if [call[0] for call in calls] != ["complete_graph"]:
+            if kinds != ["complete_graph", "persist", "poll"]:
                 found.add("h3 submission no longer sends the complete server graph")
                 continue
-            _, url, body = calls[0]
-            if (url != "https://www.runninghub.ai/task/openapi/create" or body.get("nodeInfoList") != []
+            sent, persisted, polled = calls
+            body = sent["body"]
+            headers = {key.lower(): value for key, value in (sent.get("headers") or {}).items()}
+            if (sent["url"] != "https://www.runninghub.ai/task/openapi/create" or sent["method"] not in (None, "POST")
+                    or headers.get("content-type") != "application/json"
+                    or headers.get("authorization") != "Bearer offline-gate-key"
+                    or body.get("apiKey") != "offline-gate-key" or body.get("nodeInfoList") != []
                     or body.get("workflowId") != workflow.get("rh_workflow_id")
-                    or not isinstance(body.get("workflow"), str)):
+                    or not isinstance(body.get("workflow"), str)
+                    or persisted["task_id"] != "offline-gate-task" or polled["task_id"] != "offline-gate-task"):
                 found.add("h3 submission no longer sends the complete server graph")
                 continue
             found.update(_h3_graph_errors(json.loads(body["workflow"]), job, workflow, template, images,
