@@ -32,11 +32,25 @@ EXPECTED_PROVENANCE = {
 }
 
 
-# NEEDS OWNER AUTHORIZATION: the 2026-09-12 live-schema evidence predates h3_edit_n's reference images
-# 2-4 (4a46084) and LoRA slots (547e6cc). Refreshing it needs a read-only RunningHub schema read with the
-# production account, so this one drift stays pinned exactly; any other drift, or a refresh, fails the test.
-# (The public control schema itself was re-pinned on 2026-10-20 once the owner capped duration at 25 s.)
-KNOWN_H3_EDIT_N_LIVE_DRIFT = ["uploaded workflow live mappings invalid: h3_edit_n"]
+H3_ID = "h3_edit_n"
+H3_MAPPINGS_INVALID = "uploaded workflow live mappings invalid: h3_edit_n"
+SERVER_SOURCE = (ROOT / "server.py").read_text(encoding="utf8").replace("\r\n", "\n")
+
+
+def h3_config(mutate=None):
+    config = json.loads(json.dumps(CONFIG))
+    if mutate:
+        mutate(next(row for row in config["workflows"] if row["id"] == H3_ID))
+    return config
+
+
+def h3_workflow():
+    return next(row for row in CONFIG["workflows"] if row["id"] == H3_ID)
+
+
+def tampered_server(old, new):
+    assert SERVER_SOURCE.count(old) == 1, old
+    return SERVER_SOURCE.replace(old, new)
 
 
 def test_atomic_release_gates_all_six_uploaded_workflows():
@@ -448,7 +462,9 @@ def test_dreamapi_migration_e2e_rejects_duplicate_job_and_client_ids(tmp_path, m
 
 
 def test_uploaded_workflow_live_schema_evidence_is_fail_closed():
-    assert MODULE.validate_uploaded_workflow_live_schema_manifest(CONFIG) == KNOWN_H3_EDIT_N_LIVE_DRIFT
+    # 2026-10-22: h3_edit_n's nine server-bound controls are proven by the server graph contract, so the
+    # 09-12 provider read (six mappings, unchanged and re-confirmed read-only) now passes as recorded.
+    assert MODULE.validate_uploaded_workflow_live_schema_manifest(CONFIG) == []
     record = json.loads(MODULE.UPLOADED_WORKFLOW_LIVE_SCHEMA_MANIFEST.read_text(encoding="utf8"))
     assert record["verification"] == "PASS"
     assert len(record["records"]) == 6
@@ -519,10 +535,80 @@ def test_uploaded_live_schema_gate_rejects_internal_contradictions(tmp_path, mon
         lambda row: row["records"][1].update({"canonical_equal": False}),
         lambda row: row["records"][1].update({"structural_equal": False}),
     )
-    for index, mutate in enumerate(mutations):
+    # The baseline is valid, so each mutation must produce its own specific error.
+    first, second = (f"uploaded workflow live schema invalid: {source['records'][i]['internal_id']}" for i in (0, 1))
+    expected = ["uploaded workflow live schema identity invalid", first, first, first, first, first, second, second]
+    for index, (mutate, error) in enumerate(zip(mutations, expected)):
         changed = json.loads(json.dumps(source))
         mutate(changed)
         manifest = tmp_path / f"live-schema-{index}.json"
         manifest.write_text(json.dumps(changed), encoding="utf8")
         monkeypatch.setattr(MODULE, "UPLOADED_WORKFLOW_LIVE_SCHEMA_MANIFEST", manifest)
-        assert MODULE.validate_uploaded_workflow_live_schema_manifest(CONFIG), index
+        assert error in MODULE.validate_uploaded_workflow_live_schema_manifest(CONFIG), index
+
+
+@pytest.mark.parametrize("mutate", [
+    lambda w: w["rh_media"]["reference_image_2"].update({"node": "297"}),
+    lambda w: w["rh_media"]["reference_image_4"].update({"field": "images"}),
+    lambda w: w["rh_media"].pop("reference_image_3"),
+    lambda w: w["rh_params"].update({"lora_4_model": {"type": "select", "label": "LoRA 4"}}),
+    lambda w: w["rh_params"]["lora_1_model"].update({"node": "301", "field": "lora_name"}),
+    lambda w: w["rh_params"]["prompt"].update({"node": "999"}),
+], ids=["moved", "field", "dropped", "unknown", "lora-node", "provider-mapping"])
+def test_h3_server_bound_mappings_must_match_the_reviewed_set_exactly(mutate):
+    assert H3_MAPPINGS_INVALID in MODULE.validate_uploaded_workflow_live_schema_manifest(h3_config(mutate))
+
+
+def test_h3_server_bound_mappings_are_never_claimed_as_live(tmp_path, monkeypatch):
+    record = json.loads(MODULE.UPLOADED_WORKFLOW_LIVE_SCHEMA_MANIFEST.read_text(encoding="utf8"))
+    row = next(row for row in record["records"] if row["internal_id"] == H3_ID)
+    row["mappings"].append({"scope": "rh_media", "key": "reference_image_2", "node": "294",
+                            "field": "image", "live_present": True})
+    manifest = tmp_path / "live-schema.json"
+    manifest.write_text(json.dumps(record), encoding="utf8")
+    monkeypatch.setattr(MODULE, "UPLOADED_WORKFLOW_LIVE_SCHEMA_MANIFEST", manifest)
+    assert H3_MAPPINGS_INVALID in MODULE.validate_uploaded_workflow_live_schema_manifest(CONFIG)
+
+
+def test_h3_server_graph_contract_passes_every_combination_of_the_current_build():
+    assert MODULE.h3_server_graph_functions_sha256(SERVER_SOURCE) == MODULE.H3_SERVER_GRAPH_FUNCTIONS_SHA256
+    assert MODULE.validate_h3_server_graph_contract(h3_workflow()) == []
+
+
+@pytest.mark.parametrize("old,new,error", [
+    ("'strength_model': strength", "'strength_model': 1.0", "h3 server graph LoRA wiring invalid: slot 1"),
+    ("if selected == 'none' or strength == 0:", "if selected == 'none':", "h3 server graph LoRA not bypassed: slot 1"),
+    ("            if value == ['285', 0]:", "            if value == ['999', 0]:",
+     "h3 server graph model chain does not reach its consumers"),
+    ("references['ref_images.ref_image_'+str(i-1)] = [node,0]",
+     "references['ref_images.ref_image_'+str(min(i-1,2))] = [node,0]",
+     "h3 server graph reference wiring invalid: reference_image_4"),
+    ("'nodeInfoList':[]", "'nodeInfoList':[{'nodeId':'244'}]", "h3 submission no longer sends the complete server graph"),
+], ids=["strength", "zero-strength", "consumers", "reference-input", "node-info"])
+def test_h3_server_graph_contract_rejects_builder_tampering(old, new, error):
+    source = tampered_server(old, new)
+    pinned = MODULE.validate_h3_server_graph_contract(h3_workflow(), server_source=source)
+    assert "h3 server graph builder drift" in pinned and error in pinned
+    # Re-pinning the tampered source does not help: the semantic checks reject it on their own.
+    repinned = MODULE.validate_h3_server_graph_contract(
+        h3_workflow(), server_source=source, functions_sha256=MODULE.h3_server_graph_functions_sha256(source))
+    assert error in repinned and "h3 server graph builder drift" not in repinned
+
+
+def test_h3_server_graph_contract_requires_the_server_graph_route():
+    source = tampered_server("multi = w.get('id') in ('h3_edit_n', ", "multi = w.get('id') in (")
+    assert "h3 submission no longer sends the complete server graph" in MODULE.validate_h3_server_graph_contract(
+        h3_workflow(), server_source=source)
+
+
+def test_h3_server_graph_contract_rejects_template_tampering(tmp_path):
+    template = json.loads((ROOT / MODULE.H3_SERVER_GRAPH_TEMPLATE).read_text(encoding="utf8"))
+    template["221"]["inputs"]["model"] = template["285"]["inputs"]["model"]
+    raw = json.dumps(template).encode("utf8")
+    (tmp_path / "video_wf").mkdir()
+    (tmp_path / MODULE.H3_SERVER_GRAPH_TEMPLATE).write_bytes(raw)
+    pinned = MODULE.validate_h3_server_graph_contract(h3_workflow(), base=tmp_path, server_source=SERVER_SOURCE)
+    assert "h3 server graph template drift" in pinned
+    repinned = MODULE.validate_h3_server_graph_contract(h3_workflow(), base=tmp_path, server_source=SERVER_SOURCE,
+                                                        template_sha256=hashlib.sha256(raw).hexdigest())
+    assert repinned == ["h3 server graph template or LoRA catalog invalid"]

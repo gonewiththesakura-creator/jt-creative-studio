@@ -65,7 +65,7 @@
 | 项 | 说明 | 测试中的处理 |
 |---|---|---|
 | ~~h3_edit_n 的 duration 没有上限~~ **2026-10-20 已决定**：用户把上限定为 25 秒 | `config.json` 中 duration 为 `min 4 / max 25`；服务端拒绝超过上限的值，视频页自动识别源视频时长时也会夹到 25 秒 | 豁免和 strict xfail 已删除，边界用例覆盖 26 秒被拒绝 |
-| h3_edit_n 公开 schema 与发布门评审版本不一致（参考图 2–4、LoRA） | **2026-10-20**：时长有了上限，`UPLOADED_WORKFLOW_FIELDS` 和 `UPLOADED_WORKFLOW_CONTROL_SCHEMA_SHA256` 已按当前结构重新固定。2026-09-12 的线上 schema 证据早于这些映射，刷新需要用生产账号向 RunningHub 只读拉一次 schema，需用户授权 | 只剩 `uploaded workflow live mappings invalid: h3_edit_n` 这 1 条漂移被精确固定 |
+| ~~h3_edit_n 公开 schema 与发布门评审版本不一致（参考图 2–4、LoRA）~~ **2026-10-22 已解决** | 用户授权后只读重拉 RunningHub 工作流：33 节点、规范化摘要与 09-12 一致，供应商侧未变。阻断的真正原因是 h3_edit_n 提交服务端自建的完整图（`rh_build_h3_graph` → `rh_submit_h3_multi`），参考图 2–4 和三组 LoRA 由服务端绑定，供应商保存的图里本就没有。发布门改为：6 项供应商映射照旧与 09-12 记录精确相等；9 项服务端绑定映射必须精确等于评审集合且不得记为 live_present；另跑 `validate_h3_server_graph_contract()`，固定模板与建图/提交函数源码摘要，离线执行建图 216 种组合，检查全部取值、接线、LoRA 链与权重、旁路和完整图提交 | 删除固定漂移断言，新增映射篡改、冒充 live、建图篡改（指纹与语义各自独立拦截）、模板篡改、提交路径篡改用例；旧"只断言有错误"的用例改为要求具体错误。09-12 历史证据未改 |
 | ~~创作页 `promptgen.html` 超出快速启动预算~~ **2026-10-20 已决定**：独立页预算放宽到 452,000 LF 字节。实测这个页面只在 `/promptgen` 使用，约 80% 是内嵌的 base64 预览图；用户访问 `/` 走 App Shell，创作页路由首次加载 gzip 后约 29.7KB。这次重建（重登修复加导航标签）后，独立页为 450,798 字节，App Shell 创作页首次下载（含 app.html、main、账号模块）gzip 增加 307 字节 | — | 去掉 ratchet；新增 App Shell 创作页路由 gzip 预算 32,000 字节 |
 | ~~原生 DreamAPI 付费证据与当前运行时不一致~~ **2026-10-22 已刷新**：用户授权后，对吸积版提交 `ec0c01c` 在隔离候选实例做了一次付费 canary（同机内部服务、direct、gpt-image-2 / low / 9:16），任务 `a190e498799f`，24.8 秒，864×1536，已目视核验 | 证据在 `audit/accretion_canary_20261022/`，`DREAMAPI_NATIVE_MANIFEST` 与摘要已改绑 | strict xfail 已删除 |
 | ~~promptgen.html 的导航仍显示「真人化」~~ **2026-10-20 已同步** | 2026-10-20 重建后，所有页面导航都显示「图片编辑」 | 测试改为只接受「图片编辑」 |
