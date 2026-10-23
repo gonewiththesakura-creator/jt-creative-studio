@@ -239,9 +239,11 @@ def test_release_acceptance_requires_the_reviewed_runtime_contract():
 
     source = (ROOT / "tools" / "deploy_realism_release.py").read_text(encoding="utf-8")
     deploy_body = source.split("def deploy(", 1)[1].split("def parse_args(", 1)[0]
-    assert 'fetch_json(public_base, "/api/health")' in deploy_body
-    assert "require_dreamapi_release_health" in deploy_body
-    assert deploy_body.index("require_dreamapi_release_health") < deploy_body.index(
+    # Public health needs a login; the release reads the restarted panel's
+    # DreamAPI configuration and drained counters over SSH instead.
+    gate = "require_dreamapi_release_runtime(remote_dreamapi_runtime(client), drained)"
+    assert gate in deploy_body
+    assert deploy_body.index(gate) < deploy_body.index(
         'write_transaction_phase(client, transaction, "committed")'
     )
 

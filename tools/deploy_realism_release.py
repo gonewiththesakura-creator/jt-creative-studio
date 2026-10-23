@@ -44,7 +44,9 @@ NEW_STYLE_E2E_MANIFEST = BASE / "audit" / "style221_222_panel_e2e_20260913.json"
 UPLOADED_WORKFLOW_LIVE_SCHEMA_MANIFEST = BASE / "audit" / "uploaded_workflows_live_schema_20260912.json"
 UPLOADED_WORKFLOW_E2E_MANIFEST = BASE / "audit" / "uploaded_workflows_live_e2e_20260912.json"
 REMOTE_ROOT = "/home/admin/comfy-panel"
-PUBLIC_BASE = "http://8.210.125.65:8189"
+# Since the membership cutover the panel listens on loopback only. The public
+# origin is the HTTPS reverse proxy, where every API except /api/live needs a login.
+PUBLIC_BASE = "https://studio.dreamapi.club"
 RELEASE_LOCK_DIR = REMOTE_ROOT + "/.release.lock"
 RELEASE_TRANSACTIONS_DIR = REMOTE_ROOT + "/.release-transactions"
 WATCHDOG_SERVICE_UNIT = "/etc/systemd/system/comfy-panel-watchdog.service"
@@ -2764,6 +2766,84 @@ def wait_for_remote_release_drain(client, timeout=60):
     raise RuntimeError(f"release drain endpoint did not become ready: {last_error}") from last_error
 
 
+def require_drained_idle(client, phase, samples=IDLE_STABILITY_CHECKS,
+                         interval=IDLE_STABILITY_INTERVAL):
+    """Require a stable idle window while loopback draining keeps admission closed.
+
+    Re-asserting draining is idempotent and returns the in-process counters,
+    which the login-gated public health no longer exposes.
+    """
+    if not isinstance(samples, int) or isinstance(samples, bool) or samples < 1:
+        raise ValueError("idle samples must be a positive integer")
+    last = None
+    for sample in range(samples):
+        state = set_remote_release_drain(client, True)
+        active = [key for key in ("cloud_busy", "local_busy", "api_busy") if state[key]]
+        if active:
+            raise ReleaseBusyError(
+                f"{phase}: active generation backend(s): {', '.join(active)}; refusing release"
+            )
+        last = state
+        if sample + 1 < samples:
+            time.sleep(interval)
+    return last
+
+
+# Mirrors server.py's direct DreamAPI endpoint validation. It runs on the server
+# against the panel process environment and returns booleans only.
+DREAMAPI_RUNTIME_SOURCE = """def dreamapi_runtime(environment):
+    import urllib.parse
+    value=lambda name,default='':environment.get(name.encode('ascii'),default.encode('ascii')).decode('utf-8','replace')
+    mode=value('DREAMAPI_CONNECTION_MODE','direct').strip()
+    valid=False
+    if mode=='direct':
+        parsed=urllib.parse.urlparse(value('DREAMAPI_BASE_URL','https://dreamapi.club').rstrip('/'))
+        try:
+            parsed.port
+            loopback_http=parsed.scheme=='http' and parsed.hostname in {'127.0.0.1','::1'}
+            valid=bool((parsed.scheme=='https' or loopback_http) and parsed.hostname and not parsed.username
+                       and not parsed.password and not parsed.query and not parsed.fragment
+                       and parsed.path in {'','/v1'})
+        except ValueError:
+            valid=False
+    return {'dreamapi_configured':bool(value('DREAMAPI_KEY')),
+            'dreamapi_connection_mode':mode if mode in {'direct','workstation'} else 'invalid',
+            'dreamapi_endpoint_valid':valid}
+"""
+
+
+def remote_dreamapi_runtime(client):
+    """Read the running panel's DreamAPI configuration without returning secrets."""
+    script = DREAMAPI_RUNTIME_SOURCE + """import json,pathlib,subprocess
+pid=subprocess.run(['systemctl','show','--property','MainPID','--value','comfy-panel'],text=True,capture_output=True,check=True).stdout.strip()
+if not pid.isdigit() or int(pid)<=0: raise RuntimeError('comfy-panel has no running MainPID')
+entries=pathlib.Path('/proc/'+pid+'/environ').read_bytes().split(b'\\0')
+print(json.dumps(dreamapi_runtime(dict(entry.split(b'=',1) for entry in entries if b'=' in entry)),separators=(',',':')))
+"""
+    raw = command(client, "sudo python3 -c " + shlex.quote(script), timeout=30)
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as error:
+        raise RuntimeError("DreamAPI runtime returned invalid JSON") from error
+
+
+def require_dreamapi_release_runtime(runtime, drained):
+    """Post-login replacement for the public DreamAPI health gate."""
+    fields = {"dreamapi_configured", "dreamapi_connection_mode", "dreamapi_endpoint_valid"}
+    if not isinstance(runtime, dict) or set(runtime) != fields:
+        raise RuntimeError("DreamAPI runtime response is invalid")
+    if runtime["dreamapi_connection_mode"] != "direct":
+        # Workstation readiness is an in-process egress probe that only the
+        # login-gated health reports; refuse rather than assume it.
+        raise RuntimeError("DreamAPI transport mode cannot be verified for release")
+    if runtime["dreamapi_configured"] is not True or runtime["dreamapi_endpoint_valid"] is not True:
+        raise RuntimeError("DreamAPI direct transport is not configured")
+    # In direct mode a pending (uncertain) DreamAPI outcome counts as API work.
+    if not isinstance(drained, dict) or drained.get("api_busy") is not False:
+        raise RuntimeError("DreamAPI outcome is still uncertain")
+    return {**runtime, "dreamapi_uncertainty_fence": False}
+
+
 def require_bootstrap_drain_contract_absent(client):
     """Reject an inapplicable bootstrap without leaving a retained lock."""
     script = """import pathlib
@@ -3515,63 +3595,22 @@ def fetch_bytes_resilient(base, path, timeout=300, accept_gzip=False, attempts=3
     raise last_error
 
 
-def verify_public_large_responses(base, expected_creator, expected_preview,
-                                  deadline=None, expected_realism=None):
-    if (not isinstance(expected_creator, bytes)
-            or not isinstance(expected_preview, bytes)
-            or (expected_realism is not None
-                and not isinstance(expected_realism, bytes))):
-        raise TypeError("public verification requires immutable expected bytes")
-    if deadline is None:
-        deadline = time.monotonic() + PUBLIC_LARGE_VERIFY_TIMEOUT
-    realism = home = None
-    if expected_realism is not None:
-        realism = fetch_bytes_resilient(
-            base, "/realism", timeout=300, attempts=3,
-            deadline=deadline, max_bytes=len(expected_realism),
-        )
-        home = fetch_bytes_resilient(
-            base, "/", timeout=300, attempts=3,
-            deadline=deadline, max_bytes=len(expected_creator),
-        )
-    for attempt in range(3):
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            raise RuntimeError("public large response verification timeout")
-        creator = fetch_bytes_resilient(
-            base, "/?style=retro_manga_luxury", timeout=300, accept_gzip=True,
-            attempts=3, deadline=deadline, max_bytes=len(expected_creator),
-        )
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            raise RuntimeError("public large response verification timeout")
-        preview = fetch_bytes_resilient(
-            base, "/static/previews/style-retro-manga-luxury.webp",
-            timeout=300, attempts=3, deadline=deadline,
-            max_bytes=len(expected_preview),
-        )
-        if creator != expected_creator:
-            raise RuntimeError(f"public creator large response mismatch on attempt {attempt + 1}")
-        if preview != expected_preview:
-            raise RuntimeError(f"public creator preview mismatch on attempt {attempt + 1}")
-    if expected_realism is not None:
-        return realism, home, expected_creator, expected_preview
-    return expected_creator, expected_preview
-
-
-def verify_public_app_shell(base, payloads):
+def verify_public_app_shell(base, payloads, deadline=None):
     """Verify all entry routes and every lazy asset against committed bytes."""
+    def fetch(route, expected):
+        return fetch_bytes_resilient(base, route, max_bytes=len(expected), deadline=deadline)
+
     shell = payloads[BASE / "static/app.html"]
     for route in ("/", "/realism", "/video"):
-        if fetch_bytes_resilient(base, route, max_bytes=len(shell)) != shell:
+        if fetch(route, shell) != shell:
             raise RuntimeError("public app shell mismatch: " + route)
     manifest_bytes = payloads[BASE / "static/app-manifest.json"]
-    if fetch_bytes_resilient(base, "/static/app-manifest.json", max_bytes=len(manifest_bytes)) != manifest_bytes:
+    if fetch("/static/app-manifest.json", manifest_bytes) != manifest_bytes:
         raise RuntimeError("public app manifest mismatch")
     manifest = json.loads(manifest_bytes)
     for route in manifest["assets"]:
         expected = payloads[BASE / route.lstrip("/")]
-        if fetch_bytes_resilient(base, route, max_bytes=len(expected)) != expected:
+        if fetch(route, expected) != expected:
             raise RuntimeError("public lazy asset mismatch: " + route)
     pages = manifest["pages"]
     def page_bytes(route):
@@ -3580,23 +3619,97 @@ def verify_public_app_shell(base, payloads):
     return page_bytes("/realism"), shell, page_bytes("/")
 
 
-def verify_public_creator_config(base, creator, payloads):
-    """Verify the lazy-loaded config referenced by the exact released HTML."""
-    match = re.search(rb'const STYLE_CONFIG_URL="(/static/style-configs\.[0-9a-f]{12}\.json)"', creator)
+def verify_app_shell_creator_styles(creator, payloads, manifest_assets):
+    """Check the creator's lazy style profiles and preview inside the released assets."""
+    match = re.search(rb"const STYLE_ASSETS=(\{[^;]*\});", creator)
     if not match:
-        raise RuntimeError("public creator config reference missing")
-    route = match.group(1).decode("ascii")
-    expected = payloads.get(BASE / route.lstrip("/"))
-    if not isinstance(expected, bytes):
-        raise RuntimeError("creator config missing from immutable release")
-    actual = fetch_bytes_resilient(base, route, max_bytes=len(expected))
-    if actual != expected:
-        raise RuntimeError("public creator config bytes mismatch")
-    profiles = json.loads(actual)
+        raise RuntimeError("public creator style assets missing")
+    routes = json.loads(match.group(1))
+    profiles = {}
     for key, trigger in (("retro_manga_luxury", "jt_style321_v1"),
                          ("style221", "zxqelun"), ("style222", "zxqavri")):
-        if profiles.get(key, {}).get("trigger") != trigger:
+        route = routes.get(key)
+        expected = (payloads.get(BASE / route.lstrip("/"))
+                    if isinstance(route, str) and route in manifest_assets else None)
+        if not isinstance(expected, bytes):
+            raise RuntimeError("creator style asset missing from immutable release: " + key)
+        profiles[key] = json.loads(expected)
+        if profiles[key].get("trigger") != trigger:
             raise RuntimeError("public creator style config mismatch: " + key)
+    preview = profiles["retro_manga_luxury"].get("preview")
+    expected_preview = payloads.get(BASE / "static/previews/style-retro-manga-luxury.webp")
+    if (not isinstance(preview, str) or preview not in manifest_assets
+            or not isinstance(expected_preview, bytes)
+            or payloads.get(BASE / preview.lstrip("/")) != expected_preview):
+        raise RuntimeError("public creator preview mismatch")
+
+
+def verify_public_app_shell_release(base, payloads):
+    """Verify the public App Shell, every lazy asset and the creator markers.
+
+    With membership enabled only the shell, its manifest and hashed assets are
+    public, so the creator styles and preview are checked through those assets.
+    """
+    shell = payloads.get(BASE / "static/app.html")
+    manifest_bytes = payloads.get(BASE / "static/app-manifest.json")
+    if not isinstance(shell, bytes) or not isinstance(manifest_bytes, bytes):
+        raise RuntimeError("release payload is missing the App Shell")
+    deadline = time.monotonic() + PUBLIC_LARGE_VERIFY_TIMEOUT
+    realism, home, creator = verify_public_app_shell(base, payloads, deadline=deadline)
+    styled = fetch_bytes_resilient(
+        base, "/?style=retro_manga_luxury", accept_gzip=True,
+        deadline=deadline, max_bytes=len(shell),
+    )
+    if styled != shell:
+        raise RuntimeError("public creator style route mismatch")
+    if b"/api/image-edit-generate" not in realism or b"/realism" not in home:
+        raise RuntimeError("public route markers missing")
+    if not all(marker in creator for marker in (
+        b"retro_manga_luxury", b"genApiBtn", b"apiDrawerOpen", b"gpt-image-2.5-flare",
+        "API结果".encode("utf-8"), b"style221", b"style222",
+    )):
+        raise RuntimeError("public creator style/API markers missing")
+    verify_app_shell_creator_styles(creator, payloads, set(json.loads(manifest_bytes)["assets"]))
+    return realism, home, creator
+
+
+def verify_public_membership_boundary(base):
+    """Anonymous visitors must see the login gate, not the APIs or release drain."""
+    def get(path):
+        request = urllib.request.Request(base.rstrip("/") + path,
+                                         headers={"Cache-Control": "no-cache"})
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                return response.status, response.read(64 * 1024)
+        except urllib.request.HTTPError as error:
+            return error.code, b""
+
+    status, raw = get("/api/auth/me")
+    try:
+        me = json.loads(raw)
+    except ValueError:
+        me = None
+    if (status != 200 or not isinstance(me, dict) or me.get("enabled") is not True
+            or me.get("authenticated") is not False):
+        raise RuntimeError("public membership login is not enforced")
+    for path in ("/api/health", "/api/workflows", "/api/jobs"):
+        if get(path)[0] != 401:
+            raise RuntimeError("public API is not behind the login gate: " + path)
+    if get("/api/admin/release-drain")[0] != 404:
+        raise RuntimeError("public release drain endpoint is exposed")
+
+
+def require_release_workflow_names(config_bytes):
+    """The restarted panel loads the read-back config.json; check its workflow names."""
+    try:
+        workflows = json.loads(config_bytes)["workflows"]
+    except (ValueError, KeyError, TypeError) as error:
+        raise RuntimeError("released config.json has no workflow list") from error
+    names = {str(item.get("name") or "") for item in workflows if isinstance(item, dict)}
+    if not set(TARGET_WORKFLOW_NAMES).issubset(names):
+        raise RuntimeError("released workflow list missing target workflows")
+    if not set(UPLOADED_WORKFLOW_NAMES.values()).issubset(names):
+        raise RuntimeError("released workflow list missing uploaded workflows")
 
 
 def wait_for_health(base, timeout=60):
@@ -3936,7 +4049,10 @@ def deploy(files, payloads, public_base=PUBLIC_BASE,
     if set(payloads) != set(files) or any(not isinstance(data, bytes)
                                           for data in payloads.values()):
         raise RuntimeError("immutable release payload set is invalid")
-    require_public_idle(public_base, phase="preflight")
+    if bootstrap_drain_contract:
+        # Legacy servers predate both the drain endpoint and the login gate, so
+        # their public health is the only idle signal before connecting.
+        require_public_idle(public_base, phase="preflight")
     # Imported and connection metadata/key read only after fail-closed local preflight.
     import paramiko
 
@@ -4007,7 +4123,8 @@ def deploy(files, payloads, public_base=PUBLIC_BASE,
         release_manifest = backup_release(client, sftp, remote_paths, transaction)
         write_transaction_phase(client, transaction, "prepared")
 
-        require_public_idle(public_base, phase="pre-stop")
+        if bootstrap_drain_contract:
+            require_public_idle(public_base, phase="pre-stop")
         rollback_uncertain = True
         try:
             # Arm restart-time draining first so a spontaneous service restart
@@ -4019,6 +4136,9 @@ def deploy(files, payloads, public_base=PUBLIC_BASE,
                 # uncertain before the POST so failure handling always retries off.
                 drain_enabled = True
                 enable_remote_release_drain(client)
+                # Public health needs a login now: sample the drained in-process
+                # counters over a stable window before isolating or stopping.
+                require_drained_idle(client, phase="drained-pre-stop")
             watchdog_isolated = True
             isolate_watchdog(client)
             if bootstrap_drain_contract:
@@ -4113,48 +4233,17 @@ def deploy(files, payloads, public_base=PUBLIC_BASE,
 
             command(client, "sudo systemctl start comfy-panel", timeout=240)
             drain_enabled = True
-            wait_for_remote_release_drain(client)
+            drained = wait_for_remote_release_drain(client)
             if bootstrap_drain_contract:
                 disarm_bootstrap_fence(client)
                 bootstrap_fence_maybe_armed = False
             live = wait_for_live(public_base, timeout=60)
-            try:
-                health = fetch_json(public_base, "/api/health")
-            except Exception as error:
-                health = {"ok": False, "error": str(error)[:200]}
-            if not isinstance(health, dict) or health.get("dreamapi_configured") is not True:
-                raise RuntimeError("public DreamAPI channel is not configured")
-            expected_creator = payloads[BASE / "static" / "index.html"]
-            expected_realism = payloads[BASE / "static" / "realism.html"]
-            expected_preview = payloads[
-                BASE / "static" / "previews" / "style-retro-manga-luxury.webp"
-            ]
-            realism, home, creator, creator_preview = verify_public_large_responses(
-                public_base, payloads.get(BASE / "static/app.html", expected_creator), expected_preview,
-                expected_realism=payloads.get(BASE / "static/app.html", expected_realism),
-            )
-            if BASE / "static/app.html" in payloads:
-                realism, home, creator = verify_public_app_shell(public_base, payloads)
-            workflows = fetch_json(public_base, "/api/workflows")
-            names = {str(item.get("name") or "") for item in workflows if isinstance(item, dict)}
-            if b"/api/workflow-generate" not in realism or b"/realism" not in home:
-                raise RuntimeError("public route markers missing")
-            if not all(marker in creator for marker in (
-                b"retro_manga_luxury", b"style-retro-manga-luxury.webp",
-                b"genApiBtn", b"apiDrawerOpen", b"gpt-image-2.5-flare", "API结果".encode("utf-8"),
-                b"style221", b"style222",
-            )):
-                raise RuntimeError("public creator style/API markers missing")
-            verify_public_creator_config(public_base, expected_creator, payloads)
-            if creator_preview != expected_preview:
-                raise RuntimeError("public creator preview mismatch")
-            if not set(TARGET_WORKFLOW_NAMES).issubset(names):
-                raise RuntimeError("public workflow list missing target workflows")
-            if not set(UPLOADED_WORKFLOW_NAMES.values()).issubset(names):
-                raise RuntimeError("public workflow list missing uploaded workflows")
-            health = require_dreamapi_release_health(
-                fetch_json(public_base, "/api/health")
-            )
+            # Public health and workflow APIs need a login since the membership
+            # cutover; verify the same facts on the server and in the read-back bytes.
+            health = require_dreamapi_release_runtime(remote_dreamapi_runtime(client), drained)
+            require_release_workflow_names(payloads[BASE / "config.json"])
+            verify_public_app_shell_release(public_base, payloads)
+            verify_public_membership_boundary(public_base)
             install_watchdog_units(client)
             # From this point the release is fully verified. Persist commit before
             # reopening either restart-time or current-process admission.
@@ -4167,7 +4256,7 @@ def deploy(files, payloads, public_base=PUBLIC_BASE,
             cleanup_release_transaction(client, transaction)
             rollback_uncertain = False
             print("LIVE", json.dumps(live, ensure_ascii=False))
-            print("COMFY_DIAGNOSTIC", json.dumps(health, ensure_ascii=False))
+            print("DREAMAPI_RUNTIME", json.dumps(health, ensure_ascii=False))
             print("PUBLIC_MARKERS_OK")
         except BaseException:
             if release_committed:

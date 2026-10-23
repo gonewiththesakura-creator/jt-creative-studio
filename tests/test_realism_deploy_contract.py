@@ -1,6 +1,7 @@
 import importlib.util
 import hashlib
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -167,25 +168,6 @@ def test_admission_exception_cannot_change_generation_or_routes():
     assert not module.only_error_and_admission_changed(before, after.replace('return 1','return 2',1))
     assert not module.only_error_and_admission_changed(before, after.replace('def do_POST(self):\n        return 1','def do_POST(self):\n        return 2'))
     assert not module.only_error_and_admission_changed(before, after.replace('def billable_quota_status', '@execute\ndef billable_quota_status'))
-
-
-def test_public_creator_verifies_external_config_bytes(monkeypatch):
-    module = load_module()
-    config_path = next((ROOT / "static").glob("style-configs.*.json"))
-    raw = config_path.read_bytes()
-    creator = (ROOT / "static/index.html").read_bytes()
-    calls = []
-    def fetch(base, path, **kwargs):
-        calls.append(path)
-        return raw
-    monkeypatch.setattr(module, "fetch_bytes_resilient", fetch)
-    module.verify_public_creator_config("http://example.invalid", creator, {config_path: raw})
-    assert calls == ["/static/" + config_path.name]
-    monkeypatch.setattr(module, "fetch_bytes_resilient", lambda *a, **kw: b"{}")
-    with pytest.raises(RuntimeError, match="bytes mismatch"):
-        module.verify_public_creator_config("http://example.invalid", creator, {config_path: raw})
-    with pytest.raises(RuntimeError, match="immutable release"):
-        module.verify_public_creator_config("http://example.invalid", creator, {})
 
 
 def complete_workflow(internal_id, name, workflow_id):
@@ -608,25 +590,75 @@ def test_release_stops_the_service_for_the_complete_file_set_switch():
     assert rollback_stop < restore_at < rollback_start
 
 
-def test_release_reads_back_the_new_creator_style_and_exact_preview_bytes():
+def app_shell_release_payloads(module):
+    paths = [p for p in module.RELEASE_RELATIVE_PATHS if p.startswith('static/assets/')
+             or p in ('static/app.html', 'static/app-manifest.json',
+                      'static/previews/style-retro-manga-luxury.webp')]
+    return {ROOT / p: (ROOT / p).read_bytes() for p in paths}
+
+
+def serve_payloads(payloads, calls):
+    def fetch(base, route, **kwargs):
+        calls.append((route, kwargs))
+        entry = route.split('?', 1)[0] in ('/', '/realism', '/video')
+        return payloads[ROOT / ('static/app.html' if entry else route.lstrip('/'))]
+    return fetch
+
+
+def test_release_checks_the_creator_through_public_app_shell_assets_only():
     source = SCRIPT.read_text(encoding="utf-8")
     deploy_body = source.split("def deploy(", 1)[1].split("def parse_args", 1)[0]
-    for marker in ["retro_manga_luxury", "verify_public_creator_config", "style-retro-manga-luxury.webp"]:
-        assert marker in deploy_body
-    assert "verify_public_large_responses(" in deploy_body
-    helper_body = source.split("def verify_public_large_responses(", 1)[1].split("def wait_for_health", 1)[0]
-    assert '"/static/previews/style-retro-manga-luxury.webp"' in helper_body
-    assert "timeout=300" in helper_body
-    assert "attempts=3" in helper_body
-    assert "deadline=deadline" in helper_body
-    assert "public creator preview mismatch" in helper_body
-    assert "for attempt in range(3)" in helper_body
-    assert "accept_gzip=True" in helper_body
-    assert "timeout=300" in helper_body
-    assert "fetch_bytes_resilient" in helper_body
-    assert "PUBLIC_LARGE_VERIFY_TIMEOUT" in helper_body
-    assert "time.monotonic()" in helper_body
-    assert "public large response verification timeout" in helper_body
+    assert "verify_public_app_shell_release(public_base, payloads)" in deploy_body
+    # The login gate hides these since the membership cutover.
+    for hidden in ('"/api/health"', '"/api/workflows"', "/static/previews/", "/static/style-configs"):
+        assert hidden not in deploy_body
+    assert not hasattr(load_module(), "verify_public_creator_config")
+
+
+def test_public_app_shell_release_checks_creator_styles_through_hashed_assets(monkeypatch):
+    module = load_module()
+    payloads = app_shell_release_payloads(module)
+    calls = []
+    monkeypatch.setattr(module, 'fetch_bytes_resilient', serve_payloads(payloads, calls))
+    realism, shell, creator = module.verify_public_app_shell_release('https://origin.test', payloads)
+    assert shell == payloads[ROOT / 'static/app.html']
+    assert b'/api/image-edit-generate' in realism and b'genApiBtn' in creator
+    manifest = json.loads(payloads[ROOT / 'static/app-manifest.json'])
+    routes = [route for route, _ in calls]
+    assert set(manifest['assets']) <= set(routes)
+    assert ('/?style=retro_manga_luxury', True) in {
+        (route, kwargs.get('accept_gzip', False)) for route, kwargs in calls}
+    # Every public response shares one absolute deadline.
+    deadlines = {kwargs.get('deadline') for _, kwargs in calls}
+    assert len(deadlines) == 1 and None not in deadlines
+    assert not [route for route in routes
+                if route.startswith(('/static/previews/', '/static/style-configs.', '/api/'))]
+
+
+def test_public_app_shell_release_rejects_style_preview_and_route_drift(monkeypatch):
+    module = load_module()
+    payloads = app_shell_release_payloads(module)
+    manifest = json.loads(payloads[ROOT / 'static/app-manifest.json'])
+    creator_module = payloads[ROOT / manifest['pages']['/']['module'].lstrip('/')]
+    routes = json.loads(re.search(rb'const STYLE_ASSETS=(\{[^;]*\});', creator_module).group(1))
+    retro = ROOT / routes['retro_manga_luxury'].lstrip('/')
+    preview = ROOT / 'static/previews/style-retro-manga-luxury.webp'
+
+    def check(mutated, message, fetch=None):
+        monkeypatch.setattr(module, 'fetch_bytes_resilient', fetch or serve_payloads(mutated, []))
+        with pytest.raises(RuntimeError, match=message):
+            module.verify_public_app_shell_release('https://origin.test', mutated)
+
+    profile = json.loads(payloads[retro])
+    check({**payloads, retro: json.dumps(dict(profile, trigger='other')).encode()},
+          'style config mismatch: retro_manga_luxury')
+    check({**payloads, preview: b'other'}, 'preview mismatch')
+    check({key: value for key, value in payloads.items() if key != preview}, 'preview mismatch')
+    served = serve_payloads(payloads, [])
+    check(payloads, 'style route mismatch', fetch=lambda base, route, **kwargs:
+          b'wrong' if route.startswith('/?') else served(base, route, **kwargs))
+    check({key: value for key, value in payloads.items() if key != ROOT / 'static/app.html'},
+          'missing the App Shell')
 
 
 def test_resilient_fetch_retries_within_a_single_wall_clock_budget(monkeypatch):

@@ -1,5 +1,6 @@
 import importlib.util
 import gzip
+import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import shlex
@@ -176,27 +177,99 @@ def test_public_idle_gate_requires_a_stable_idle_window(monkeypatch):
     assert sleeps == [module.IDLE_STABILITY_INTERVAL] * (module.IDLE_STABILITY_CHECKS - 1)
 
 
-def test_deploy_checks_idle_before_connect_isolation_and_stop():
+IDLE_DRAINED = {"draining": True, "cloud_busy": False, "local_busy": False, "api_busy": False}
+
+
+@pytest.mark.parametrize("busy_key", ["cloud_busy", "local_busy", "api_busy"])
+def test_drained_idle_gate_rejects_each_active_backend(monkeypatch, busy_key):
+    module = load_module()
+    calls = []
+
+    def drain(client, enabled):
+        calls.append(enabled)
+        return dict(IDLE_DRAINED, **{busy_key: True})
+
+    monkeypatch.setattr(module, "set_remote_release_drain", drain)
+    monkeypatch.setattr(module.time, "sleep", lambda seconds: None)
+    with pytest.raises(module.ReleaseBusyError, match=busy_key):
+        module.require_drained_idle(object(), phase="drained-pre-stop")
+    assert calls == [True]
+
+
+def test_drained_idle_gate_requires_a_stable_window_and_never_reopens(monkeypatch):
+    module = load_module()
+    calls, sleeps = [], []
+    monkeypatch.setattr(module, "set_remote_release_drain",
+                        lambda client, enabled: calls.append(enabled) or dict(IDLE_DRAINED))
+    monkeypatch.setattr(module.time, "sleep", sleeps.append)
+    assert module.require_drained_idle(object(), phase="drained-pre-stop") == IDLE_DRAINED
+    assert calls == [True] * module.IDLE_STABILITY_CHECKS
+    assert sleeps == [module.IDLE_STABILITY_INTERVAL] * (module.IDLE_STABILITY_CHECKS - 1)
+
+
+def test_drained_idle_gate_catches_work_admitted_just_before_draining(monkeypatch):
+    module = load_module()
+    samples = iter([dict(IDLE_DRAINED), dict(IDLE_DRAINED, cloud_busy=True)])
+    monkeypatch.setattr(module, "set_remote_release_drain", lambda client, enabled: next(samples))
+    monkeypatch.setattr(module.time, "sleep", lambda seconds: None)
+    with pytest.raises(module.ReleaseBusyError, match="drained-pre-stop: .*cloud_busy"):
+        module.require_drained_idle(object(), phase="drained-pre-stop")
+    with pytest.raises(ValueError):
+        module.require_drained_idle(object(), phase="x", samples=0)
+
+
+def test_public_health_idle_is_consulted_only_by_the_legacy_bootstrap():
+    source = SCRIPT.read_text(encoding="utf-8")
+    deploy = source.split("def deploy(", 1)[1].split("def parse_args(", 1)[0]
+    lines = deploy.splitlines()
+    calls = [index for index, line in enumerate(lines) if "require_public_idle(" in line]
+    assert len(calls) == 2
+    for index in calls:
+        previous = next(line for line in reversed(lines[:index])
+                        if line.strip() and not line.strip().startswith("#"))
+        assert previous.strip() == "if bootstrap_drain_contract:"
+        assert len(previous) - len(previous.lstrip()) < len(lines[index]) - len(lines[index].lstrip())
+
+
+def test_deploy_samples_drained_idle_before_isolation_and_stop():
     source = SCRIPT.read_text(encoding="utf-8")
     deploy = source.split("def deploy(", 1)[1].split("def parse_args(", 1)[0]
 
-    first = deploy.index('require_public_idle(public_base, phase="preflight")')
-    metadata_read = deploy.index('creds_path.read_text(encoding="utf-8")', first)
+    metadata_read = deploy.index('creds_path.read_text(encoding="utf-8")')
     key_read = deploy.index("paramiko.Ed25519Key.from_private_key_file(", metadata_read)
-    connect = deploy.index("client.connect(", first)
+    connect = deploy.index("client.connect(", key_read)
     keepalive = deploy.index("configure_ssh_transport(client)", connect)
     acquire = deploy.index("acquire_release_lock(client, transaction)", keepalive)
     prepared = deploy.index('write_transaction_phase(client, transaction, "prepared")', acquire)
-    second = deploy.index('require_public_idle(public_base, phase="pre-stop")', prepared)
-    start_mark = deploy.index("start_draining_set = True", second)
+    start_mark = deploy.index("start_draining_set = True", prepared)
     start_drain = deploy.index("set_release_start_draining(client, True)", start_mark)
-    drain = deploy.index("enable_remote_release_drain(client)", start_drain)
-    isolated_mark = deploy.index("watchdog_isolated = True", drain)
+    drain_mark = deploy.index("drain_enabled = True", start_drain)
+    drain = deploy.index("enable_remote_release_drain(client)", drain_mark)
+    drained_idle = deploy.index('require_drained_idle(client, phase="drained-pre-stop")', drain)
+    isolated_mark = deploy.index("watchdog_isolated = True", drained_idle)
     isolate = deploy.index("isolate_watchdog(client)", isolated_mark)
-    stop = deploy.index('command(client, "sudo systemctl stop comfy-panel"', start_drain)
-    assert first < metadata_read < key_read < connect < keepalive < acquire < prepared < second
-    assert second < start_mark < start_drain
-    assert start_drain < drain < isolated_mark < isolate < stop
+    stop = deploy.index('command(client, "sudo systemctl stop comfy-panel"', isolate)
+    assert metadata_read < key_read < connect < keepalive < acquire < prepared
+    assert prepared < start_mark < start_drain < drain_mark < drain < drained_idle
+    assert drained_idle < isolated_mark < isolate < stop
+
+
+def test_post_start_checks_use_server_state_and_public_bytes_before_commit():
+    source = SCRIPT.read_text(encoding="utf-8")
+    deploy = source.split("def deploy(", 1)[1].split("def parse_args(", 1)[0]
+    start = deploy.index('command(client, "sudo systemctl start comfy-panel"')
+    drained = deploy.index("drained = wait_for_remote_release_drain(client)", start)
+    live = deploy.index("live = wait_for_live(public_base, timeout=60)", drained)
+    runtime = deploy.index(
+        "require_dreamapi_release_runtime(remote_dreamapi_runtime(client), drained)", live)
+    names = deploy.index('require_release_workflow_names(payloads[BASE / "config.json"])', runtime)
+    shell = deploy.index("verify_public_app_shell_release(public_base, payloads)", names)
+    boundary = deploy.index("verify_public_membership_boundary(public_base)", shell)
+    watchdog = deploy.index("install_watchdog_units(client)", boundary)
+    commit = deploy.index('write_transaction_phase(client, transaction, "committed")', watchdog)
+    assert start < drained < live < runtime < names < shell < boundary < watchdog < commit
+    # Nothing in the release reads a login-gated API anonymously any more.
+    assert "fetch_json(public_base" not in deploy
 
 
 def test_release_authenticates_with_the_ignored_ed25519_key_not_a_password():
@@ -691,7 +764,7 @@ def test_mutating_release_rolls_back_base_exceptions_before_unlocking():
 def _exercise_interrupted_deploy(monkeypatch, tmp_path, rollback_error=None,
                                  final_idle_error=None, isolation_error=None,
                                  restore_error=None, acquire_error=None,
-                                 fence_error=None):
+                                 fence_error=None, drained_idle_error=None):
     module = load_module()
     local = tmp_path / "payload"
     local.write_bytes(b"new")
@@ -757,6 +830,11 @@ def _exercise_interrupted_deploy(monkeypatch, tmp_path, rollback_error=None,
                         lambda *args: events.append("panel-stop"))
     monkeypatch.setattr(module, "enable_remote_release_drain",
                         lambda *args: events.append("drain-on"))
+    def drained_idle(*args, **kwargs):
+        events.append("drained-idle")
+        if drained_idle_error is not None:
+            raise drained_idle_error
+    monkeypatch.setattr(module, "require_drained_idle", drained_idle)
     monkeypatch.setattr(module, "set_remote_release_drain",
                         lambda client, enabled: events.append("drain-on" if enabled else "drain-off"))
     monkeypatch.setattr(module, "set_release_start_draining",
@@ -821,6 +899,19 @@ def test_keyboard_interrupt_unlocks_only_after_verified_rollback(monkeypatch, tm
     assert events.index("swap") < events.index("rollback") < events.index("restore")
     assert events.index("restore") < events.index("rolled-back") < events.index("unlock")
     assert not {"fence-capability", "fence-on", "fence-off", "loopback-idle"}.intersection(events)
+
+
+def test_work_seen_while_drained_reopens_admission_without_stopping(monkeypatch, tmp_path):
+    events = _exercise_interrupted_deploy(
+        monkeypatch, tmp_path,
+        drained_idle_error=RuntimeError("drained-pre-stop: active generation backend(s): api_busy"),
+    )
+    # The default path never asks the login-gated public health.
+    assert "idle" not in events
+    assert events.index("start-drain-on") < events.index("drain-on") < events.index("drained-idle")
+    assert events.index("drained-idle") < events.index("drain-off") < events.index("start-drain-off")
+    assert events.index("start-drain-off") < events.index("unlock")
+    assert not {"isolate-first", "panel-stop", "swap", "rollback", "emergency-stop"}.intersection(events)
 
 
 def test_keyboard_interrupt_during_isolation_restores_once_then_unlocks(monkeypatch, tmp_path):
@@ -1192,37 +1283,6 @@ def test_public_fetch_kills_a_no_length_slow_drip_at_the_wall_clock_deadline():
         _stop_http_server(server)
 
 
-def test_all_public_release_responses_share_one_absolute_deadline(monkeypatch):
-    module = load_module()
-    expected_realism = b"realism"
-    expected_creator = b"creator"
-    expected_preview = b"preview"
-    calls = []
-
-    def fetch(base, path, **kwargs):
-        calls.append((path, kwargs["deadline"], kwargs["max_bytes"]))
-        if path == "/realism":
-            return expected_realism
-        if path == "/static/previews/style-retro-manga-luxury.webp":
-            return expected_preview
-        return expected_creator
-
-    monkeypatch.setattr(module, "fetch_bytes_resilient", fetch)
-    result = module.verify_public_large_responses(
-        "http://panel", expected_creator, expected_preview,
-        expected_realism=expected_realism,
-    )
-    assert result == (
-        expected_realism, expected_creator, expected_creator, expected_preview,
-    )
-    assert calls[0][0] == "/realism"
-    assert calls[1][0] == "/"
-    assert {deadline for _, deadline, _ in calls} == {calls[0][1]}
-    assert all(limit in {
-        len(expected_realism), len(expected_creator), len(expected_preview),
-    } for _, _, limit in calls)
-
-
 def test_public_verification_timeout_enters_rollback_and_reopens_drain(monkeypatch):
     module = load_module()
     local_paths = (
@@ -1293,7 +1353,8 @@ def test_public_verification_timeout_enters_rollback_and_reopens_drain(monkeypat
     monkeypatch.setitem(sys.modules, "paramiko", fake_paramiko)
     monkeypatch.setattr(module.pathlib.Path, "read_text", lambda self, **kwargs:
                         '{"host":"test","port":22,"user":"test","password":"test"}')
-    monkeypatch.setattr(module, "require_public_idle", lambda *args, **kwargs: None)
+    monkeypatch.setattr(module, "require_public_idle", lambda *args, **kwargs:
+                        events.append("public-idle"))
     monkeypatch.setattr(module, "require_persistent_release_drain_contract", lambda *args: None)
     monkeypatch.setattr(module, "require_release_start_draining_unset", lambda *args: None)
     monkeypatch.setattr(module, "acquire_release_lock", lambda *args: events.append("lock"))
@@ -1316,11 +1377,13 @@ def test_public_verification_timeout_enters_rollback_and_reopens_drain(monkeypat
     monkeypatch.setattr(module, "isolate_watchdog", lambda *args: events.append("isolate"))
     monkeypatch.setattr(module, "restore_watchdog_state", lambda *args: events.append("restore"))
     monkeypatch.setattr(module, "fsync_remote_file", lambda *args: None)
-    monkeypatch.setattr(module, "wait_for_remote_release_drain", lambda *args: None)
+    monkeypatch.setattr(module, "require_drained_idle", lambda *args, **kwargs:
+                        events.append("drained-idle"))
+    monkeypatch.setattr(module, "wait_for_remote_release_drain", lambda *args: dict(IDLE_DRAINED))
     monkeypatch.setattr(module, "wait_for_live", lambda *args, **kwargs: {"ok": True})
-    monkeypatch.setattr(module, "fetch_json", lambda base, path:
-                        {"dreamapi_configured": True})
-    monkeypatch.setattr(module, "verify_public_large_responses", lambda *args, **kwargs:
+    monkeypatch.setattr(module, "remote_dreamapi_runtime", lambda *args: dict(READY_RUNTIME))
+    monkeypatch.setattr(module, "require_release_workflow_names", lambda *args: None)
+    monkeypatch.setattr(module, "verify_public_app_shell_release", lambda *args, **kwargs:
                         (_ for _ in ()).throw(RuntimeError(
                             "public large response verification timeout")))
     monkeypatch.setattr(module, "rollback_release", lambda *args, **kwargs:
@@ -1339,7 +1402,171 @@ def test_public_verification_timeout_enters_rollback_and_reopens_drain(monkeypat
     with pytest.raises(RuntimeError, match="verification timeout"):
         module.deploy(files, payloads, public_base="http://panel")
 
+    assert "public-idle" not in events
+    assert events.index("drain-on") < events.index("drained-idle") < events.index("isolate")
     assert events.index("panel-start") < events.index("rollback")
     assert events.index("rollback") < events.index("restore")
     assert events.index("restore") < events.index("drain-off")
     assert events.index("drain-off") < events.index("unlock")
+
+
+READY_RUNTIME = {"dreamapi_configured": True, "dreamapi_connection_mode": "direct",
+                 "dreamapi_endpoint_valid": True}
+
+
+def _server_direct_endpoint_accepts(base_url):
+    """Run server.py's own _dreamapi_request_endpoint for one direct base URL."""
+    import ast
+    import urllib.parse
+    source = (ROOT / "server.py").read_text(encoding="utf-8")
+    node = next(item for item in ast.parse(source).body
+                if isinstance(item, ast.FunctionDef) and item.name == "_dreamapi_request_endpoint")
+    scope = {"urllib": urllib, "DREAMAPI_CONNECTION_MODE": "direct",
+             "DREAMAPI_BASE_URL": base_url.rstrip("/"), "DREAMAPI_EGRESS_URL": ""}
+    exec(compile(ast.Module(body=[node], type_ignores=[]), "server.py", "exec"), scope)
+    try:
+        scope["_dreamapi_request_endpoint"]()
+    except ValueError:
+        return False
+    return True
+
+
+def _dreamapi_runtime():
+    scope = {}
+    exec(load_module().DREAMAPI_RUNTIME_SOURCE, scope)
+    return scope["dreamapi_runtime"]
+
+
+@pytest.mark.parametrize("base_url", [
+    "https://dreamapi.club", "https://dreamapi.club/", "https://dreamapi.club/v1",
+    "http://127.0.0.1:18080", "http://[::1]:18080/v1", "http://dreamapi.club",
+    "http://localhost:18080", "https://user:secret@dreamapi.club", "https://dreamapi.club/v2",
+    "https://dreamapi.club?mode=x", "https://dreamapi.club#x", "https://dreamapi.club:notaport",
+    "ftp://dreamapi.club", "",
+])
+def test_dreamapi_runtime_mirrors_the_server_direct_endpoint_rules(base_url):
+    runtime = _dreamapi_runtime()({b"DREAMAPI_BASE_URL": base_url.encode(), b"DREAMAPI_KEY": b"k"})
+    assert runtime["dreamapi_endpoint_valid"] is _server_direct_endpoint_accepts(base_url)
+
+
+def test_dreamapi_runtime_reports_booleans_and_mode_without_the_key():
+    runtime = _dreamapi_runtime()
+    secret = b"release-test-key-value"
+    assert runtime({b"DREAMAPI_KEY": secret}) == READY_RUNTIME
+    assert secret.decode() not in json.dumps(
+        runtime({b"DREAMAPI_KEY": secret, b"DREAMAPI_BASE_URL": b"https://" + secret}))
+    assert runtime({})["dreamapi_configured"] is False
+    assert runtime({b"DREAMAPI_KEY": b"k", b"DREAMAPI_CONNECTION_MODE": b" workstation "}) == {
+        "dreamapi_configured": True, "dreamapi_connection_mode": "workstation",
+        "dreamapi_endpoint_valid": False}
+    assert runtime({b"DREAMAPI_CONNECTION_MODE": b"proxy"})["dreamapi_connection_mode"] == "invalid"
+
+
+def test_remote_dreamapi_runtime_reads_the_panel_process_as_root(monkeypatch):
+    module = load_module()
+    seen = []
+
+    def command(client, text, timeout=240):
+        seen.append(text)
+        return json.dumps(READY_RUNTIME)
+
+    monkeypatch.setattr(module, "command", command)
+    assert module.remote_dreamapi_runtime(object()) == READY_RUNTIME
+    argv = shlex.split(seen[0])
+    assert argv[:3] == ["sudo", "python3", "-c"]
+    compile(argv[3], "remote-dreamapi-runtime", "exec")
+    assert "'/proc/'+pid+'/environ'" in argv[3] and "split(b'\\0')" in argv[3]
+    monkeypatch.setattr(module, "command", lambda *args, **kwargs: "not json")
+    with pytest.raises(RuntimeError, match="invalid JSON"):
+        module.remote_dreamapi_runtime(object())
+
+
+def test_release_runtime_gate_accepts_only_a_ready_idle_direct_transport():
+    module = load_module()
+    assert module.require_dreamapi_release_runtime(dict(READY_RUNTIME), dict(IDLE_DRAINED)) == {
+        **READY_RUNTIME, "dreamapi_uncertainty_fence": False}
+    for runtime, message in (
+        (dict(READY_RUNTIME, dreamapi_connection_mode="workstation"), "cannot be verified"),
+        (dict(READY_RUNTIME, dreamapi_connection_mode="invalid"), "cannot be verified"),
+        (dict(READY_RUNTIME, dreamapi_configured=False), "not configured"),
+        (dict(READY_RUNTIME, dreamapi_endpoint_valid=False), "not configured"),
+        (dict(READY_RUNTIME, dreamapi_endpoint_valid=1), "not configured"),
+        (dict(READY_RUNTIME, extra=True), "invalid"),
+        (None, "invalid"),
+    ):
+        with pytest.raises(RuntimeError, match=message):
+            module.require_dreamapi_release_runtime(runtime, dict(IDLE_DRAINED))
+    for drained in (None, {}, dict(IDLE_DRAINED, api_busy=True)):
+        with pytest.raises(RuntimeError, match="uncertain"):
+            module.require_dreamapi_release_runtime(dict(READY_RUNTIME), drained)
+
+
+def _fake_public_origin(monkeypatch, module, overrides=None):
+    responses = {
+        "/api/auth/me": (200, b'{"enabled": true, "authenticated": false}'),
+        "/api/health": (401, b""), "/api/workflows": (401, b""), "/api/jobs": (401, b""),
+        "/api/admin/release-drain": (404, b""),
+    }
+    responses.update(overrides or {})
+    seen = []
+
+    class Response:
+        def __init__(self, status, body):
+            self.status, self.body = status, body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self, limit=-1):
+            return self.body
+
+    def urlopen(request, timeout):
+        path = request.full_url.removeprefix("https://origin.test")
+        seen.append((request.get_method(), path))
+        status, body = responses[path]
+        if status >= 400:
+            raise module.urllib.request.HTTPError(request.full_url, status, "error", {}, None)
+        return Response(status, body)
+
+    monkeypatch.setattr(module.urllib.request, "urlopen", urlopen)
+    return seen
+
+
+def test_public_membership_boundary_requires_login_and_hides_release_drain(monkeypatch):
+    module = load_module()
+    seen = _fake_public_origin(monkeypatch, module)
+    module.verify_public_membership_boundary("https://origin.test/")
+    assert seen == [("GET", path) for path in (
+        "/api/auth/me", "/api/health", "/api/workflows", "/api/jobs", "/api/admin/release-drain")]
+
+
+@pytest.mark.parametrize("path,response,message", [
+    ("/api/auth/me", (200, b'{"enabled": false, "authenticated": false}'), "login is not enforced"),
+    ("/api/auth/me", (200, b'{"enabled": true, "authenticated": true}'), "login is not enforced"),
+    ("/api/auth/me", (200, b"<html>"), "login is not enforced"),
+    ("/api/auth/me", (502, b""), "login is not enforced"),
+    ("/api/jobs", (200, b"[]"), "not behind the login gate: /api/jobs"),
+    ("/api/health", (400, b""), "not behind the login gate: /api/health"),
+    ("/api/admin/release-drain", (401, b""), "release drain endpoint is exposed"),
+])
+def test_public_membership_boundary_fails_closed(monkeypatch, path, response, message):
+    module = load_module()
+    _fake_public_origin(monkeypatch, module, {path: response})
+    with pytest.raises(RuntimeError, match=message):
+        module.verify_public_membership_boundary("https://origin.test")
+
+
+def test_released_config_must_list_every_target_and_uploaded_workflow():
+    module = load_module()
+    config = json.loads((ROOT / "config.json").read_text(encoding="utf-8"))
+    module.require_release_workflow_names(json.dumps(config).encode())
+    for name in (module.TARGET_WORKFLOW_NAMES[0], next(iter(module.UPLOADED_WORKFLOW_NAMES.values()))):
+        trimmed = dict(config, workflows=[w for w in config["workflows"] if w.get("name") != name])
+        with pytest.raises(RuntimeError, match="missing"):
+            module.require_release_workflow_names(json.dumps(trimmed).encode())
+    for raw in (b"not json", b"{}", b"[]"):
+        with pytest.raises(RuntimeError, match="no workflow list"):
+            module.require_release_workflow_names(raw)
