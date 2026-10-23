@@ -1,13 +1,16 @@
 # JT 灵感工作台
 
-## 当前状态（2026-10-22）
+## 当前状态（2026-10-23）
 
 - 开发分支：`fix/dreamapi-internal-service`，尚未配置远程上游。各提交是否已上线，以发布记录和线上核对为准。
-- 界面分支（未合并、未部署）：`ui/mobile-sticky-generate`（`7cf531c`，手机生成按钮吸底、顶栏收成 4 个入口）之上的
-  `ui/accretion-theme`（吸积主题、任务进行时黑洞加速）。说明见 [accretion-theme](docs/accretion-theme-20261022.md)。
+- **线上版本：`c68ddb4`**（2026-10-23 经正式发布器上线，220 个文件逐字节回读一致）。包含吸积主题与指令坞布局、
+  h3_edit_n 服务端建图合同、h3 时长上限 25 秒。说明见 [accretion-theme](docs/accretion-theme-20261022.md)。
 - 线上入口：`https://studio.dreamapi.club/`，登录域名 `auth.dreamapi.club`。会员、激活码与运维说明见 [membership-operations](docs/membership-operations.md)。
 - 测试门：`run_release_tests()`（`tools/deploy_realism_release.py`）在本地已恢复为绿色。真实回归和待决定事项见 [test-gate-triage](docs/test-gate-triage-20261019.md)。
-- 发布：正式发布器和全部按功能发布脚本，都按 `server.py` 的 import 关系推导要发布的 Python 模块；会重启面板的脚本默认只读，`--execute` 时先跑完整测试门。说明见 [release-scripts-full-gate](docs/release-scripts-full-gate-20261020.md)。
+- 发布：正式发布器 `tools/deploy_realism_release.py` 已适配会员上线后的拓扑（面板只监听本机回环，公网 API 需登录）：
+  空闲与忙状态经 SSH 走回环 release-drain，DreamAPI 就绪读重启后进程环境（只回传布尔值），公开字节走
+  `https://studio.dreamapi.club` 的 App Shell 与哈希资源，并核对匿名访问被登录门挡住。说明见
+  [release-post-login](docs/release-post-login-20261023.md)。其余按功能发布脚本多数仍按旧拓扑写，盘点前不要使用。
 - 备份：定时备份、异地副本与恢复演练的脚本已在仓库中，**尚未部署到服务器**，部署步骤见 [backup-operations](docs/backup-operations.md)。
 
 以下各节为历史快照，其中的分支、部署状态以上面和实时核对为准。
