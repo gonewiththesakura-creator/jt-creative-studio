@@ -1442,7 +1442,7 @@ def _dreamapi_runtime():
     "http://127.0.0.1:18080", "http://[::1]:18080/v1", "http://dreamapi.club",
     "http://localhost:18080", "https://user:secret@dreamapi.club", "https://dreamapi.club/v2",
     "https://dreamapi.club?mode=x", "https://dreamapi.club#x", "https://dreamapi.club:notaport",
-    "ftp://dreamapi.club", "",
+    "ftp://dreamapi.club", "", "https://user:secret@exa\uff03mple.com", "https://user:secret@[::1",
 ])
 def test_dreamapi_runtime_mirrors_the_server_direct_endpoint_rules(base_url):
     runtime = _dreamapi_runtime()({b"DREAMAPI_BASE_URL": base_url.encode(), b"DREAMAPI_KEY": b"k"})
@@ -1460,6 +1460,44 @@ def test_dreamapi_runtime_reports_booleans_and_mode_without_the_key():
         "dreamapi_configured": True, "dreamapi_connection_mode": "workstation",
         "dreamapi_endpoint_valid": False}
     assert runtime({b"DREAMAPI_CONNECTION_MODE": b"proxy"})["dreamapi_connection_mode"] == "invalid"
+    # urllib can raise with the raw netloc in its message; the parse stays inside the guard.
+    for base_url in ("https://user:release-test-key-value@exa\uff03mple.com",
+                     "https://user:release-test-key-value@[::1"):
+        result = runtime({b"DREAMAPI_KEY": b"k", b"DREAMAPI_BASE_URL": base_url.encode("utf-8")})
+        assert result["dreamapi_endpoint_valid"] is False
+        assert "release-test-key-value" not in json.dumps(result)
+
+
+def _remote_runtime_script(monkeypatch, module):
+    seen = []
+    monkeypatch.setattr(module, "command", lambda client, text, timeout=240:
+                        seen.append(text) or json.dumps(READY_RUNTIME))
+    module.remote_dreamapi_runtime(object())
+    return shlex.split(seen[0])[3]
+
+
+def test_remote_dreamapi_runtime_script_prints_only_the_whitelisted_fields(monkeypatch, capsys):
+    import pathlib
+    import subprocess
+    module = load_module()
+    script = _remote_runtime_script(monkeypatch, module)
+    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: types.SimpleNamespace(stdout="4242\n"))
+    environ = ("DREAMAPI_KEY=release-test-key-value\0DREAMAPI_BASE_URL="
+               "https://user:release-test-key-value@exa\uff03mple.com\0OTHER=release-test-key-value\0")
+    monkeypatch.setattr(pathlib.Path, "read_bytes", lambda self: environ.encode("utf-8"))
+    exec(script, {"__name__": "__remote__"})
+    output = capsys.readouterr()
+    assert "release-test-key-value" not in output.out + output.err
+    assert json.loads(output.out) == {"dreamapi_configured": True, "dreamapi_connection_mode": "direct",
+                                      "dreamapi_endpoint_valid": False}
+
+    def unreadable(self):
+        raise RuntimeError("DREAMAPI_KEY=release-test-key-value")
+
+    monkeypatch.setattr(pathlib.Path, "read_bytes", unreadable)
+    with pytest.raises(SystemExit) as stopped:
+        exec(script, {"__name__": "__remote__"})
+    assert str(stopped.value) == "dreamapi runtime check failed"
 
 
 def test_remote_dreamapi_runtime_reads_the_panel_process_as_root(monkeypatch):
@@ -1503,35 +1541,20 @@ def test_release_runtime_gate_accepts_only_a_ready_idle_direct_transport():
 
 def _fake_public_origin(monkeypatch, module, overrides=None):
     responses = {
-        "/api/auth/me": (200, b'{"enabled": true, "authenticated": false}'),
-        "/api/health": (401, b""), "/api/workflows": (401, b""), "/api/jobs": (401, b""),
-        "/api/admin/release-drain": (404, b""),
+        ("GET", "/api/auth/me"): (200, b'{"enabled": true, "authenticated": false}'),
+        ("GET", "/api/health"): (401, b""), ("GET", "/api/workflows"): (401, b""),
+        ("GET", "/api/jobs"): (401, b""),
+        ("GET", "/api/admin/release-drain"): (404, b""), ("POST", "/api/admin/release-drain"): (404, b""),
     }
     responses.update(overrides or {})
     seen = []
 
-    class Response:
-        def __init__(self, status, body):
-            self.status, self.body = status, body
+    def probe(base, path, method="GET"):
+        assert base.rstrip("/") == "https://origin.test"
+        seen.append((method, path))
+        return responses[(method, path)]
 
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            return False
-
-        def read(self, limit=-1):
-            return self.body
-
-    def urlopen(request, timeout):
-        path = request.full_url.removeprefix("https://origin.test")
-        seen.append((request.get_method(), path))
-        status, body = responses[path]
-        if status >= 400:
-            raise module.urllib.request.HTTPError(request.full_url, status, "error", {}, None)
-        return Response(status, body)
-
-    monkeypatch.setattr(module.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(module, "public_probe", probe)
     return seen
 
 
@@ -1539,24 +1562,91 @@ def test_public_membership_boundary_requires_login_and_hides_release_drain(monke
     module = load_module()
     seen = _fake_public_origin(monkeypatch, module)
     module.verify_public_membership_boundary("https://origin.test/")
-    assert seen == [("GET", path) for path in (
-        "/api/auth/me", "/api/health", "/api/workflows", "/api/jobs", "/api/admin/release-drain")]
+    assert seen == [("GET", "/api/auth/me"), ("GET", "/api/health"), ("GET", "/api/workflows"),
+                    ("GET", "/api/jobs"), ("GET", "/api/admin/release-drain"),
+                    ("POST", "/api/admin/release-drain")]
 
 
-@pytest.mark.parametrize("path,response,message", [
-    ("/api/auth/me", (200, b'{"enabled": false, "authenticated": false}'), "login is not enforced"),
-    ("/api/auth/me", (200, b'{"enabled": true, "authenticated": true}'), "login is not enforced"),
-    ("/api/auth/me", (200, b"<html>"), "login is not enforced"),
-    ("/api/auth/me", (502, b""), "login is not enforced"),
-    ("/api/jobs", (200, b"[]"), "not behind the login gate: /api/jobs"),
-    ("/api/health", (400, b""), "not behind the login gate: /api/health"),
-    ("/api/admin/release-drain", (401, b""), "release drain endpoint is exposed"),
+@pytest.mark.parametrize("request_key,response,message", [
+    (("GET", "/api/auth/me"), (200, b'{"enabled": false, "authenticated": false}'), "login is not enforced"),
+    (("GET", "/api/auth/me"), (200, b'{"enabled": true, "authenticated": true}'), "login is not enforced"),
+    (("GET", "/api/auth/me"), (200, b"<html>"), "login is not enforced"),
+    (("GET", "/api/auth/me"), (502, b""), "login is not enforced"),
+    (("GET", "/api/jobs"), (200, b"[]"), "not behind the login gate: /api/jobs"),
+    (("GET", "/api/health"), (302, b""), "not behind the login gate: /api/health"),
+    (("GET", "/api/admin/release-drain"), (401, b""), "release drain endpoint is exposed: GET"),
+    # The panel's own answer to an unauthenticated POST when the proxy lets it through.
+    (("POST", "/api/admin/release-drain"), (401, b""), "release drain endpoint is exposed: POST"),
 ])
-def test_public_membership_boundary_fails_closed(monkeypatch, path, response, message):
+def test_public_membership_boundary_fails_closed(monkeypatch, request_key, response, message):
     module = load_module()
-    _fake_public_origin(monkeypatch, module, {path: response})
+    _fake_public_origin(monkeypatch, module, {request_key: response})
     with pytest.raises(RuntimeError, match=message):
         module.verify_public_membership_boundary("https://origin.test")
+
+
+def test_public_probe_reports_status_sends_an_empty_post_and_never_follows_redirects():
+    module = load_module()
+    posts = []
+
+    class Handler(_QuietHTTPHandler):
+        def do_GET(self):
+            if self.path == "/moved":
+                self.send_response(302)
+                self.send_header("Location", "/elsewhere")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            body = b'{"error":"login"}'
+            self.send_response(401)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_POST(self):
+            length = int(self.headers.get("Content-Length") or 0)
+            posts.append((self.headers.get("Content-Length"), self.rfile.read(length)))
+            self.send_response(404)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+    server, base = _start_http_server(Handler)
+    try:
+        assert module.public_probe(base, "/api/jobs") == (401, b'{"error":"login"}')
+        assert module.public_probe(base, "/moved") == (302, b"")
+        assert module.public_probe(base, "/api/admin/release-drain", method="POST") == (404, b"")
+        assert posts == [("0", b"")]
+        with pytest.raises(ValueError):
+            module.public_probe(base, "/api/jobs", method="DELETE")
+    finally:
+        _stop_http_server(server)
+
+
+def test_public_probe_kills_a_slow_drip_at_the_wall_clock_deadline():
+    module = load_module()
+
+    class Handler(_QuietHTTPHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.close_connection = True
+            try:
+                for _ in range(100):
+                    self.wfile.write(b"x")
+                    self.wfile.flush()
+                    time.sleep(0.03)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+
+    server, base = _start_http_server(Handler)
+    started = time.monotonic()
+    try:
+        with pytest.raises(RuntimeError, match="public probe timeout"):
+            module.public_probe(base, "/api/auth/me", timeout=0.2)
+        assert time.monotonic() - started < 1.5
+    finally:
+        _stop_http_server(server)
 
 
 def test_released_config_must_list_every_target_and_uploaded_workflow():

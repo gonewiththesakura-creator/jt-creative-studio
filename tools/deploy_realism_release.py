@@ -2797,14 +2797,15 @@ DREAMAPI_RUNTIME_SOURCE = """def dreamapi_runtime(environment):
     mode=value('DREAMAPI_CONNECTION_MODE','direct').strip()
     valid=False
     if mode=='direct':
-        parsed=urllib.parse.urlparse(value('DREAMAPI_BASE_URL','https://dreamapi.club').rstrip('/'))
+        # Parse inside the guard: urllib exceptions can quote the raw URL, credentials included.
         try:
+            parsed=urllib.parse.urlparse(value('DREAMAPI_BASE_URL','https://dreamapi.club').rstrip('/'))
             parsed.port
             loopback_http=parsed.scheme=='http' and parsed.hostname in {'127.0.0.1','::1'}
             valid=bool((parsed.scheme=='https' or loopback_http) and parsed.hostname and not parsed.username
                        and not parsed.password and not parsed.query and not parsed.fragment
                        and parsed.path in {'','/v1'})
-        except ValueError:
+        except Exception:
             valid=False
     return {'dreamapi_configured':bool(value('DREAMAPI_KEY')),
             'dreamapi_connection_mode':mode if mode in {'direct','workstation'} else 'invalid',
@@ -2817,8 +2818,12 @@ def remote_dreamapi_runtime(client):
     script = DREAMAPI_RUNTIME_SOURCE + """import json,pathlib,subprocess
 pid=subprocess.run(['systemctl','show','--property','MainPID','--value','comfy-panel'],text=True,capture_output=True,check=True).stdout.strip()
 if not pid.isdigit() or int(pid)<=0: raise RuntimeError('comfy-panel has no running MainPID')
-entries=pathlib.Path('/proc/'+pid+'/environ').read_bytes().split(b'\\0')
-print(json.dumps(dreamapi_runtime(dict(entry.split(b'=',1) for entry in entries if b'=' in entry)),separators=(',',':')))
+try:
+    entries=pathlib.Path('/proc/'+pid+'/environ').read_bytes().split(b'\\0')
+    print(json.dumps(dreamapi_runtime(dict(entry.split(b'=',1) for entry in entries if b'=' in entry)),separators=(',',':')))
+except Exception:
+    # Never let a traceback carry environment values back over stderr.
+    raise SystemExit('dreamapi runtime check failed')
 """
     raw = command(client, "sudo python3 -c " + shlex.quote(script), timeout=30)
     try:
@@ -3673,18 +3678,46 @@ def verify_public_app_shell_release(base, payloads):
     return realism, home, creator
 
 
+def public_probe(base, path, method="GET", timeout=30, max_bytes=64 * 1024):
+    """Return (status, body) of one anonymous request, killed at a wall-clock deadline."""
+    if method not in {"GET", "POST"}:
+        raise ValueError("unsupported public probe method")
+    with tempfile.TemporaryDirectory(prefix="comfy-release-probe-") as temporary:
+        body_path = pathlib.Path(temporary) / "body"
+        command_line = [
+            "curl", "--silent", "--show-error", "--proto", "=http,https",
+            "--max-redirs", "0", "--max-time", f"{timeout:.3f}",
+            "--max-filesize", str(max_bytes), "--request", method,
+            "--header", "Cache-Control: no-cache",
+            "--output", str(body_path), "--write-out", "%{http_code}",
+        ]
+        if method == "POST":
+            # An empty body cannot change state even if the request reaches the panel.
+            command_line.extend(["--data-binary", ""])
+        command_line.append(base.rstrip("/") + path)
+        try:
+            result = subprocess.run(
+                command_line, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                timeout=timeout, check=False,
+            )
+        except subprocess.TimeoutExpired as error:
+            raise RuntimeError("public probe timeout: " + path) from error
+        if result.returncode == 28:
+            raise RuntimeError("public probe timeout: " + path)
+        if result.returncode:
+            raise RuntimeError(f"public probe failed ({result.returncode}): {path}")
+        status = result.stdout.decode("ascii", "replace").strip()
+        if not re.fullmatch(r"[1-5][0-9]{2}", status):
+            raise RuntimeError("public probe returned no HTTP status: " + path)
+        body = body_path.read_bytes() if body_path.is_file() else b""
+    if len(body) > max_bytes:
+        raise RuntimeError("public probe response exceeds byte limit: " + path)
+    return int(status), body
+
+
 def verify_public_membership_boundary(base):
     """Anonymous visitors must see the login gate, not the APIs or release drain."""
-    def get(path):
-        request = urllib.request.Request(base.rstrip("/") + path,
-                                         headers={"Cache-Control": "no-cache"})
-        try:
-            with urllib.request.urlopen(request, timeout=30) as response:
-                return response.status, response.read(64 * 1024)
-        except urllib.request.HTTPError as error:
-            return error.code, b""
-
-    status, raw = get("/api/auth/me")
+    status, raw = public_probe(base, "/api/auth/me")
     try:
         me = json.loads(raw)
     except ValueError:
@@ -3693,10 +3726,13 @@ def verify_public_membership_boundary(base):
             or me.get("authenticated") is not False):
         raise RuntimeError("public membership login is not enforced")
     for path in ("/api/health", "/api/workflows", "/api/jobs"):
-        if get(path)[0] != 401:
+        if public_probe(base, path)[0] != 401:
             raise RuntimeError("public API is not behind the login gate: " + path)
-    if get("/api/admin/release-drain")[0] != 404:
-        raise RuntimeError("public release drain endpoint is exposed")
+    # The panel answers GET with 404 and an unauthenticated POST with 401 by
+    # itself, so only a 404 to both shows the proxy denies the endpoint.
+    for method in ("GET", "POST"):
+        if public_probe(base, "/api/admin/release-drain", method=method)[0] != 404:
+            raise RuntimeError("public release drain endpoint is exposed: " + method)
 
 
 def require_release_workflow_names(config_bytes):
