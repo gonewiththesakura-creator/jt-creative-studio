@@ -247,9 +247,12 @@ def test_one_press_resumes_a_software_still_black_hole(browser, saved_pause):
         assert page.evaluate('jtApp.metrics.lowPower') is False
         assert page.evaluate('document.body.dataset.singularityPower') is None
         assert page.evaluate("localStorage.getItem('jt-singularity-paused')") == 'false'
-        # Run past the slow-frame threshold (more than 8 slow frames): a choice to
-        # resume must survive the automatic low-power checks.
-        page.wait_for_function(f'() => jtApp.metrics.frames >= {frames} + 12', timeout=120000)
+        # Slow software frames first step the budget down to its floor, resetting
+        # the slow-frame count each time; only then does the automatic still
+        # check run. A choice to resume must survive it (Codex T261023-143756-4736).
+        page.wait_for_function('() => jtApp.metrics.pixelBudget <= 300000', timeout=240000)
+        floor_frames = page.evaluate('jtApp.metrics.frames')
+        page.wait_for_function(f'() => jtApp.metrics.frames >= {floor_frames} + 10', timeout=240000)
         assert page.evaluate('jtApp.metrics.lowPower') is False
         assert page.evaluate('document.body.dataset.singularityPower') is None
         assert page.evaluate('jtApp.metrics.sim') > sim

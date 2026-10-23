@@ -80,7 +80,8 @@
   重启后存活、DreamAPI direct 配置有效且无不确定结果、公网 App Shell 与 74 个哈希资源字节一致、匿名访问被登录门挡住。
 - 发布后独立核验（工作台 `tools/verify_live_release.py`）：线上 76 个前端文件与 HEAD 一致；桌面与手机登录页黑洞场景
   `ready`，无控制台错误、无失败请求。截图在工作台 `ui-accretion-2026-10-22/live-2026-10-23/`。
-- 已知小问题：手机 390 宽登录页标题最后一个字"台"单独折行，待修。
+- 已知小问题：手机 390 宽登录页标题最后一个字"台"单独折行——已在低功耗改动中修复（待上线），
+  见 [paid-evidence-visual-only](paid-evidence-visual-only-20261023.md)。
 
 ## 回滚
 
