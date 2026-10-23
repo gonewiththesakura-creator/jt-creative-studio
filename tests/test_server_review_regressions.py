@@ -93,7 +93,15 @@ def request(httpd, method, path, payload=None, cookie=None, token=None):
         headers["Cookie"] = cookie
     if token:
         headers["Authorization"] = "Bearer " + token
-    connection.request(method, path, body=body, headers=headers)
+    # Early denials can close before http.client's separate body send.
+    send = connection.send
+    packet = bytearray()
+    connection.send = packet.extend
+    try:
+        connection.request(method, path, body=body, headers=headers)
+    finally:
+        connection.send = send
+    connection.send(packet)
     response = connection.getresponse()
     raw = response.read()
     result = response.status, raw, dict(response.getheaders())

@@ -12,7 +12,7 @@ import pytest
 import membership_media
 import result_image_cache as cache_module
 from result_image_cache import ResultImageCache, PreviewError
-from test_membership_http import membership_env, put_job, request, json_request
+from test_membership_http import membership_env, put_job, request, json_request, wait_for_http_idle
 from test_server_review_regressions import panel
 
 
@@ -174,6 +174,7 @@ def test_cache_miss_respects_media_owner_slots_and_frees_them_on_failure(image_e
             membership_media.release_media_slot(lease)
     monkeypatch.setattr(env.panel, 'download_media', lambda *args, **kwargs: (_ for _ in ()).throw(TimeoutError('offline timeout')))
     assert request(env, 'GET', path, user='alice')[0] == 502
+    wait_for_http_idle(env)
     assert not env.httpd._media_owner_slots._active
     assert list(env.panel._result_image_cache.root.iterdir()) == []
     assert all(env.httpd._large_response_slots.acquire(False) for _ in range(4))
@@ -183,6 +184,7 @@ def test_small_cache_hit_still_loads_when_owner_streams_are_busy(image_env):
     env = image_env
     path = '/api/rh-preview/' + env.job['id'] + '/0?size=thumb'
     assert request(env, 'GET', path, user='alice')[0] == 200
+    wait_for_http_idle(env)
     handler = SimpleNamespace(server=env.httpd, path=path, _membership_session={'user': env.users['alice']})
     leases = [membership_media.acquire_media_slot(handler), membership_media.acquire_media_slot(handler)]
     try:
@@ -210,6 +212,7 @@ def test_large_view_reuses_miss_lease_and_cache_hits_remain_capacity_limited(ima
     try:
         status, body, _ = request(env, 'GET', path, user='alice')
         assert status == 200 and len(body) >= env.panel.LARGE_RESPONSE_THRESHOLD
+        wait_for_http_idle(env)
         assert env.httpd._media_owner_slots._active[env.users['alice']['id']] == 1
         second = membership_media.acquire_media_slot(handler)
         assert second
@@ -237,4 +240,5 @@ def test_parallel_thumb_and_view_http_download_source_once(image_env, monkeypatc
         view = pool.submit(request, env, 'GET', path + '?size=view', user='alice')
         resume.set()
         assert thumb.result()[0] == view.result()[0] == 200
+    wait_for_http_idle(env)
     assert len(env.downloads) == 1 and not env.httpd._media_owner_slots._active

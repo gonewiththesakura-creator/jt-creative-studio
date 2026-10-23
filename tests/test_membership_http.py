@@ -114,6 +114,18 @@ def request(env, method, path, payload=None, user=None, headers=None, raw=None):
         connection.close()
 
 
+
+def wait_for_http_idle(env, timeout=5):
+    """Receiving Content-Length bytes does not join the server request worker."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        with env.httpd._metrics_lock:
+            if env.httpd._active_workers == 0:
+                return
+        time.sleep(.005)
+    pytest.fail('HTTP workers did not finish before the cleanup assertion')
+
+
 def json_request(env, method, path, payload=None, user=None, headers=None, raw=None):
     status, body, response_headers = request(env, method, path, payload, user, headers, raw)
     return status, json.loads(body or b"{}"), dict(response_headers)

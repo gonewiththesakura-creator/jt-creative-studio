@@ -13,7 +13,7 @@ import pytest
 from playwright.sync_api import sync_playwright
 
 import membership_media as media
-from test_membership_http import membership_env, put_job, request
+from test_membership_http import membership_env, put_job, request, wait_for_http_idle
 from test_server_review_regressions import panel
 
 
@@ -152,6 +152,7 @@ def test_account_media_limit_is_enforced_by_real_http_and_releases_on_completion
         assert request(env, 'GET', '/api/favorite-image/' + 'a' * 12, user='alice')[0] == 503
         status, raw, headers = request(env, 'GET', '/api/favorite-image/' + 'b' * 12, user='bob')
         assert status == 200 and raw == value
+        wait_for_http_idle(env)
         assert env.users['bob']['id'] not in env.httpd._media_owner_slots._active
         # 4aa41f6: private video replay may be cached by the owner's browser; logout sends Clear-Site-Data.
         assert dict(headers)['Cache-Control'] == 'private, max-age=3600'
@@ -159,6 +160,7 @@ def test_account_media_limit_is_enforced_by_real_http_and_releases_on_completion
     finally:
         for lease in leases: media.release_media_slot(lease)
     assert request(env, 'GET', '/api/favorite-image/' + 'a' * 12, user='alice')[0] == 200
+    wait_for_http_idle(env)
     assert env.httpd._media_owner_slots._active == {}
 
 
