@@ -1084,3 +1084,102 @@ def test_retro_cloud_e2e_tampering_blocks_release(tmp_path, monkeypatch):
     )
     assert decision["ready"] is False
     assert "invalid retro creator cloud E2E" in decision["blockers"]
+
+
+def visual_fixture():
+    """Two shell commits: business assets fixed, visual assets free to move."""
+    def shell(css, scene):
+        return (f'<link href="/static/assets/app.{css}.css"><script type="module" src="/static/assets/main.111111111111.js">'
+                f'</script><script>window.manifest={{"singularity":"/static/assets/workbench.{scene}.js"}}</script>').encode()
+
+    def manifest(css, scene, extra=()):
+        return json.dumps({
+            "main": "/static/assets/main.111111111111.js",
+            "singularity": f"/static/assets/workbench.{scene}.js",
+            "pages": {"/": {"module": "/static/assets/index.222222222222.js",
+                            "markup": "/static/assets/index.333333333333.html",
+                            "css": f"/static/assets/index.{css}.css", "title": "JT"}},
+            "assets": ["/static/assets/main.111111111111.js", "/static/assets/index.222222222222.js",
+                       "/static/assets/index.333333333333.html", f"/static/assets/index.{css}.css",
+                       f"/static/assets/app.{css}.css", f"/static/assets/workbench.{scene}.js", *extra],
+        }).encode()
+
+    files = {
+        "tested": {"static/app.html": shell("aaaaaaaaaaaa", "bbbbbbbbbbbb"),
+                   "static/app-manifest.json": manifest("aaaaaaaaaaaa", "bbbbbbbbbbbb"),
+                   "static/assets/main.111111111111.js": b"main()", "static/assets/index.222222222222.js": b"page()",
+                   "static/assets/index.333333333333.html": b"<form></form>",
+                   "static/assets/index.aaaaaaaaaaaa.css": b"a{}", "static/assets/app.aaaaaaaaaaaa.css": b"b{}",
+                   "static/assets/workbench.bbbbbbbbbbbb.js": b"render()"},
+    }
+    current = dict(files["tested"])
+    current.update({"static/app.html": shell("cccccccccccc", "dddddddddddd"),
+                    "static/app-manifest.json": manifest("cccccccccccc", "dddddddddddd"),
+                    "static/assets/index.cccccccccccc.css": b"a{color:red}",
+                    "static/assets/app.cccccccccccc.css": b"b{text-wrap:balance}",
+                    "static/assets/workbench.dddddddddddd.js": b"render();still()"})
+    files["current"] = current
+    return files, manifest
+
+
+def visual_show(files):
+    def show(commit, path):
+        if path not in files[commit]:
+            raise OSError(path)
+        return files[commit][path]
+    return show
+
+
+def test_visual_only_frontend_change_accepts_styles_and_the_scene():
+    module = load_module()
+    files, _ = visual_fixture()
+    assert module.visual_only_frontend_change("tested", "current", show=visual_show(files))
+
+
+@pytest.mark.parametrize("change", [
+    "page-module", "main", "markup", "shell-text", "new-logic-asset", "scene-network", "scene-api", "missing-file",
+    "style-api", "style-import", "style-external",
+])
+def test_visual_only_frontend_change_rejects_business_or_network_drift(change):
+    module = load_module()
+    files, manifest = visual_fixture()
+    current = files["current"]
+    if change == "page-module":
+        current["static/assets/index.222222222222.js"] = b"page();submit()"
+    elif change == "main":
+        current["static/assets/main.111111111111.js"] = b"main();other()"
+    elif change == "markup":
+        current["static/assets/index.333333333333.html"] = b"<form id=x></form>"
+    elif change == "shell-text":
+        current["static/app.html"] = current["static/app.html"].replace(b"<link", b"<link data-x")
+    elif change == "new-logic-asset":
+        current["static/app-manifest.json"] = manifest("cccccccccccc", "dddddddddddd",
+                                                       ["/static/assets/helper.444444444444.js"])
+        current["static/assets/helper.444444444444.js"] = b"helper()"
+    elif change == "scene-network":
+        current["static/assets/workbench.dddddddddddd.js"] = b"render();fetch('/x')"
+    elif change == "scene-api":
+        current["static/assets/workbench.dddddddddddd.js"] = b"render();navigator.x('/api/generate')"
+    elif change == "missing-file":
+        del current["static/assets/index.222222222222.js"]
+    elif change == "style-api":
+        current["static/assets/app.cccccccccccc.css"] = b"b{background:url(/api/jobs)}"
+    elif change == "style-import":
+        current["static/assets/index.cccccccccccc.css"] = b"@IMPORT 'theme.css';a{}"
+    elif change == "style-external":
+        current["static/assets/app.cccccccccccc.css"] = b"b{background:URL(https://example.test/x.png)}"
+    assert not module.visual_only_frontend_change("tested", "current", show=visual_show(files))
+
+
+def test_visual_only_rule_never_classifies_business_assets_as_visual():
+    module = load_module()
+    manifest = json.loads((ROOT / "static/app-manifest.json").read_text(encoding="utf-8"))
+    visual = {path.rsplit("/", 1)[1].split(".")[0] for path in manifest["assets"]
+              if module.VISUAL_FRONTEND_ASSET.fullmatch(path)}
+    business = {"main", "router", "api", "account", "account-storage", "page-scope", "membership-admin",
+                "retired-upload-storage", "index", "realism", "video", "login-scene", "accretion-layout"}
+    business_paths = [path for path in manifest["assets"]
+                      if path.rsplit("/", 1)[1].split(".")[0] in business and not path.endswith(".css")]
+    assert business_paths and not [path for path in business_paths if module.VISUAL_FRONTEND_ASSET.fullmatch(path)]
+    assert not [path for path in manifest["assets"] if "/style-" in path and module.VISUAL_FRONTEND_ASSET.fullmatch(path)]
+    assert {"workbench", "shaders", "appearance", "preview"} <= visual

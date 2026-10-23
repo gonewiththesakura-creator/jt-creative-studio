@@ -2057,6 +2057,71 @@ def reviewed_singularity_patch(tested_commit, current_commit, current_digest):
         return False
 
 
+# Visual-only frontend assets: stylesheets, the black-hole scene and its
+# rendering library, and preview images. Everything else in the App Shell
+# (router, API and account code, page modules and markup, style profiles,
+# login transition, dock layout) is business code and must stay byte-identical.
+VISUAL_FRONTEND_ASSET = re.compile(
+    r"/static/assets/(?:[\w-]+\.[0-9a-f]{12}\.css|preview\.[0-9a-f]{12}\.webp"
+    r"|three-LICENSE\.[0-9a-f]{12}\.txt"
+    r"|(?:workbench|shaders|appearance|three-core|three-module|CopyShader|EffectComposer"
+    r"|LuminosityHighPassShader|MaskPass|OutputPass|OutputShader|Pass|RenderPass|ShaderPass"
+    r"|UnrealBloomPass)\.[0-9a-f]{12}\.js)")
+VISUAL_SCRIPT_FORBIDDEN = (b"fetch(", b"XMLHttpRequest", b"sendBeacon", b"WebSocket",
+                           b"EventSource", b"/api/")
+# Stylesheets reach the network through url() and @import.
+VISUAL_STYLE_FORBIDDEN = (b"/api/", b"@import", b"url(http", b"url(//", b"url('http", b"url('//",
+                          b'url("http', b'url("//')
+
+
+def visual_only_frontend_change(tested_commit, current_commit, show=None):
+    """Reuse generation evidence when only visual App Shell assets changed.
+
+    The paid canary proves the request path. A stylesheet, the scene renderer
+    or a preview image cannot build or send that request, so they may change;
+    every other shell byte must equal the tested commit once visual asset
+    hashes are blanked out, and changed scene scripts may not reach the network.
+    """
+    if show is None:
+        def show(commit, path):
+            return subprocess.check_output(["git", "show", f"{commit}:{path}"], cwd=BASE)
+
+    def blank(text):
+        return VISUAL_FRONTEND_ASSET.sub(
+            lambda match: re.sub(r"\.[0-9a-f]{12}\.", ".visual.", match.group(0)), text)
+
+    try:
+        manifests = {commit: json.loads(show(commit, "static/app-manifest.json"))
+                     for commit in (tested_commit, current_commit)}
+        assets = {commit: set(manifest["assets"]) for commit, manifest in manifests.items()}
+        logic = {commit: {path for path in paths if not VISUAL_FRONTEND_ASSET.fullmatch(path)}
+                 for commit, paths in assets.items()}
+        if logic[tested_commit] != logic[current_commit]:
+            return False
+        for path in logic[current_commit]:
+            if show(tested_commit, path.lstrip("/")) != show(current_commit, path.lstrip("/")):
+                return False
+        normalized = {commit: json.loads(blank(json.dumps(manifest, sort_keys=True)))
+                      for commit, manifest in manifests.items()}
+        for manifest in normalized.values():
+            manifest["assets"] = sorted(manifest["assets"])
+        if normalized[tested_commit] != normalized[current_commit]:
+            return False
+        shells = {commit: blank(show(commit, "static/app.html").decode("utf-8"))
+                  for commit in (tested_commit, current_commit)}
+        if shells[tested_commit] != shells[current_commit]:
+            return False
+        for path in assets[current_commit] - assets[tested_commit]:
+            forbidden = (VISUAL_SCRIPT_FORBIDDEN if path.endswith(".js")
+                         else VISUAL_STYLE_FORBIDDEN if path.endswith(".css") else ())
+            content = show(current_commit, path.lstrip("/")).lower() if forbidden else b""
+            if any(token.lower() in content for token in forbidden):
+                return False
+    except (subprocess.CalledProcessError, OSError, ValueError, KeyError, TypeError):
+        return False
+    return True
+
+
 def reviewed_transparent_host_patch(tested_commit, current_head, current_digest):
     """Only the reviewed host background and its content-addressed references."""
     if current_digest != "8d08ae62641ac0ee4e7a7612b6c36bce2f9c2871fc0a97ed6799405a9e43b3bb":
@@ -2197,7 +2262,8 @@ def validate_native_dreamapi_evidence():
                     or (current_frontend != tested_frontend and not
                         (reviewed_transparent_host_patch(commit, current_head, current_frontend)
                          or reviewed_video_duration_patch(commit, current_head)
-                         or reviewed_video_queue_patch(commit, current_head)))
+                         or reviewed_video_queue_patch(commit, current_head)
+                         or visual_only_frontend_change(commit, current_head)))
                     or subprocess.run(["git", "diff", "--quiet", "HEAD", "--", *frontend_files],
                                       cwd=BASE, capture_output=True).returncode):
                 errors.append("native DreamAPI frontend payload drift")
