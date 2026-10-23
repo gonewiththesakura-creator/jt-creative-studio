@@ -87,14 +87,16 @@ function enterStill(reason) {
   updateMotion(); draw();
 }
 motion.onclick = () => {
-  if (autoStill && !paused) {
-    // Resuming an automatic still frame is a choice for this session only.
-    autoStill = false; stillOverride = true;
-    delete document.body.dataset.singularityPower;
-  } else {
-    paused = !paused;
-    try { localStorage.setItem('jt-singularity-paused', String(paused)); } catch {}
-  }
+  if (paused || autoStill) {
+    // One press resumes from any still frame; automatic stills stay off for this session.
+    if (autoStill) {
+      autoStill = false; stillOverride = true;
+      delete document.body.dataset.singularityPower;
+      if (window.jtApp) window.jtApp.metrics.lowPower = false;
+    }
+    paused = false;
+  } else paused = true;
+  try { localStorage.setItem('jt-singularity-paused', String(paused)); } catch {}
   updateMotion(); draw();
 };
 function setImmersive(value) {
