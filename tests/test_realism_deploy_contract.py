@@ -1151,20 +1151,36 @@ def visual_show(files):
     return show
 
 
-def test_visual_only_frontend_change_accepts_styles_and_the_scene():
+SCENE = b"render();still()"
+REVIEWED_SCENE = frozenset({hashlib.sha256(SCENE).hexdigest()})
+BACKSLASH = bytes([92])
+
+
+def test_visual_only_frontend_change_accepts_styles_and_a_reviewed_scene():
     module = load_module()
     files, _ = visual_fixture()
-    assert module.visual_only_frontend_change("tested", "current", show=visual_show(files))
+    show = visual_show(files)
+    assert module.visual_only_frontend_change("tested", "current", show=show, reviewed_scripts=REVIEWED_SCENE)
+    current = files["current"]
+    current["static/assets/app.cccccccccccc.css"] = (
+        b'b{background:url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\'%3E%3C/svg%3E")}')
+    assert module.visual_only_frontend_change("tested", "current", show=show, reviewed_scripts=REVIEWED_SCENE)
+    files["tested"]["static/assets/app.aaaaaaaaaaaa.css"] = b"b{background:url(/static/assets/preview.111111111111.webp)}"
+    current["static/assets/app.cccccccccccc.css"] = b"b{color:red;background:URL( '/static/assets/preview.111111111111.webp' )}"
+    assert module.visual_only_frontend_change("tested", "current", show=show, reviewed_scripts=REVIEWED_SCENE)
 
 
 @pytest.mark.parametrize("change", [
-    "page-module", "main", "markup", "shell-text", "new-logic-asset", "scene-network", "scene-api", "missing-file",
-    "style-api", "style-import", "style-external",
+    "page-module", "main", "markup", "shell-text", "new-logic-asset", "missing-file",
+    "unreviewed-scene", "edited-after-review", "same-path-overwrite",
+    "style-api", "style-import", "style-external-spaced", "style-escape", "style-image-set", "style-src",
+    "style-new-relative", "unreadable-tested-style",
 ])
-def test_visual_only_frontend_change_rejects_business_or_network_drift(change):
+def test_visual_only_frontend_change_rejects_business_drift_and_unproven_visuals(change):
     module = load_module()
     files, manifest = visual_fixture()
-    current = files["current"]
+    current, reviewed = files["current"], REVIEWED_SCENE
+    app_css, page_css = "static/assets/app.cccccccccccc.css", "static/assets/index.cccccccccccc.css"
     if change == "page-module":
         current["static/assets/index.222222222222.js"] = b"page();submit()"
     elif change == "main":
@@ -1177,19 +1193,55 @@ def test_visual_only_frontend_change_rejects_business_or_network_drift(change):
         current["static/app-manifest.json"] = manifest("cccccccccccc", "dddddddddddd",
                                                        ["/static/assets/helper.444444444444.js"])
         current["static/assets/helper.444444444444.js"] = b"helper()"
-    elif change == "scene-network":
-        current["static/assets/workbench.dddddddddddd.js"] = b"render();fetch('/x')"
-    elif change == "scene-api":
-        current["static/assets/workbench.dddddddddddd.js"] = b"render();navigator.x('/api/generate')"
     elif change == "missing-file":
         del current["static/assets/index.222222222222.js"]
+    elif change == "unreviewed-scene":
+        reviewed = frozenset()
+    elif change == "edited-after-review":
+        current["static/assets/workbench.dddddddddddd.js"] = SCENE + b";document.forms[0].reset()"
+    elif change == "same-path-overwrite":
+        # The scene keeps its old hashed name but its bytes change.
+        current["static/app-manifest.json"] = manifest("cccccccccccc", "bbbbbbbbbbbb")
+        current["static/app.html"] = current["static/app.html"].replace(b"dddddddddddd", b"bbbbbbbbbbbb")
+        current["static/assets/workbench.bbbbbbbbbbbb.js"] = b"render();tampered()"
     elif change == "style-api":
-        current["static/assets/app.cccccccccccc.css"] = b"b{background:url(/api/jobs)}"
+        current[app_css] = b"b{background:url(/api/jobs)}"
     elif change == "style-import":
-        current["static/assets/index.cccccccccccc.css"] = b"@IMPORT 'theme.css';a{}"
-    elif change == "style-external":
-        current["static/assets/app.cccccccccccc.css"] = b"b{background:URL(https://example.test/x.png)}"
-    assert not module.visual_only_frontend_change("tested", "current", show=visual_show(files))
+        current[page_css] = b"@IMPORT 'theme.css';a{}"
+    elif change == "style-external-spaced":
+        current[app_css] = b"b{background:URL( https://example.test/x.png )}"
+    elif change == "style-escape":
+        current[app_css] = b"b{background:u" + BACKSLASH + b"72l(https://example.test/x.png)}"
+    elif change == "style-image-set":
+        current[app_css] = b"b{background:image-set('https://example.test/1.png' 1x)}"
+    elif change == "style-src":
+        current[app_css] = b"b{background:src('https://example.test/1.png')}"
+    elif change == "style-new-relative":
+        current[app_css] = b"b{background:url(/static/other.png)}"
+    elif change == "unreadable-tested-style":
+        files["tested"]["static/assets/app.aaaaaaaaaaaa.css"] = b"b{content:'" + BACKSLASH + b"201C'}"
+    assert not module.visual_only_frontend_change("tested", "current", show=visual_show(files),
+                                                  reviewed_scripts=reviewed)
+
+
+def test_css_fetch_targets_reads_nested_data_uris_and_fails_closed():
+    module = load_module()
+    css = (b"/* url(http://commented.test) */a{background:url(\"data:image/svg+xml,%3Csvg%3E%3Cuse "
+           b"href='url(%23g)'/%3E%3C/svg%3E\")}b{mask:url( /static/x.webp )}")
+    assert module.css_fetch_targets(css) == [
+        "data:image/svg+xml,%3csvg%3e%3cuse href='url(%23g)'/%3e%3c/svg%3e", "/static/x.webp"]
+    for unreadable in (b"a{background:url('x.png)}", b"a{background:url(x.png}", b"a{background:url(\"x\" y)}",
+                       b"@import url(a.css);", b"a{background:-webkit-image-set(url(a.png) 1x)}",
+                       b"a{content:'" + BACKSLASH + b"75rl'}"):
+        assert module.css_fetch_targets(unreadable) is None, unreadable
+
+
+def test_the_current_scene_script_is_a_reviewed_one():
+    """Changing the scene needs a reviewed pin; hashed asset names are sha256 prefixes."""
+    module = load_module()
+    manifest = json.loads((ROOT / "static/app-manifest.json").read_text(encoding="utf-8"))
+    scene = next(path for path in manifest["assets"] if "/workbench." in path)
+    assert scene.split(".")[-2] in {digest[:12] for digest in module.REVIEWED_VISUAL_SCRIPTS_SHA256}
 
 
 def test_visual_only_rule_never_classifies_business_assets_as_visual():

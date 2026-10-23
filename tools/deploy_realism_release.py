@@ -2067,20 +2067,64 @@ VISUAL_FRONTEND_ASSET = re.compile(
     r"|(?:workbench|shaders|appearance|three-core|three-module|CopyShader|EffectComposer"
     r"|LuminosityHighPassShader|MaskPass|OutputPass|OutputShader|Pass|RenderPass|ShaderPass"
     r"|UnrealBloomPass)\.[0-9a-f]{12}\.js)")
-VISUAL_SCRIPT_FORBIDDEN = (b"fetch(", b"XMLHttpRequest", b"sendBeacon", b"WebSocket",
-                           b"EventSource", b"/api/")
-# Stylesheets reach the network through url() and @import.
-VISUAL_STYLE_FORBIDDEN = (b"/api/", b"@import", b"url(http", b"url(//", b"url('http", b"url('//",
-                          b'url("http', b'url("//')
+# Scene scripts run inside the page and could reach business DOM, storage or
+# globals without any network call, so a changed one passes only when its exact
+# bytes were reviewed. Stylesheets and images cannot build a request.
+REVIEWED_VISUAL_SCRIPTS_SHA256 = frozenset({
+    # ui/blackhole-low-power (2026-10-23, Codex T261023-141048-f7f7 + follow-up):
+    # still black hole on software rendering or under 1 fps.
+    "8c2d3015f7af4019e0373da5fbe821aa57534716ab249b8f35166067e41d5845",
+})
+CSS_WHITESPACE = " \t\r\n\f"
 
 
-def visual_only_frontend_change(tested_commit, current_commit, show=None):
+def css_fetch_targets(css):
+    """Every resource a stylesheet can fetch, or None when it cannot be read with certainty.
+
+    Escapes could spell url( or @import, and image-set()/src() take bare
+    strings, so any of them makes the sheet unreadable (fail closed).
+    """
+    text = re.sub(rb"/\*.*?\*/", b"", css, flags=re.S)
+    if bytes([92]) in text:
+        return None
+    text = text.decode("utf-8").lower()
+    if "@import" in text or "image-set(" in text or re.search(r"(?<![\w-])src\(", text):
+        return None
+    targets, position = [], 0
+    while (start := text.find("url(", position)) >= 0:
+        index = start + 4
+        while index < len(text) and text[index] in CSS_WHITESPACE:
+            index += 1
+        if index < len(text) and text[index] in "'\"":
+            end = text.find(text[index], index + 1)
+            if end < 0:
+                return None
+            close = end + 1
+            while close < len(text) and text[close] in CSS_WHITESPACE:
+                close += 1
+            if close >= len(text) or text[close] != ")":
+                return None
+            value = text[index + 1:end]
+        else:
+            close = text.find(")", index)
+            if close < 0:
+                return None
+            value = text[index:close].strip(CSS_WHITESPACE)
+        targets.append(value)
+        position = close + 1
+    return targets
+
+
+def visual_only_frontend_change(tested_commit, current_commit, show=None,
+                                reviewed_scripts=REVIEWED_VISUAL_SCRIPTS_SHA256):
     """Reuse generation evidence when only visual App Shell assets changed.
 
-    The paid canary proves the request path. A stylesheet, the scene renderer
-    or a preview image cannot build or send that request, so they may change;
-    every other shell byte must equal the tested commit once visual asset
-    hashes are blanked out, and changed scene scripts may not reach the network.
+    The paid canary proves the request path. Every business asset must stay
+    byte-identical, app.html and the manifest must match once visual asset
+    hashes are blanked out, a visual asset kept under the same name must keep
+    its bytes, a changed stylesheet may only fetch data: URIs or resources the
+    tested stylesheets already used, and a changed scene script must be one
+    whose exact bytes were reviewed.
     """
     if show is None:
         def show(commit, path):
@@ -2096,9 +2140,10 @@ def visual_only_frontend_change(tested_commit, current_commit, show=None):
         assets = {commit: set(manifest["assets"]) for commit, manifest in manifests.items()}
         logic = {commit: {path for path in paths if not VISUAL_FRONTEND_ASSET.fullmatch(path)}
                  for commit, paths in assets.items()}
+        visual = {commit: assets[commit] - logic[commit] for commit in assets}
         if logic[tested_commit] != logic[current_commit]:
             return False
-        for path in logic[current_commit]:
+        for path in logic[current_commit] | (visual[tested_commit] & visual[current_commit]):
             if show(tested_commit, path.lstrip("/")) != show(current_commit, path.lstrip("/")):
                 return False
         normalized = {commit: json.loads(blank(json.dumps(manifest, sort_keys=True)))
@@ -2111,12 +2156,23 @@ def visual_only_frontend_change(tested_commit, current_commit, show=None):
                   for commit in (tested_commit, current_commit)}
         if shells[tested_commit] != shells[current_commit]:
             return False
-        for path in assets[current_commit] - assets[tested_commit]:
-            forbidden = (VISUAL_SCRIPT_FORBIDDEN if path.endswith(".js")
-                         else VISUAL_STYLE_FORBIDDEN if path.endswith(".css") else ())
-            content = show(current_commit, path.lstrip("/")).lower() if forbidden else b""
-            if any(token.lower() in content for token in forbidden):
-                return False
+        known_targets = set()
+        for path in visual[tested_commit]:
+            if path.endswith(".css"):
+                targets = css_fetch_targets(show(tested_commit, path.lstrip("/")))
+                if targets is None:
+                    return False
+                known_targets.update(targets)
+        for path in visual[current_commit] - visual[tested_commit]:
+            content = show(current_commit, path.lstrip("/"))
+            if path.endswith(".js"):
+                if hashlib.sha256(content).hexdigest() not in reviewed_scripts:
+                    return False
+            elif path.endswith(".css"):
+                targets = css_fetch_targets(content)
+                if targets is None or any(not target.startswith("data:") and target not in known_targets
+                                          for target in targets):
+                    return False
     except (subprocess.CalledProcessError, OSError, ValueError, KeyError, TypeError):
         return False
     return True
