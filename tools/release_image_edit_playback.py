@@ -35,6 +35,8 @@ def verify_scope(baseline, manifest, data):
 
 
 def main():
+    import retired_release
+    retired_release.refuse_main(__file__)
     transaction.MODULES=(*transaction.RUNTIME_MODULES,'config.json')
     transaction.DEFAULT_STATE=BASE/'audit/image-edit-release-20261018/release.json'
     transaction.verify_frontend_scope=verify_scope

@@ -15,6 +15,8 @@ import release_login_scene as static_release
 
 
 def main():
+    import retired_release
+    retired_release.refuse_main(__file__)
     base = static_release.t.BASE
 
     def baseline(path):

@@ -1689,10 +1689,16 @@ def _self_check_fakes(monkeypatch, module, overrides=None):
         return run
 
     monkeypatch.setattr(module, "command", command)
-    monkeypatch.setattr(module, "require_persistent_release_drain_contract",
-                        record("drain-contract", answers.get("drain-contract")))
-    monkeypatch.setattr(module, "require_release_start_draining_unset",
-                        record("restart-drain", answers.get("restart-drain")))
+    def observe_only(name):
+        check = record(name, answers.get(name))
+
+        def run(client, reload=True):
+            assert reload is False, name + " must not reload systemd in the self-check"
+            return check()
+        return run
+
+    monkeypatch.setattr(module, "require_persistent_release_drain_contract", observe_only("drain-contract"))
+    monkeypatch.setattr(module, "require_release_start_draining_unset", observe_only("restart-drain"))
     monkeypatch.setattr(module, "wait_for_loopback_live", record(
         "loopback-live", answers.get("loopback-live", {"ok": True, "service": "comfy-panel"})))
     monkeypatch.setattr(module, "remote_dreamapi_runtime", record(
@@ -1739,7 +1745,7 @@ def test_remote_self_check_names_the_step_that_fails(monkeypatch, override, step
         module.remote_release_self_check(object(), "https://origin.test")
 
 
-def _exercise_main(monkeypatch, module, self_check_error=None, marker_error=None):
+def _exercise_main(monkeypatch, module, self_check_error=None):
     events = []
     monkeypatch.setattr(module, "preflight_decision", lambda *args, **kwargs: {"ready": True})
     monkeypatch.setattr(module, "validate_e2e_manifest", lambda config: [])
@@ -1752,17 +1758,12 @@ def _exercise_main(monkeypatch, module, self_check_error=None, marker_error=None
             raise self_check_error
         return {"live_vs_head": "unknown"}
 
-    def record(commit, files, payloads):
-        events.append(("marker", commit))
-        if marker_error is not None:
-            raise marker_error
-
     monkeypatch.setattr(module, "run_remote_self_check", self_check)
     monkeypatch.setattr(module, "run_release_tests", lambda: events.append("gate"))
     monkeypatch.setattr(module, "release_files", lambda: {})
     monkeypatch.setattr(module, "release_payloads_from_head", lambda files, head: {})
-    monkeypatch.setattr(module, "deploy", lambda *args, **kwargs: events.append("deploy"))
-    monkeypatch.setattr(module, "record_live_release", record)
+    monkeypatch.setattr(module, "deploy", lambda *args, **kwargs:
+                        events.append(("deploy", kwargs.get("release_commit"))))
     return events
 
 
@@ -1771,7 +1772,7 @@ def test_execute_runs_the_remote_self_check_before_the_gate_and_records_after(mo
     events = _exercise_main(monkeypatch, module)
     assert module.main(["--execute"]) == 0
     assert events == [("clean", None), ("self-check", "a" * 40), "gate", ("clean", "a" * 40),
-                      "deploy", ("marker", "a" * 40)]
+                      ("deploy", "a" * 40)]
     assert capsys.readouterr().out.rstrip().endswith("REALISM_RELEASE_DEPLOY_OK")
 
 
@@ -1781,15 +1782,6 @@ def test_a_failed_self_check_stops_before_the_gate(monkeypatch):
     with pytest.raises(RuntimeError, match="self-check failed"):
         module.main(["--execute"])
     assert "gate" not in events and "deploy" not in events
-
-
-def test_a_failed_marker_write_does_not_undo_a_verified_release(monkeypatch, capsys):
-    module = load_module()
-    _exercise_main(monkeypatch, module, marker_error=RuntimeError("disk full"))
-    assert module.main(["--execute"]) == 0
-    output = capsys.readouterr().out
-    assert "LIVE_RELEASE_MARKER_FAILED disk full" in output
-    assert output.rstrip().endswith("REALISM_RELEASE_DEPLOY_OK")
 
 
 def test_check_remote_only_runs_the_read_only_self_check(monkeypatch, capsys):
@@ -1913,3 +1905,113 @@ def test_pinned_host_key_policy_accepts_only_the_pinned_fingerprint(monkeypatch)
         policy.missing_host_key(object(), "server", key)
     monkeypatch.setattr(module, "SSH_HOST_KEY_SHA256", fingerprint)
     policy.missing_host_key(object(), "server", key)
+
+
+@pytest.mark.parametrize("check", ["require_persistent_release_drain_contract",
+                                   "require_release_start_draining_unset"])
+def test_drain_checks_reload_systemd_only_when_releasing(monkeypatch, check):
+    module = load_module()
+    scripts = []
+    monkeypatch.setattr(module, "command", lambda client, text, timeout=240: scripts.append(text) or "")
+    getattr(module, check)(object())
+    getattr(module, check)(object(), reload=False)
+    releasing, observing = (shlex.split(text)[3] for text in scripts)
+    assert "daemon-reload" in releasing and "NeedDaemonReload" not in releasing
+    assert "daemon-reload" not in observing and "show('NeedDaemonReload')=='yes'" in observing
+    assert "DAEMON_RELOAD" not in releasing + observing and "OBSERVE_ONLY" not in releasing + observing
+    for script in (releasing, observing):
+        compile(script, check, "exec")
+
+
+def _exercise_completed_deploy(monkeypatch, tmp_path, marker_error=None):
+    module = load_module()
+    local = tmp_path / "payload"
+    remote = module.REMOTE_ROOT + "/payload"
+    events = []
+
+    class Reader:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def read(self):
+            return b"new"
+
+    class FakeSFTP:
+        def posix_rename(self, source, destination):
+            events.append("swap")
+
+        def open(self, path, mode):
+            return Reader()
+
+        def close(self):
+            events.append("sftp-close")
+
+    class FakeClient:
+        def set_missing_host_key_policy(self, policy):
+            pass
+
+        def connect(self, *args, **kwargs):
+            events.append("connect")
+
+        def get_transport(self):
+            return types.SimpleNamespace(is_active=lambda: True, set_keepalive=lambda interval: None)
+
+        def open_sftp(self):
+            return FakeSFTP()
+
+        def close(self):
+            events.append("client-close")
+
+    monkeypatch.setitem(sys.modules, "paramiko", types.SimpleNamespace(
+        Ed25519Key=types.SimpleNamespace(from_private_key_file=lambda path: object()),
+        MissingHostKeyPolicy=object, SSHException=RuntimeError, SSHClient=FakeClient))
+    monkeypatch.setattr(module.pathlib.Path, "read_text", lambda self, **kwargs:
+                        '{"host":"test","port":22,"user":"test"}')
+    quiet = lambda *args, **kwargs: None
+    for name in ("require_persistent_release_drain_contract", "require_release_start_draining_unset",
+                 "stage_file_resilient", "fsync_remote_file", "install_watchdog_units",
+                 "require_drained_idle", "verify_public_app_shell_release",
+                 "verify_public_membership_boundary", "require_release_workflow_names"):
+        monkeypatch.setattr(module, name, quiet)
+    monkeypatch.setattr(module, "acquire_release_lock", lambda *args: events.append("lock"))
+    monkeypatch.setattr(module, "release_release_lock", lambda *args: events.append("unlock"))
+    monkeypatch.setattr(module, "capture_watchdog_state", lambda *args: {key: None for key in module.WATCHDOG_STATE_KEYS})
+    files = {local: remote, module.BASE / "config.json": module.REMOTE_ROOT + "/config.json"}
+    monkeypatch.setattr(module, "backup_release", lambda *args: {
+        path: {"exists": True, "sha256": "a" * 64, "mode": 0o644} for path in files.values()})
+    monkeypatch.setattr(module, "write_transaction_phase", lambda client, tx, phase: events.append(phase))
+    monkeypatch.setattr(module, "set_release_start_draining", lambda client, enabled: None)
+    monkeypatch.setattr(module, "enable_remote_release_drain", lambda *args: None)
+    monkeypatch.setattr(module, "set_remote_release_drain", lambda client, enabled: events.append(
+        "drain-on" if enabled else "drain-off"))
+    monkeypatch.setattr(module, "isolate_watchdog", quiet)
+    monkeypatch.setattr(module, "wait_for_remote_release_drain", lambda *args: dict(IDLE_DRAINED))
+    monkeypatch.setattr(module, "wait_for_live", lambda *args, **kwargs: {"ok": True})
+    monkeypatch.setattr(module, "remote_dreamapi_runtime", lambda *args: dict(READY_RUNTIME))
+    monkeypatch.setattr(module, "cleanup_release_transaction", lambda *args: events.append("cleanup"))
+
+    def marker(client, record):
+        events.append(("marker", record["commit"]))
+        if marker_error is not None:
+            raise marker_error
+
+    monkeypatch.setattr(module, "write_live_release_marker", marker)
+    monkeypatch.setattr(module, "command", lambda client, text, **kwargs: "")
+    module.deploy(files, {path: b"new" for path in files}, public_base="https://origin.test",
+                  release_commit="e" * 40)
+    return events
+
+
+def test_completed_release_records_the_live_commit_before_unlocking(monkeypatch, tmp_path, capsys):
+    events = _exercise_completed_deploy(monkeypatch, tmp_path)
+    assert events.index("committed") < events.index(("marker", "e" * 40)) < events.index("unlock")
+    assert "LIVE_RELEASE_MARKER " + "e" * 40 in capsys.readouterr().out
+
+
+def test_a_failed_marker_write_does_not_undo_a_verified_release(monkeypatch, tmp_path, capsys):
+    events = _exercise_completed_deploy(monkeypatch, tmp_path, marker_error=RuntimeError("disk full"))
+    assert "unlock" in events and "rolling-back" not in events
+    assert "LIVE_RELEASE_MARKER_FAILED disk full" in capsys.readouterr().out

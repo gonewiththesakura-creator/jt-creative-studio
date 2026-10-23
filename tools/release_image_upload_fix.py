@@ -18,6 +18,8 @@ def scope(baseline,manifest,data):
 
 
 def main():
+    import retired_release
+    retired_release.refuse_main(__file__)
     transaction.MODULES=transaction.RUNTIME_MODULES
     transaction.DEFAULT_STATE=BASE/'audit/image-upload-fix-20261018/release.json'
     transaction.verify_frontend_scope=scope

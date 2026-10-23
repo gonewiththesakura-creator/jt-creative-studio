@@ -49,6 +49,8 @@ def verify_production_baseline(sftp,data):
 
 
 def main(extra_paths=(),execute=None):
+    import retired_release
+    retired_release.refuse_main(__file__)
     if execute is None:execute=parse_args().execute
     manifest=json.loads((t.BASE/'static/app-manifest.json').read_text(encoding='utf8'))
     paths=[*r.SERVER_RUNTIME_MODULE_PATHS]+[p.lstrip('/') for p in manifest['pages']['/video'].values() if p.startswith('/static/')]+['static/video.html','static/app-manifest.json','static/app.html']

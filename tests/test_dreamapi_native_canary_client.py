@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import sys
 import pytest
 from pathlib import Path
 
@@ -16,6 +17,17 @@ PREPARE_SPEC = importlib.util.spec_from_file_location(
 )
 PREPARE = importlib.util.module_from_spec(PREPARE_SPEC)
 PREPARE_SPEC.loader.exec_module(PREPARE)
+
+@pytest.fixture(autouse=True)
+def retired_entry_points_run_offline(monkeypatch):
+    """Retired release scripts' main() only runs here, with production calls replaced."""
+    import importlib.util as _util
+    spec = _util.spec_from_file_location('retired_release', ROOT / 'tools' / 'retired_release.py')
+    retired = _util.module_from_spec(spec)
+    spec.loader.exec_module(retired)
+    retired.OFFLINE_TESTS = True
+    monkeypatch.setitem(sys.modules, 'retired_release', retired)
+
 
 
 def test_canary_uses_one_native_flare_low_portrait_request():

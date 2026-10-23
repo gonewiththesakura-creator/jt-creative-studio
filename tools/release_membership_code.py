@@ -7,6 +7,8 @@ STATE = release.t.BASE / 'audit/membership-code-release-20261009/release.json'
 
 
 def main(argv=None):
+    import retired_release
+    retired_release.refuse_main(__file__)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--execute', action='store_true',
                         help='run the full release gate and publish; without it only read-only production checks run')

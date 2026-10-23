@@ -146,6 +146,8 @@ print(json.dumps({{'rollback_files_restored':True}}))
 
 
 def main(argv=None):
+    import retired_release
+    retired_release.refuse_main(__file__)
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--execute',action='store_true')
     parser.add_argument('--state',type=str,default=str(DEFAULT_STATE))

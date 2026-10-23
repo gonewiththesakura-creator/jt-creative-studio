@@ -30,6 +30,17 @@ STATIC_RELEASES = {'release_admin_entry', 'release_identity_assets', 'release_im
 RUNTIME_RELEASES = [path.stem for path in SCRIPTS if path.stem not in STATIC_RELEASES]
 
 
+@pytest.fixture(autouse=True)
+def retired_entry_points_run_offline(monkeypatch):
+    """Retired release scripts' main() only runs here, with production calls replaced."""
+    import importlib.util as _util
+    spec = _util.spec_from_file_location('retired_release', ROOT / 'tools' / 'retired_release.py')
+    retired = _util.module_from_spec(spec)
+    spec.loader.exec_module(retired)
+    retired.OFFLINE_TESTS = True
+    monkeypatch.setitem(sys.modules, 'retired_release', retired)
+
+
 class Connected(Exception):
     pass
 
@@ -245,3 +256,16 @@ def test_retired_entry_point_refuses_before_reading_credentials(name, argv):
     assert result.returncode == 1
     assert 'is retired since the membership cutover' in result.stderr
     assert 'deploy_realism_release.py --execute' in result.stderr
+
+
+@pytest.mark.parametrize('name', RETIRED_ENTRY_POINTS)
+def test_retired_main_refuses_outside_offline_tests(name, monkeypatch):
+    tree = ast.parse((TOOLS / name).read_text(encoding='utf-8'))
+    main = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == 'main')
+    body = main.body[1:] if isinstance(main.body[0], ast.Expr) and isinstance(main.body[0].value, ast.Constant) else main.body
+    assert [ast.unparse(statement) for statement in body[:2]] == [
+        'import retired_release', 'retired_release.refuse_main(__file__)']
+    monkeypatch.setattr(sys.modules['retired_release'], 'OFFLINE_TESTS', False)
+    module = import_module(name[:-3])
+    with pytest.raises(SystemExit, match='is retired since the membership cutover'):
+        module.main()

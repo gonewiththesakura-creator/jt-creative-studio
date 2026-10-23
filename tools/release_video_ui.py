@@ -120,6 +120,8 @@ def restore_static(client, sftp, tx, backup, paths):
 
 
 def main(argv=None):
+    import retired_release
+    retired_release.refuse_main(__file__)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--execute', action='store_true')
     parser.add_argument('--audit-dir', type=pathlib.Path)

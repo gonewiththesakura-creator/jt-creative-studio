@@ -35,6 +35,8 @@ def public(path):
 
 
 def main():
+    import retired_release
+    retired_release.refuse_main(__file__)
     parser = argparse.ArgumentParser()
     parser.add_argument('--execute', action='store_true')
     args = parser.parse_args()

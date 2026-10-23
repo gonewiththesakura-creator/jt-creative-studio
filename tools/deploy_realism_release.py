@@ -2908,8 +2908,12 @@ if info.st_uid!=owner.st_uid or info.st_gid!=owner.st_gid or stat.S_IMODE(info.s
     command(client, "sudo python3 -c " + shlex.quote(script))
 
 
-def require_persistent_release_drain_contract(client):
-    """Verify restart-time drain/token configuration without returning the token."""
+def require_persistent_release_drain_contract(client, reload=True):
+    """Verify restart-time drain/token configuration without returning the token.
+
+    reload=False only observes: it never reloads systemd and fails if systemd
+    still has unit changes that are not loaded.
+    """
     script = """import pathlib,shlex,stat,subprocess
 env_path=pathlib.Path(ENV_PATH);dropin_path=pathlib.Path(DROPIN_PATH)
 for directory in (env_path.parent,dropin_path.parent):
@@ -2925,8 +2929,9 @@ if not env_data.startswith(b'PANEL_RELEASE_TOKEN=') or env_data.count(b'\\n')!=1
 token=env_data[len(b'PANEL_RELEASE_TOKEN='):-1]
 if not token or any(byte<=32 or byte>=127 for byte in token): raise RuntimeError('release token is empty or malformed')
 if dropin_path.read_bytes()!=DROPIN_BYTES: raise RuntimeError('release drain drop-in mismatch')
-subprocess.run(['systemctl','daemon-reload'],check=True)
+DAEMON_RELOAD
 def show(name): return subprocess.run(['systemctl','show','--property',name,'--value','comfy-panel'],text=True,capture_output=True,check=True).stdout.strip()
+OBSERVE_ONLY
 loaded=shlex.split(show('DropInPaths'))
 if str(dropin_path) not in loaded: raise RuntimeError('release drain drop-in is not loaded by systemd')
 environment_files=shlex.split(show('EnvironmentFiles'))
@@ -2936,24 +2941,36 @@ if any(value=='PANEL_RELEASE_TOKEN' or value.startswith('PANEL_RELEASE_TOKEN=') 
 """.replace("ENV_PATH", repr(RELEASE_TOKEN_ENV_FILE)).replace(
         "DROPIN_PATH", repr(RELEASE_DRAIN_DROPIN_FILE)
     ).replace("DROPIN_BYTES", repr(RELEASE_DRAIN_DROPIN_BYTES))
-    command(client, "sudo python3 -c " + shlex.quote(script))
+    command(client, "sudo python3 -c " + shlex.quote(systemd_reload_mode(script, reload)))
 
 
-def require_release_start_draining_unset(client):
+def systemd_reload_mode(script, reload):
+    """Reload systemd before reading it, or only observe and refuse unloaded changes."""
+    if reload:
+        return script.replace("DAEMON_RELOAD\n", "subprocess.run(['systemctl','daemon-reload'],check=True)\n").replace(
+            "OBSERVE_ONLY\n", "")
+    return script.replace("DAEMON_RELOAD\n", "").replace(
+        "OBSERVE_ONLY\n",
+        "if show('NeedDaemonReload')=='yes': raise RuntimeError('systemd has unloaded unit changes; "
+        "only a release may reload them')\n")
+
+
+def require_release_start_draining_unset(client, reload=True):
     """Refuse stale/conflicting restart-time drain configuration."""
     script = """import pathlib,shlex,subprocess
 name='PANEL_RELEASE_DRAIN_ON_START'
 path=pathlib.Path(START_PATH)
 if path.exists() or path.is_symlink(): raise RuntimeError('release start-drain drop-in already exists')
-subprocess.run(['systemctl','daemon-reload'],check=True)
+DAEMON_RELOAD
 def show(prop): return subprocess.run(['systemctl','show','--property',prop,'--value','comfy-panel'],text=True,capture_output=True,check=True).stdout.strip()
+OBSERVE_ONLY
 if str(path) in shlex.split(show('DropInPaths')): raise RuntimeError('stale release start-drain drop-in is still loaded')
 environment=shlex.split(show('Environment'))
 if any(value.split('=',1)[0]==name for value in environment): raise RuntimeError('PANEL_RELEASE_DRAIN_ON_START is already set')
 unset=shlex.split(show('UnsetEnvironment'))
 if any(value==name or value.startswith(name+'=') for value in unset): raise RuntimeError('PANEL_RELEASE_DRAIN_ON_START is blocked by UnsetEnvironment')
 """.replace("START_PATH", repr(RELEASE_START_DRAIN_DROPIN_FILE))
-    command(client, "sudo python3 -c " + shlex.quote(script))
+    command(client, "sudo python3 -c " + shlex.quote(systemd_reload_mode(script, reload)))
 
 
 def set_release_start_draining(client, enabled):
@@ -4211,8 +4228,9 @@ def remote_release_self_check(client, public_base=PUBLIC_BASE):
     if lock != "free":
         raise RuntimeError("remote self-check failed at release lock: a previous release still "
                            "holds it; inspect that transaction first")
-    step("drain contract", lambda: require_persistent_release_drain_contract(client))
-    step("restart drain", lambda: require_release_start_draining_unset(client))
+    # Observe only: a self-check never reloads systemd.
+    step("drain contract", lambda: require_persistent_release_drain_contract(client, reload=False))
+    step("restart drain", lambda: require_release_start_draining_unset(client, reload=False))
     report = {"service": state, "release_lock": lock}
     report["loopback_live"] = step("loopback live", lambda: wait_for_loopback_live(client, timeout=20))["service"]
     report["dreamapi"] = step("DreamAPI configuration", lambda: require_dreamapi_release_config(
@@ -4239,17 +4257,8 @@ def run_remote_self_check(public_base=PUBLIC_BASE, head=None):
     return report
 
 
-def record_live_release(commit, files, payloads):
-    """Write the live release marker over a fresh connection after a verified release."""
-    client = open_release_ssh()
-    try:
-        write_live_release_marker(client, live_release_marker(commit, files, payloads))
-    finally:
-        client.close()
-
-
 def deploy(files, payloads, public_base=PUBLIC_BASE,
-           bootstrap_drain_contract=False):
+           bootstrap_drain_contract=False, release_commit=None):
     """Stage all files, verify, swap, read back, health-check; rollback on failure."""
     if set(payloads) != set(files) or any(not isinstance(data, bytes)
                                           for data in payloads.values()):
@@ -4450,6 +4459,15 @@ def deploy(files, payloads, public_base=PUBLIC_BASE,
             drain_enabled = False
             cleanup_release_transaction(client, transaction)
             rollback_uncertain = False
+            if release_commit:
+                # Recorded while this release still owns the lock, so an earlier
+                # release can never overwrite a later one's record.
+                try:
+                    write_live_release_marker(client, live_release_marker(release_commit, files, payloads))
+                    print("LIVE_RELEASE_MARKER", release_commit)
+                except Exception as error:
+                    # The release is verified and committed; only the record is missing.
+                    print("LIVE_RELEASE_MARKER_FAILED", str(error)[:200])
             print("LIVE", json.dumps(live, ensure_ascii=False))
             print("DREAMAPI_RUNTIME", json.dumps(health, ensure_ascii=False))
             print("PUBLIC_MARKERS_OK")
@@ -4609,13 +4627,8 @@ def main(argv=None):
     deploy(
         files, payloads, public_base=args.public_base,
         bootstrap_drain_contract=args.bootstrap_drain_contract,
+        release_commit=reviewed_head,
     )
-    try:
-        record_live_release(reviewed_head, files, payloads)
-        print("LIVE_RELEASE_MARKER", reviewed_head)
-    except Exception as error:
-        # The release itself is verified and committed; only the record is missing.
-        print("LIVE_RELEASE_MARKER_FAILED", str(error)[:200])
     print("REALISM_RELEASE_DEPLOY_OK")
     return 0
 

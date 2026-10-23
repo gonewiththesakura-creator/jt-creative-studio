@@ -26,6 +26,8 @@ def scope(baseline,manifest,data):
 
 
 def main():
+    import retired_release
+    retired_release.refuse_main(__file__)
     transaction.MODULES=(*transaction.RUNTIME_MODULES,'config.json')
     transaction.DEFAULT_STATE=BASE/'audit/h3-optimized-20261020/release.json'
     transaction.verify_frontend_scope=scope

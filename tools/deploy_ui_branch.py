@@ -9,6 +9,8 @@ RETIRED_DEPLOY_MESSAGE = (
 
 
 def main():
+    import retired_release
+    retired_release.refuse_main(__file__)
     print(RETIRED_DEPLOY_MESSAGE, file=sys.stderr)
     return 2
 

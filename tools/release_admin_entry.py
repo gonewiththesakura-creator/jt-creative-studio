@@ -11,6 +11,8 @@ import release_login_scene as release
 
 
 def main():
+    import retired_release
+    retired_release.refuse_main(__file__)
     base = release.t.BASE
     entries = {path: subprocess.check_output(['git', 'show', 'HEAD:' + path], cwd=base)
                .replace(b'\r\n', b'\n') for path in release.ENTRY}

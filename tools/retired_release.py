@@ -5,11 +5,22 @@ address or anonymous APIs, and several write production without any flag.
 Since 2026-10-23 every release goes through `tools/deploy_realism_release.py`
 (`--check-remote` for a read-only check, `--execute` to publish). The scripts'
 main() stays importable so their offline tests keep documenting the logic;
-re-enabling one needs a reviewed change to its entry point.
+re-enabling one needs a reviewed change to its entry point and main().
 """
 import sys
 
 OFFICIAL_RELEASE = "tools/deploy_realism_release.py --execute"
+
+
+# Offline tests import these scripts and call main() with every production call
+# replaced; only their fixtures set this, and only for the test process.
+OFFLINE_TESTS = False
+
+
+def refuse_main(script):
+    """Stop an imported retired main() unless an offline test replaced production."""
+    if not OFFLINE_TESTS:
+        refuse(script)
 
 
 def refuse(script):

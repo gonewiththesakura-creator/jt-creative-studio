@@ -22,6 +22,17 @@ if str(TOOLS) not in sys.path:
 import prepare_dreamapi_native_canary as transport  # noqa: E402
 
 SCRIPTS = sorted(TOOLS.glob('release_*.py'))
+
+
+@pytest.fixture(autouse=True)
+def retired_entry_points_run_offline(monkeypatch):
+    """Retired release scripts' main() only runs here, with production calls replaced."""
+    import importlib.util as _util
+    spec = _util.spec_from_file_location('retired_release', ROOT / 'tools' / 'retired_release.py')
+    retired = _util.module_from_spec(spec)
+    spec.loader.exec_module(retired)
+    retired.OFFLINE_TESTS = True
+    monkeypatch.setitem(sys.modules, 'retired_release', retired)
 # Reviewed releases of hashed assets, entrypoints or nginx config only. Each asserts the
 # panel process is unchanged, so the live process keeps the modules it already imported.
 STATIC_RELEASES = {'release_admin_entry', 'release_identity_assets', 'release_image_layout',

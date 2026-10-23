@@ -44,6 +44,8 @@ print(json.dumps({'base_url':env['DREAMAPI_BASE_URL'],'models':count,'pid':pid})
 '''
 
 def main():
+    import retired_release
+    retired_release.refuse_main(__file__)
     if sys.argv[1:] != ['--execute']:
         raise SystemExit('Use --execute only after the loopback-capable release has passed all gates.')
     release.require_public_idle(release.PUBLIC_BASE, phase='internal-switch')
