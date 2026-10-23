@@ -48,6 +48,9 @@ REMOTE_ROOT = "/home/admin/comfy-panel"
 # origin is the HTTPS reverse proxy, where every API except /api/live needs a login.
 PUBLIC_BASE = "https://studio.dreamapi.club"
 RELEASE_LOCK_DIR = REMOTE_ROOT + "/.release.lock"
+# Informational record of the reviewed commit the official release put live.
+# Outside static/, so the panel never serves it.
+LIVE_RELEASE_MARKER = REMOTE_ROOT + "/.release-current.json"
 RELEASE_TRANSACTIONS_DIR = REMOTE_ROOT + "/.release-transactions"
 WATCHDOG_SERVICE_UNIT = "/etc/systemd/system/comfy-panel-watchdog.service"
 WATCHDOG_TIMER_UNIT = "/etc/systemd/system/comfy-panel-watchdog.timer"
@@ -2832,8 +2835,8 @@ except Exception:
         raise RuntimeError("DreamAPI runtime returned invalid JSON") from error
 
 
-def require_dreamapi_release_runtime(runtime, drained):
-    """Post-login replacement for the public DreamAPI health gate."""
+def require_dreamapi_release_config(runtime):
+    """Require a configured direct DreamAPI transport in the running panel."""
     fields = {"dreamapi_configured", "dreamapi_connection_mode", "dreamapi_endpoint_valid"}
     if not isinstance(runtime, dict) or set(runtime) != fields:
         raise RuntimeError("DreamAPI runtime response is invalid")
@@ -2843,6 +2846,12 @@ def require_dreamapi_release_runtime(runtime, drained):
         raise RuntimeError("DreamAPI transport mode cannot be verified for release")
     if runtime["dreamapi_configured"] is not True or runtime["dreamapi_endpoint_valid"] is not True:
         raise RuntimeError("DreamAPI direct transport is not configured")
+    return runtime
+
+
+def require_dreamapi_release_runtime(runtime, drained):
+    """Post-login replacement for the public DreamAPI health gate."""
+    require_dreamapi_release_config(runtime)
     # In direct mode a pending (uncertain) DreamAPI outcome counts as API work.
     if not isinstance(drained, dict) or drained.get("api_busy") is not False:
         raise RuntimeError("DreamAPI outcome is still uncertain")
@@ -4079,6 +4088,166 @@ def remove_watchdog_units(client):
     command(client, "sudo systemctl daemon-reload")
 
 
+def pinned_host_key_policy(paramiko):
+    """Reject every SSH host key except the pinned SHA256 fingerprint."""
+    class PinnedSHA256Policy(paramiko.MissingHostKeyPolicy):
+        def missing_host_key(self, client, hostname, key):
+            actual = "SHA256:" + base64.b64encode(
+                hashlib.sha256(key.asbytes()).digest()
+            ).decode("ascii").rstrip("=")
+            if not hmac.compare_digest(actual, SSH_HOST_KEY_SHA256):
+                raise paramiko.SSHException(
+                    f"SSH host key mismatch for {hostname}: expected pinned fingerprint"
+                )
+
+    return PinnedSHA256Policy()
+
+
+def open_release_ssh():
+    """Connect with the pinned host key and the ignored deploy key; the caller closes it."""
+    import paramiko
+
+    creds = json.loads((BASE / "tools" / "creds.json").read_text(encoding="utf-8"))
+    deploy_key = paramiko.Ed25519Key.from_private_key_file(str(DEPLOY_SSH_KEY_PATH))
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(pinned_host_key_policy(paramiko))
+    try:
+        client.connect(
+            creds["host"], port=int(creds["port"]), username=creds["user"],
+            pkey=deploy_key, timeout=30, allow_agent=False, look_for_keys=False,
+        )
+        configure_ssh_transport(client)
+    except BaseException:
+        client.close()
+        raise
+    return client
+
+
+def live_release_marker(commit, files, payloads):
+    """Describe one released commit and the exact bytes it put live."""
+    if not re.fullmatch(r"[0-9a-f]{40}", str(commit or "")):
+        raise RuntimeError("invalid released commit")
+    digest = hashlib.sha256()
+    for local in sorted(files, key=lambda path: files[path]):
+        digest.update(f"{files[local]}\0{hashlib.sha256(payloads[local]).hexdigest()}\n".encode("utf-8"))
+    return {
+        "commit": commit,
+        "released_at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
+        "tool": "deploy_realism_release",
+        "files": len(files),
+        "payload_sha256": digest.hexdigest(),
+    }
+
+
+def write_live_release_marker(client, marker):
+    """Atomically replace the live release record."""
+    data = json.dumps(marker, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    script = f"""import os,pathlib
+path=pathlib.Path({LIVE_RELEASE_MARKER!r});temp=path.with_name(path.name+'.tmp-'+os.urandom(8).hex())
+with open(temp,'xb') as handle:
+    handle.write(bytes.fromhex({data.hex()!r}));handle.flush();os.fsync(handle.fileno())
+os.chmod(temp,0o644);os.replace(temp,path)
+directory=os.open(str(path.parent),os.O_RDONLY)
+try: os.fsync(directory)
+finally: os.close(directory)
+"""
+    command(client, "python3 -c " + shlex.quote(script))
+
+
+def read_live_release_marker(client):
+    """Return the recorded live release, or None before the first marked release."""
+    script = f"""import pathlib
+path=pathlib.Path({LIVE_RELEASE_MARKER!r})
+print(path.read_text(encoding='utf-8') if path.is_file() and not path.is_symlink() else 'null')
+"""
+    raw = command(client, "python3 -c " + shlex.quote(script))
+    try:
+        marker = json.loads(raw)
+    except ValueError as error:
+        raise RuntimeError("live release marker is not valid JSON") from error
+    if marker is not None and (not isinstance(marker, dict)
+                               or not re.fullmatch(r"[0-9a-f]{40}", str(marker.get("commit")))):
+        raise RuntimeError("live release marker is malformed")
+    return marker
+
+
+def live_release_relation(marker, head):
+    """Say how the recorded live commit relates to the local HEAD (informational)."""
+    commit = (marker or {}).get("commit")
+    if not commit:
+        return "unknown: no live release marker yet"
+    if commit == head:
+        return "live == HEAD"
+    known = subprocess.run(["git", "cat-file", "-e", commit + "^{commit}"], cwd=BASE,
+                           capture_output=True).returncode == 0
+    if not known:
+        return f"unknown: live commit {commit[:7]} is not in this repository"
+    ancestor = subprocess.run(["git", "merge-base", "--is-ancestor", commit, head], cwd=BASE,
+                              capture_output=True).returncode == 0
+    if not ancestor:
+        return f"diverged: live {commit[:7]} is not an ancestor of HEAD"
+    count = subprocess.run(["git", "rev-list", "--count", f"{commit}..{head}"], cwd=BASE,
+                           capture_output=True, text=True, check=True).stdout.strip()
+    return f"live {commit[:7]} is {count} commit(s) behind HEAD"
+
+
+def remote_release_self_check(client, public_base=PUBLIC_BASE):
+    """Exercise every remote and public check the release relies on, without changing state.
+
+    Runs before the long test gate, so a changed topology fails in seconds.
+    """
+    def step(name, check):
+        try:
+            return check()
+        except Exception as error:
+            raise RuntimeError(f"remote self-check failed at {name}: {error}") from error
+
+    state = step("service", lambda: command(client, "systemctl is-active comfy-panel || true").strip())
+    if state != "active":
+        raise RuntimeError(f"remote self-check failed at service: comfy-panel is {state or 'unknown'}")
+    lock = step("release lock", lambda: command(
+        client, f"if test -e {shlex.quote(RELEASE_LOCK_DIR)}; then echo held; else echo free; fi",
+    ).strip())
+    if lock != "free":
+        raise RuntimeError("remote self-check failed at release lock: a previous release still "
+                           "holds it; inspect that transaction first")
+    step("drain contract", lambda: require_persistent_release_drain_contract(client))
+    step("restart drain", lambda: require_release_start_draining_unset(client))
+    report = {"service": state, "release_lock": lock}
+    report["loopback_live"] = step("loopback live", lambda: wait_for_loopback_live(client, timeout=20))["service"]
+    report["dreamapi"] = step("DreamAPI configuration", lambda: require_dreamapi_release_config(
+        remote_dreamapi_runtime(client)))
+    report["public_live"] = step("public live", lambda: wait_for_live(public_base, timeout=20))["service"]
+    step("login gate", lambda: verify_public_membership_boundary(public_base))
+    shell_status = step("public shell", lambda: public_probe(public_base, "/")[0])
+    if shell_status != 200:
+        raise RuntimeError(f"remote self-check failed at public shell: HTTP {shell_status}")
+    report["live_release"] = step("live release marker", lambda: read_live_release_marker(client))
+    return report
+
+
+def run_remote_self_check(public_base=PUBLIC_BASE, head=None):
+    client = open_release_ssh()
+    try:
+        report = remote_release_self_check(client, public_base)
+    finally:
+        client.close()
+    head = head or subprocess.run(["git", "rev-parse", "HEAD"], cwd=BASE, text=True,
+                                  capture_output=True, check=True).stdout.strip()
+    report["local_head"] = head
+    report["live_vs_head"] = live_release_relation(report["live_release"], head)
+    return report
+
+
+def record_live_release(commit, files, payloads):
+    """Write the live release marker over a fresh connection after a verified release."""
+    client = open_release_ssh()
+    try:
+        write_live_release_marker(client, live_release_marker(commit, files, payloads))
+    finally:
+        client.close()
+
+
 def deploy(files, payloads, public_base=PUBLIC_BASE,
            bootstrap_drain_contract=False):
     """Stage all files, verify, swap, read back, health-check; rollback on failure."""
@@ -4092,23 +4261,13 @@ def deploy(files, payloads, public_base=PUBLIC_BASE,
     # Imported and connection metadata/key read only after fail-closed local preflight.
     import paramiko
 
-    class PinnedSHA256Policy(paramiko.MissingHostKeyPolicy):
-        def missing_host_key(self, client, hostname, key):
-            actual = "SHA256:" + base64.b64encode(
-                hashlib.sha256(key.asbytes()).digest()
-            ).decode("ascii").rstrip("=")
-            if not hmac.compare_digest(actual, SSH_HOST_KEY_SHA256):
-                raise paramiko.SSHException(
-                    f"SSH host key mismatch for {hostname}: expected pinned fingerprint"
-                )
-
     creds_path = BASE / "tools" / "creds.json"
     creds = json.loads(creds_path.read_text(encoding="utf-8"))
     deploy_key = paramiko.Ed25519Key.from_private_key_file(
         str(DEPLOY_SSH_KEY_PATH)
     )
     client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(PinnedSHA256Policy())
+    client.set_missing_host_key_policy(pinned_host_key_policy(paramiko))
     sftp = None
     remote_paths = list(files.values())
     transaction = new_release_transaction()
@@ -4410,11 +4569,19 @@ def parse_args(argv=None):
         help="one-time migration for a verified idle legacy server without the drain endpoint",
     )
     parser.add_argument("--public-base", default=PUBLIC_BASE)
+    parser.add_argument(
+        "--check-remote", action="store_true",
+        help="read-only: connect and run every remote/public check the release needs, then exit",
+    )
     return parser.parse_args(argv)
 
 
 def main(argv=None):
     args = parse_args(argv)
+    if args.check_remote:
+        print(json.dumps(run_remote_self_check(args.public_base), ensure_ascii=False, indent=2))
+        print("REMOTE_SELF_CHECK_OK")
+        return 0
     config = json.loads((BASE / "config.json").read_text(encoding="utf-8"))
     server_source = (BASE / "server.py").read_text(encoding="utf-8")
     decision = preflight_decision(
@@ -4430,6 +4597,11 @@ def main(argv=None):
         print(json.dumps({"e2e_errors": e2e_errors}, ensure_ascii=False, indent=2))
         return 2
     reviewed_head = require_clean_git()
+    if not args.bootstrap_drain_contract:
+        # Seconds instead of a full gate: refuse early if the server or the
+        # public origin no longer looks the way the release expects.
+        print(json.dumps(run_remote_self_check(args.public_base, reviewed_head),
+                         ensure_ascii=False, indent=2))
     run_release_tests()
     require_clean_git(expected_head=reviewed_head)
     files = release_files()
@@ -4438,6 +4610,12 @@ def main(argv=None):
         files, payloads, public_base=args.public_base,
         bootstrap_drain_contract=args.bootstrap_drain_contract,
     )
+    try:
+        record_live_release(reviewed_head, files, payloads)
+        print("LIVE_RELEASE_MARKER", reviewed_head)
+    except Exception as error:
+        # The release itself is verified and committed; only the record is missing.
+        print("LIVE_RELEASE_MARKER_FAILED", str(error)[:200])
     print("REALISM_RELEASE_DEPLOY_OK")
     return 0
 

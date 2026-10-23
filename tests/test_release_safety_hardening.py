@@ -1660,3 +1660,256 @@ def test_released_config_must_list_every_target_and_uploaded_workflow():
     for raw in (b"not json", b"{}", b"[]"):
         with pytest.raises(RuntimeError, match="no workflow list"):
             module.require_release_workflow_names(raw)
+
+
+def _self_check_fakes(monkeypatch, module, overrides=None):
+    """Answer every read-only self-check step; any state-changing helper fails the test."""
+    steps = []
+    answers = {"service": "active\n", "lock": "free\n", "marker": "null"}
+    answers.update(overrides or {})
+
+    def command(client, text, timeout=240):
+        if text.startswith("systemctl is-active comfy-panel"):
+            steps.append("service")
+            return answers["service"]
+        if module.RELEASE_LOCK_DIR in text and "test -e" in text:
+            steps.append("lock")
+            return answers["lock"]
+        if module.LIVE_RELEASE_MARKER in text:
+            steps.append("marker")
+            return answers["marker"]
+        raise AssertionError("unexpected remote command: " + text[:80])
+
+    def record(name, result=None):
+        def run(*args, **kwargs):
+            steps.append(name)
+            if isinstance(result, Exception):
+                raise result
+            return result
+        return run
+
+    monkeypatch.setattr(module, "command", command)
+    monkeypatch.setattr(module, "require_persistent_release_drain_contract",
+                        record("drain-contract", answers.get("drain-contract")))
+    monkeypatch.setattr(module, "require_release_start_draining_unset",
+                        record("restart-drain", answers.get("restart-drain")))
+    monkeypatch.setattr(module, "wait_for_loopback_live", record(
+        "loopback-live", answers.get("loopback-live", {"ok": True, "service": "comfy-panel"})))
+    monkeypatch.setattr(module, "remote_dreamapi_runtime", record(
+        "dreamapi", answers.get("dreamapi", dict(READY_RUNTIME))))
+    monkeypatch.setattr(module, "wait_for_live", record(
+        "public-live", answers.get("public-live", {"ok": True, "service": "comfy-panel"})))
+    monkeypatch.setattr(module, "verify_public_membership_boundary",
+                        record("login-gate", answers.get("login-gate")))
+    monkeypatch.setattr(module, "public_probe", record("shell", answers.get("shell", (200, b"shell"))))
+    for name in ("set_remote_release_drain", "enable_remote_release_drain", "set_release_start_draining",
+                 "acquire_release_lock", "release_release_lock", "isolate_watchdog",
+                 "stop_panel_resilient", "write_live_release_marker", "run_release_tests"):
+        monkeypatch.setattr(module, name, lambda *args, _name=name, **kwargs: (_ for _ in ()).throw(
+            AssertionError(_name + " must not run in the self-check")))
+    return steps
+
+
+def test_remote_self_check_runs_every_release_check_without_changing_state(monkeypatch):
+    module = load_module()
+    steps = _self_check_fakes(monkeypatch, module)
+    report = module.remote_release_self_check(object(), "https://origin.test")
+    assert report == {"service": "active", "release_lock": "free", "loopback_live": "comfy-panel",
+                      "dreamapi": READY_RUNTIME, "public_live": "comfy-panel", "live_release": None}
+    assert steps == ["service", "lock", "drain-contract", "restart-drain", "loopback-live",
+                     "dreamapi", "public-live", "login-gate", "shell", "marker"]
+
+
+@pytest.mark.parametrize("override,step", [
+    ({"service": "inactive\n"}, "service"),
+    ({"lock": "held\n"}, "release lock"),
+    ({"drain-contract": RuntimeError("release drain drop-in mismatch")}, "drain contract"),
+    ({"restart-drain": RuntimeError("stale release start-drain drop-in")}, "restart drain"),
+    ({"loopback-live": RuntimeError("loopback liveness timeout")}, "loopback live"),
+    ({"dreamapi": dict(READY_RUNTIME, dreamapi_connection_mode="workstation")}, "DreamAPI configuration"),
+    ({"public-live": RuntimeError("liveness timeout")}, "public live"),
+    ({"login-gate": RuntimeError("public release drain endpoint is exposed: POST")}, "login gate"),
+    ({"shell": (503, b"")}, "public shell"),
+    ({"marker": '{"commit": "not-a-commit"}'}, "live release marker"),
+])
+def test_remote_self_check_names_the_step_that_fails(monkeypatch, override, step):
+    module = load_module()
+    _self_check_fakes(monkeypatch, module, override)
+    with pytest.raises(RuntimeError, match="remote self-check failed at " + step):
+        module.remote_release_self_check(object(), "https://origin.test")
+
+
+def _exercise_main(monkeypatch, module, self_check_error=None, marker_error=None):
+    events = []
+    monkeypatch.setattr(module, "preflight_decision", lambda *args, **kwargs: {"ready": True})
+    monkeypatch.setattr(module, "validate_e2e_manifest", lambda config: [])
+    monkeypatch.setattr(module, "require_clean_git", lambda expected_head=None:
+                        events.append(("clean", expected_head)) or "a" * 40)
+
+    def self_check(public_base, head=None):
+        events.append(("self-check", head))
+        if self_check_error is not None:
+            raise self_check_error
+        return {"live_vs_head": "unknown"}
+
+    def record(commit, files, payloads):
+        events.append(("marker", commit))
+        if marker_error is not None:
+            raise marker_error
+
+    monkeypatch.setattr(module, "run_remote_self_check", self_check)
+    monkeypatch.setattr(module, "run_release_tests", lambda: events.append("gate"))
+    monkeypatch.setattr(module, "release_files", lambda: {})
+    monkeypatch.setattr(module, "release_payloads_from_head", lambda files, head: {})
+    monkeypatch.setattr(module, "deploy", lambda *args, **kwargs: events.append("deploy"))
+    monkeypatch.setattr(module, "record_live_release", record)
+    return events
+
+
+def test_execute_runs_the_remote_self_check_before_the_gate_and_records_after(monkeypatch, capsys):
+    module = load_module()
+    events = _exercise_main(monkeypatch, module)
+    assert module.main(["--execute"]) == 0
+    assert events == [("clean", None), ("self-check", "a" * 40), "gate", ("clean", "a" * 40),
+                      "deploy", ("marker", "a" * 40)]
+    assert capsys.readouterr().out.rstrip().endswith("REALISM_RELEASE_DEPLOY_OK")
+
+
+def test_a_failed_self_check_stops_before_the_gate(monkeypatch):
+    module = load_module()
+    events = _exercise_main(monkeypatch, module, self_check_error=RuntimeError("remote self-check failed at service"))
+    with pytest.raises(RuntimeError, match="self-check failed"):
+        module.main(["--execute"])
+    assert "gate" not in events and "deploy" not in events
+
+
+def test_a_failed_marker_write_does_not_undo_a_verified_release(monkeypatch, capsys):
+    module = load_module()
+    _exercise_main(monkeypatch, module, marker_error=RuntimeError("disk full"))
+    assert module.main(["--execute"]) == 0
+    output = capsys.readouterr().out
+    assert "LIVE_RELEASE_MARKER_FAILED disk full" in output
+    assert output.rstrip().endswith("REALISM_RELEASE_DEPLOY_OK")
+
+
+def test_check_remote_only_runs_the_read_only_self_check(monkeypatch, capsys):
+    module = load_module()
+    events = _exercise_main(monkeypatch, module)
+    monkeypatch.setattr(module, "preflight_decision", lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("--check-remote must not run the release preflight")))
+    assert module.main(["--check-remote"]) == 0
+    assert events == [("self-check", None)]
+    assert capsys.readouterr().out.rstrip().endswith("REMOTE_SELF_CHECK_OK")
+
+
+def test_live_release_marker_binds_the_commit_to_every_released_path_and_byte():
+    module = load_module()
+    files = {Path("a"): module.REMOTE_ROOT + "/a", Path("b"): module.REMOTE_ROOT + "/b"}
+    payloads = {Path("a"): b"one", Path("b"): b"two"}
+    marker = module.live_release_marker("c" * 40, files, payloads)
+    assert set(marker) == {"commit", "released_at", "tool", "files", "payload_sha256"}
+    assert marker["commit"] == "c" * 40 and marker["files"] == 2
+    same = module.live_release_marker("c" * 40, dict(reversed(list(files.items()))), payloads)
+    assert same["payload_sha256"] == marker["payload_sha256"]
+    for changed_files, changed_payloads in (
+        (files, {**payloads, Path("b"): b"other"}),
+        ({**files, Path("b"): module.REMOTE_ROOT + "/c"}, payloads),
+    ):
+        assert module.live_release_marker("c" * 40, changed_files, changed_payloads)[
+            "payload_sha256"] != marker["payload_sha256"]
+    with pytest.raises(RuntimeError, match="invalid released commit"):
+        module.live_release_marker("HEAD", files, payloads)
+
+
+def test_live_release_marker_is_written_atomically_and_read_back(monkeypatch, tmp_path):
+    import os
+    module = load_module()
+    target = tmp_path / ".release-current.json"
+    monkeypatch.setattr(module, "LIVE_RELEASE_MARKER", str(target))
+    scripts = []
+    monkeypatch.setattr(module, "command", lambda client, text, timeout=240: scripts.append(text) or "")
+    marker = {"commit": "d" * 40, "files": 1}
+    module.write_live_release_marker(object(), marker)
+    script = shlex.split(scripts[0])[2]
+    assert "'xb'" in script and "os.replace" in script and "os.fsync" in script
+    # Windows cannot open a directory for fsync; the rest runs for real.
+    real_open, stand_in = os.open, tmp_path / "directory-stand-in"
+    stand_in.write_bytes(b"")
+    monkeypatch.setattr(os, "open", lambda path, flags, *args: real_open(
+        stand_in if Path(path) == tmp_path else path, flags, *args))
+    monkeypatch.setattr(os, "fsync", lambda fd: None)
+    exec(script, {"__name__": "__remote__"})
+    assert json.loads(target.read_text(encoding="utf-8")) == marker
+    assert not list(tmp_path.glob(".release-current.json.tmp-*"))
+
+    for raw, expected in (("null", None), (target.read_text(encoding="utf-8"), marker)):
+        monkeypatch.setattr(module, "command", lambda client, text, timeout=240, raw=raw: raw)
+        assert module.read_live_release_marker(object()) == expected
+    for raw in ('{"commit": "HEAD"}', "[]", "not json"):
+        monkeypatch.setattr(module, "command", lambda client, text, timeout=240, raw=raw: raw)
+        with pytest.raises(RuntimeError, match="live release marker"):
+            module.read_live_release_marker(object())
+
+
+def test_live_release_relation_reports_the_gap_to_head():
+    import subprocess
+    module = load_module()
+    head, parent = subprocess.run(["git", "rev-parse", "HEAD", "HEAD~1"], cwd=ROOT, text=True,
+                                  capture_output=True, check=True).stdout.split()
+    assert module.live_release_relation({"commit": head}, head) == "live == HEAD"
+    assert module.live_release_relation({"commit": parent}, head) == (
+        f"live {parent[:7]} is 1 commit(s) behind HEAD")
+    assert module.live_release_relation({"commit": head}, parent).startswith("diverged")
+    assert module.live_release_relation(None, head).startswith("unknown: no live release marker")
+    assert module.live_release_relation({"commit": "f" * 40}, head).startswith("unknown: live commit")
+
+
+def _fake_paramiko(events, connect_error=None):
+    class Client:
+        def set_missing_host_key_policy(self, policy):
+            events.append(("policy", type(policy).__name__))
+
+        def connect(self, *args, **kwargs):
+            events.append(("connect", kwargs.get("pkey") is not None, "password" in kwargs))
+            if connect_error is not None:
+                raise connect_error
+
+        def get_transport(self):
+            return types.SimpleNamespace(is_active=lambda: True,
+                                         set_keepalive=lambda interval: events.append("keepalive"))
+
+        def close(self):
+            events.append("close")
+
+    return types.SimpleNamespace(
+        Ed25519Key=types.SimpleNamespace(from_private_key_file=lambda path: object()),
+        MissingHostKeyPolicy=object, SSHException=RuntimeError, SSHClient=Client)
+
+
+def test_open_release_ssh_pins_the_host_key_and_closes_on_failure(monkeypatch):
+    module = load_module()
+    monkeypatch.setattr(module.pathlib.Path, "read_text", lambda self, **kwargs:
+                        '{"host":"test","port":22,"user":"test"}')
+    events = []
+    monkeypatch.setitem(sys.modules, "paramiko", _fake_paramiko(events))
+    module.open_release_ssh()
+    assert events == [("policy", "PinnedSHA256Policy"), ("connect", True, False), "keepalive"]
+    events.clear()
+    monkeypatch.setitem(sys.modules, "paramiko", _fake_paramiko(events, connect_error=OSError("refused")))
+    with pytest.raises(OSError):
+        module.open_release_ssh()
+    assert events[-1] == "close"
+
+
+def test_pinned_host_key_policy_accepts_only_the_pinned_fingerprint(monkeypatch):
+    import base64
+    import hashlib
+    module = load_module()
+    paramiko = types.SimpleNamespace(MissingHostKeyPolicy=object, SSHException=RuntimeError)
+    key = types.SimpleNamespace(asbytes=lambda: b"host-key")
+    fingerprint = "SHA256:" + base64.b64encode(hashlib.sha256(b"host-key").digest()).decode().rstrip("=")
+    policy = module.pinned_host_key_policy(paramiko)
+    with pytest.raises(RuntimeError, match="host key mismatch"):
+        policy.missing_host_key(object(), "server", key)
+    monkeypatch.setattr(module, "SSH_HOST_KEY_SHA256", fingerprint)
+    policy.missing_host_key(object(), "server", key)
