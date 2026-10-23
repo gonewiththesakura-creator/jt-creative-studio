@@ -1175,6 +1175,7 @@ def test_visual_only_frontend_change_accepts_styles_and_a_reviewed_scene():
     "unreviewed-scene", "edited-after-review", "same-path-overwrite",
     "style-api", "style-import", "style-external-spaced", "style-escape", "style-image-set", "style-src",
     "style-new-relative", "unreadable-tested-style",
+    "style-comment-in-string", "style-url-in-string", "style-target-case", "style-image-function",
 ])
 def test_visual_only_frontend_change_rejects_business_drift_and_unproven_visuals(change):
     module = load_module()
@@ -1220,6 +1221,16 @@ def test_visual_only_frontend_change_rejects_business_drift_and_unproven_visuals
         current[app_css] = b"b{background:url(/static/other.png)}"
     elif change == "unreadable-tested-style":
         files["tested"]["static/assets/app.aaaaaaaaaaaa.css"] = b"b{content:'" + BACKSLASH + b"201C'}"
+    # Second Codex review (T261023-142143-2ae3): strings and comments are lexer states.
+    elif change == "style-comment-in-string":
+        current[app_css] = b'body{--a:"/*";background-image:url(https://example.test/new.png);--b:"*/"}'
+    elif change == "style-url-in-string":
+        current[app_css] = b"body{--a:'url(\"data:';background-image:url(https://example.test/new.png);--b:'\")'}"
+    elif change == "style-target-case":
+        files["tested"]["static/assets/app.aaaaaaaaaaaa.css"] = b"b{background:url(/static/a.png?v=a)}"
+        current[app_css] = b"b{background:url(/static/a.png?v=A)}"
+    elif change == "style-image-function":
+        current[app_css] = b"b{background:image('https://example.test/a.png')}"
     assert not module.visual_only_frontend_change("tested", "current", show=visual_show(files),
                                                   reviewed_scripts=reviewed)
 
@@ -1229,9 +1240,19 @@ def test_css_fetch_targets_reads_nested_data_uris_and_fails_closed():
     css = (b"/* url(http://commented.test) */a{background:url(\"data:image/svg+xml,%3Csvg%3E%3Cuse "
            b"href='url(%23g)'/%3E%3C/svg%3E\")}b{mask:url( /static/x.webp )}")
     assert module.css_fetch_targets(css) == [
-        "data:image/svg+xml,%3csvg%3e%3cuse href='url(%23g)'/%3e%3c/svg%3e", "/static/x.webp"]
+        "data:image/svg+xml,%3Csvg%3E%3Cuse href='url(%23g)'/%3E%3C/svg%3E", "/static/x.webp"]
+    # Strings and comments are lexer states: neither hides nor invents a url().
+    assert module.css_fetch_targets(
+        b'body{--a:"/*";background-image:url(https://example.test/new.png);--b:"*/"}') == [
+        "https://example.test/new.png"]
+    assert module.css_fetch_targets(
+        b"body{--a:'url(\"data:';background-image:URL(https://example.test/new.png);--b:'\")'}") == [
+        "https://example.test/new.png"]
+    assert module.css_fetch_targets(b"a{background:url(/static/A.png?v=B)}b{x:myurl(y)}") == ["/static/A.png?v=B"]
     for unreadable in (b"a{background:url('x.png)}", b"a{background:url(x.png}", b"a{background:url(\"x\" y)}",
-                       b"@import url(a.css);", b"a{background:-webkit-image-set(url(a.png) 1x)}",
+                       b"@import url(a.css);", b"@IMPORT 'a.css';", b"a{background:-webkit-image-set(url(a.png) 1x)}",
+                       b"a{background:image('a.png')}", b"a{background:-webkit-cross-fade(url(a.png),url(b.png),50%)}",
+                       b"a{content:'unterminated}", b"/* never closed",
                        b"a{content:'" + BACKSLASH + b"75rl'}"):
         assert module.css_fetch_targets(unreadable) is None, unreadable
 

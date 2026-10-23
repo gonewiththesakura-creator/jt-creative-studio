@@ -221,3 +221,33 @@ def test_login_uses_saved_appearance_before_gpu_initialization(browser):
         assert page.locator('.login-scene-orbit').count()==0
         assert page.locator('.page-host').count()==0
     finally:page.close()
+
+
+@pytest.mark.parametrize('saved_pause', [True, False])
+def test_one_press_resumes_a_software_still_black_hole(browser, saved_pause):
+    """Software rendering starts still; one press of 继续光场 resumes even with a saved pause."""
+    graphics_browser = browser.browser_type.launch(headless=True, args=['--use-angle=swiftshader', '--enable-unsafe-swiftshader'])
+    page = graphics_browser.new_page(viewport={'width': 390, 'height': 900})
+    if saved_pause:
+        page.add_init_script("localStorage.setItem('jt-singularity-paused','true')")
+    serve_page(page)
+    page.route('**/api/auth/me', lambda route: route.fulfill(json={'enabled': True, 'authenticated': False,
+                                                                   'login_method': 'access_code'}))
+    try:
+        page.goto('http://fixture.test/')
+        page.wait_for_function("() => document.body.dataset.singularity==='ready'", timeout=60000)
+        assert page.evaluate('jtApp.metrics.lowPower') == 'software'
+        assert page.evaluate('document.body.dataset.singularityPower') == 'still'
+        motion = page.locator('#singularityMotion')
+        expect(motion).to_have_text('继续光场')
+        frames = page.evaluate('jtApp.metrics.frames')
+        motion.evaluate('button => button.click()')
+        expect(motion).to_have_text('暂停光场')
+        assert page.evaluate('jtApp.metrics.lowPower') is False
+        assert page.evaluate('document.body.dataset.singularityPower') is None
+        assert page.evaluate("localStorage.getItem('jt-singularity-paused')") == 'false'
+        # Resumed by choice: the slow software frames must not stop it again.
+        page.wait_for_function(f'() => jtApp.metrics.frames >= {frames} + 3', timeout=60000)
+        assert page.evaluate('jtApp.metrics.lowPower') is False
+    finally:
+        graphics_browser.close()

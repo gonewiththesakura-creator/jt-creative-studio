@@ -2076,42 +2076,93 @@ REVIEWED_VISUAL_SCRIPTS_SHA256 = frozenset({
     "8c2d3015f7af4019e0373da5fbe821aa57534716ab249b8f35166067e41d5845",
 })
 CSS_WHITESPACE = " \t\r\n\f"
+# Functions whose bare-string arguments can load an image; unreadable here.
+CSS_STRING_IMAGE_FUNCTIONS = ("image-set", "image", "src", "cross-fade", "element")
 
 
 def css_fetch_targets(css):
     """Every resource a stylesheet can fetch, or None when it cannot be read with certainty.
 
-    Escapes could spell url( or @import, and image-set()/src() take bare
-    strings, so any of them makes the sheet unreadable (fail closed).
+    A small CSS Syntax 3 lexer: comments and strings are their own states, so
+    neither can hide or invent a url(); function names compare ASCII
+    case-insensitively while URL values keep their exact text. Escapes,
+    @import and functions taking bare image strings fail closed.
     """
-    text = re.sub(rb"/\*.*?\*/", b"", css, flags=re.S)
-    if bytes([92]) in text:
+    if bytes([92]) in css:
         return None
-    text = text.decode("utf-8").lower()
-    if "@import" in text or "image-set(" in text or re.search(r"(?<![\w-])src\(", text):
+    try:
+        text = css.decode("utf-8")
+    except UnicodeDecodeError:
         return None
-    targets, position = [], 0
-    while (start := text.find("url(", position)) >= 0:
-        index = start + 4
-        while index < len(text) and text[index] in CSS_WHITESPACE:
-            index += 1
-        if index < len(text) and text[index] in "'\"":
-            end = text.find(text[index], index + 1)
+    targets, index, size = [], 0, len(text)
+
+    def is_name(char):
+        return char.isascii() and (char.isalnum() or char in "-_") or not char.isascii()
+
+    def string_end(start):
+        quote, end = text[start], start + 1
+        while end < size and text[end] != quote:
+            if text[end] in "\r\n\f":
+                return None
+            end += 1
+        return end if end < size else None
+
+    while index < size:
+        char = text[index]
+        if text.startswith("/*", index):
+            end = text.find("*/", index + 2)
             if end < 0:
                 return None
-            close = end + 1
-            while close < len(text) and text[close] in CSS_WHITESPACE:
-                close += 1
-            if close >= len(text) or text[close] != ")":
+            index = end + 2
+        elif char in "'\"":
+            end = string_end(index)
+            if end is None:
                 return None
-            value = text[index + 1:end]
+            index = end + 1
+        elif char == "@":
+            end = index + 1
+            while end < size and is_name(text[end]):
+                end += 1
+            if text[index + 1:end].lower() == "import":
+                return None
+            index = end
+        elif is_name(char):
+            end = index
+            while end < size and is_name(text[end]):
+                end += 1
+            name = text[index:end].lower()
+            index = end
+            if end >= size or text[end] != "(":
+                continue
+            if any(name == f or name.endswith("-" + f) for f in CSS_STRING_IMAGE_FUNCTIONS):
+                return None
+            if name != "url":
+                index = end + 1
+                continue
+            start = end + 1
+            while start < size and text[start] in CSS_WHITESPACE:
+                start += 1
+            if start < size and text[start] in "'\"":
+                close_quote = string_end(start)
+                if close_quote is None:
+                    return None
+                value = text[start + 1:close_quote]
+                close = close_quote + 1
+                while close < size and text[close] in CSS_WHITESPACE:
+                    close += 1
+                if close >= size or text[close] != ")":
+                    return None
+            else:
+                close = text.find(")", start)
+                if close < 0:
+                    return None
+                value = text[start:close].rstrip(CSS_WHITESPACE)
+                if any(c in "'\"(" or c in CSS_WHITESPACE or ord(c) < 32 or ord(c) == 127 for c in value):
+                    return None
+            targets.append(value)
+            index = close + 1
         else:
-            close = text.find(")", index)
-            if close < 0:
-                return None
-            value = text[index:close].strip(CSS_WHITESPACE)
-        targets.append(value)
-        position = close + 1
+            index += 1
     return targets
 
 
@@ -2170,7 +2221,7 @@ def visual_only_frontend_change(tested_commit, current_commit, show=None,
                     return False
             elif path.endswith(".css"):
                 targets = css_fetch_targets(content)
-                if targets is None or any(not target.startswith("data:") and target not in known_targets
+                if targets is None or any(target[:5].lower() != "data:" and target not in known_targets
                                           for target in targets):
                     return False
     except (subprocess.CalledProcessError, OSError, ValueError, KeyError, TypeError):
