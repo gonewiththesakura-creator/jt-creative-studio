@@ -99,7 +99,28 @@ def test_app_shell_rejects_frontend_drift(monkeypatch):
                 return '0' * 64
         return original(*args, **kwargs)
     monkeypatch.setattr(module, 'git_runtime_payload_sha256', digest)
+    # Drift that is not visual-only stays rejected.
+    monkeypatch.setattr(module, 'visual_only_frontend_change', lambda *args, **kwargs: False)
     assert 'native DreamAPI frontend payload drift' in module.validate_native_dreamapi_evidence()
+
+
+def test_app_shell_drift_is_accepted_only_through_the_visual_only_rule(monkeypatch):
+    module = load_module()
+    original = module.git_runtime_payload_sha256
+    calls, checked = [], []
+    def digest(*args, **kwargs):
+        if 'static/app.html' in kwargs.get('files', ()):
+            calls.append(True)
+            if len(calls) > 1:
+                return '0' * 64
+        return original(*args, **kwargs)
+    def visual(tested, current, show=None):
+        checked.append((tested, current))
+        return True
+    monkeypatch.setattr(module, 'git_runtime_payload_sha256', digest)
+    monkeypatch.setattr(module, 'visual_only_frontend_change', visual)
+    assert module.validate_native_dreamapi_evidence() == []
+    assert len(checked) == 1 and checked[0][0] != checked[0][1]
 
 
 def test_public_app_shell_verifies_all_lazy_assets(monkeypatch):

@@ -1849,8 +1849,10 @@ def test_live_release_relation_reports_the_gap_to_head():
     head, parent = subprocess.run(["git", "rev-parse", "HEAD", "HEAD~1"], cwd=ROOT, text=True,
                                   capture_output=True, check=True).stdout.split()
     assert module.live_release_relation({"commit": head}, head) == "live == HEAD"
+    behind = subprocess.run(["git", "rev-list", "--count", f"{parent}..{head}"], cwd=ROOT, text=True,
+                            capture_output=True, check=True).stdout.strip()
     assert module.live_release_relation({"commit": parent}, head) == (
-        f"live {parent[:7]} is 1 commit(s) behind HEAD")
+        f"live {parent[:7]} is {behind} commit(s) behind HEAD")
     assert module.live_release_relation({"commit": head}, parent).startswith("diverged")
     assert module.live_release_relation(None, head).startswith("unknown: no live release marker")
     assert module.live_release_relation({"commit": "f" * 40}, head).startswith("unknown: live commit")
