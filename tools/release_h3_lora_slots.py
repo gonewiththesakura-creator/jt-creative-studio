@@ -177,4 +177,6 @@ assert not root.exists() or not any(p.is_file() for p in root.rglob('*')), 'stag
 
 
 if __name__ == '__main__':
-    main()
+    # Retired 2026-10-23; main() stays importable for its offline tests.
+    import retired_release
+    retired_release.refuse(__file__)

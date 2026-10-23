@@ -214,3 +214,34 @@ def test_gate_failure_stops_the_release(candidate):
 
     with pytest.raises(RuntimeError, match='release tests failed'):
         gate(fail)
+
+
+RETIRED_ENTRY_POINTS = [*(path.name for path in SCRIPTS), 'deploy_liuli_realcomic_release.py',
+                        'deploy_nff_motion_release.py', 'deploy_ui_branch.py', 'switch_dreamapi_internal.py']
+
+
+@pytest.mark.parametrize('name', RETIRED_ENTRY_POINTS)
+def test_feature_release_entry_points_are_retired(name):
+    """Since 2026-10-23 releases go through deploy_realism_release.py only."""
+    tree = ast.parse((TOOLS / name).read_text(encoding='utf-8'))
+    entry = tree.body[-1]
+    assert isinstance(entry, ast.If) and ast.unparse(entry.test) == "__name__ == '__main__'"
+    assert [ast.unparse(statement) for statement in entry.body] == [
+        'import retired_release', 'retired_release.refuse(__file__)']
+    # Nothing at module level may connect or run commands before the refusal.
+    for statement in tree.body[:-1]:
+        if isinstance(statement, (ast.Import, ast.ImportFrom, ast.FunctionDef, ast.ClassDef)):
+            continue
+        calls = [ast.unparse(node.func) for node in ast.walk(statement) if isinstance(node, ast.Call)]
+        assert not [call for call in calls if any(word in call for word in (
+            'connect', 'urlopen', 'sftp', 'SSHClient', 'command', 'subprocess', 'Popen'))], (name, calls)
+
+
+@pytest.mark.parametrize('name,argv', [('release_admin_entry.py', []),
+                                       ('release_video_queue_presets.py', ['--execute'])])
+def test_retired_entry_point_refuses_before_reading_credentials(name, argv):
+    result = subprocess.run([sys.executable, str(TOOLS / name), *argv], cwd=ROOT, capture_output=True,
+                            text=True, encoding='utf-8', errors='replace', timeout=120)
+    assert result.returncode == 1
+    assert 'is retired since the membership cutover' in result.stderr
+    assert 'deploy_realism_release.py --execute' in result.stderr

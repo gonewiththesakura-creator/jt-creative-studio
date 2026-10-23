@@ -225,4 +225,7 @@ def main(argv=None):
     print(json.dumps({'phase':state['phase'],'verification':state.get('verification'),'cleanup_complete':state.get('cleanup_complete')}))
 
 
-if __name__=='__main__':main()
+if __name__ == '__main__':
+    # Retired 2026-10-23; main() stays importable for its offline tests.
+    import retired_release
+    retired_release.refuse(__file__)

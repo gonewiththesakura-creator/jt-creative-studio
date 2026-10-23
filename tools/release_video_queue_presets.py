@@ -127,4 +127,7 @@ print(json.dumps({'waiting_preserved':len(ids),'ids':ids}))
     print('RELEASE_COMPLETE',flush=True)
 
 
-if __name__=='__main__':main()
+if __name__ == '__main__':
+    # Retired 2026-10-23; main() stays importable for its offline tests.
+    import retired_release
+    retired_release.refuse(__file__)
