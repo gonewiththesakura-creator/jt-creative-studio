@@ -33,8 +33,10 @@ verify_realcomic_public_panel.py verify_realcomic_runninghub_real.py verify_vide
 
 `tools/release_*.py`（19 个）以及 `deploy_liuli_realcomic_release.py`、`deploy_nff_motion_release.py`、`deploy_ui_branch.py`、
 `switch_dreamapi_internal.py`：命令行入口统一改为调用 `tools/retired_release.py` 的 `refuse()`，在读取凭据或连接之前退出，
-提示改用正式发布器。`main()` 仍可导入，原有离线测试继续覆盖其逻辑；`tests/test_release_scripts_full_gate.py` 锁住入口形状，
-并确认模块顶层没有连接或执行命令。要重新启用某个脚本，必须在评审过的提交里改它的入口。
+提示改用正式发布器。`main()` 的第一句也是 `retired_release.refuse_main(__file__)`（`6286559`），导入后直接调用同样被拒绝；
+只有三个离线测试文件的 fixture 会把 `retired_release.OFFLINE_TESTS` 临时设为真，让原有离线测试继续覆盖其逻辑。
+`tests/test_release_scripts_full_gate.py` 锁住入口和 `main()` 的形状，并确认模块顶层没有连接或执行命令。
+要重新启用某个脚本，必须在评审过的提交里改它的入口和 `main()`。
 
 ## 保留，暂未处理
 
@@ -43,5 +45,5 @@ verify_realcomic_public_panel.py verify_realcomic_runninghub_real.py verify_vide
 - 本地真机测试 `direct_local_dual_smoke.py`、`verify_hanmanga_local_real.py`、`verify_nff_local_real.py`：只占用本机 GPU，不碰生产。
 - 盘点标为 `adapt` 的 42 个只读诊断 / 界面核验脚本：多数写死旧 IP 或依赖匿名 API，现在跑不通但不危险；需要时再按会员拓扑改，
   联机验证另行授权。
-- 盘点"另发现"里的事项（`favicon.png` 不在正式发布集合、几个旧 SSH 工具用 `AutoAddPolicy`、`inspect_h3_lora_revision.py`
-  会把运行凭据取回本机）另行处理。
+- 盘点"另发现"里的事项（`favicon.png` 不在正式发布集合、几个旧 SSH 工具用 `AutoAddPolicy`）另行处理。
+  `inspect_h3_lora_revision.py`（未纳入 git、会把运行凭据取回本机）已移到工作台 `.scratch/quarantine/`，可随时移回。

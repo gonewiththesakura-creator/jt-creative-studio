@@ -39,3 +39,16 @@
 - 旧的 `--bootstrap-drain-contract` 路径（给没有排空接口的旧服务器）保持原样，仍依赖公网 health；生产已有排空合同，用不到。
 - DreamAPI 若改成 workstation 模式，发布器会拒绝发布：那种模式的就绪是进程内的出口探测，只有需要登录的 health 能看到。
 - `tools/` 下其余按功能发布脚本和大量历史核验脚本仍写死旧 IP 或依赖匿名 API，现在跑不通；在盘点和处置之前不要使用。
+
+## 发布前环境自检与线上版本记录（`af8fe11`、`6286559`）
+
+- `python tools/deploy_realism_release.py --check-remote`：只读连接，依次检查服务 active、发布锁空闲、排空合同、重启排空未设、
+  回环与公网 `/api/live`、DreamAPI direct 配置、公网登录门、公网首页；失败时报出哪一步。**只观察**：两个排空检查以
+  `reload=False` 运行，不执行 `systemctl daemon-reload`，systemd 有未加载的改动（`NeedDaemonReload=yes`）就直接失败。
+  `--execute` 时这一步在 11 分钟测试门之前跑，10-23 那种拓扑变化几秒内就会被发现。
+- 发布成功后，`deploy()` 在仍持有发布锁时写 `REMOTE_ROOT/.release-current.json`（提交号、时间、全部发布路径与字节的摘要），
+  写失败只打印 `LIVE_RELEASE_MARKER_FAILED`，不影响已验证的发布。文件不在 `static/` 下，面板不会对外提供。
+  自检会报告线上提交与本地 HEAD 的关系（`c68ddb4` 是在这之前上线的，下一次正式发布才会写入第一条记录）。
+- 已知：写记录的瞬间按 Ctrl+C 会和其它提交后中断一样保留发布锁（保守处理），下次 `--check-remote` 会提示锁被占用，人工确认后再解除。
+- 两轮 Codex 只读审查：T261023-112117-6734（三项：自检曾含 daemon-reload、记录曾在解锁后写、停用只拦 `__main__`）均已修；
+  T261023-113929-72c2 复核"可以合入开发主线"。完整测试门 `6286559` 通过（859 秒）。
