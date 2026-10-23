@@ -19,7 +19,7 @@
       "title": "JT 视频工作台"
     }
   },
-  "singularity": "/static/assets/workbench.1d550de2d00c.js",
+  "singularity": "/static/assets/workbench.59d87e3037eb.js",
   "main": "/static/assets/main.ee4649e7ebb8.js",
   "assets": [
     "/static/assets/CopyShader.a33057d5ac91.js",
@@ -36,7 +36,7 @@
     "/static/assets/account.4f779c82a332.js",
     "/static/assets/accretion-layout.5484af2cb822.js",
     "/static/assets/api.1e898baa005a.js",
-    "/static/assets/app.4a405affc62d.css",
+    "/static/assets/app.52b677e4fd54.css",
     "/static/assets/appearance.4502ac7e3877.js",
     "/static/assets/index.14cdf23edb85.html",
     "/static/assets/index.94076d54a567.css",
@@ -95,6 +95,6 @@
     "/static/assets/video.2795d23060ae.html",
     "/static/assets/video.2b667bc2b132.css",
     "/static/assets/video.5872a7bc91ea.js",
-    "/static/assets/workbench.1d550de2d00c.js"
+    "/static/assets/workbench.59d87e3037eb.js"
   ]
 }

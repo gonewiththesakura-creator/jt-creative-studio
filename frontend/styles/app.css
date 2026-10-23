@@ -37,7 +37,7 @@ body.singularity .account-gate-card{border-color:var(--line-2);border-radius:20p
 body.singularity .account-monogram{width:56px;height:56px;margin:0 auto 18px;font-size:0;letter-spacing:0;background:var(--i-ring) center/contain no-repeat}
 body.singularity .account-eyebrow{font:400 12px var(--mono);letter-spacing:.24em;color:var(--amber)}
 body.singularity .account-gate h1,body.singularity .account-dialog h2{font-family:var(--serif);font-weight:400;letter-spacing:.04em;color:var(--hot)}
-body.singularity .account-gate h1{font-size:28px}
+body.singularity .account-gate h1{font-size:28px;text-wrap:balance}
 body.singularity :is(.account-intro,.account-gate [role=status],.account-identity){color:var(--text-2)}
 body.singularity .account-primary{background:var(--fire);color:#1c0e05;border-color:transparent;border-radius:999px;box-shadow:0 0 0 1px rgba(255,220,180,.4) inset,0 8px 30px rgba(255,120,40,.3)}
 body.singularity .account-secondary{background:rgba(255,236,214,.04);color:var(--text-2);border-color:var(--line-2);border-radius:999px;font-weight:400}
