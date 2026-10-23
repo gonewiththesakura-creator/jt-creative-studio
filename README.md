@@ -3,11 +3,10 @@
 ## 当前状态（2026-10-23）
 
 - 开发分支：`fix/dreamapi-internal-service`，尚未配置远程上游。各提交是否已上线，以发布记录和线上核对为准。
-- **线上版本：`c68ddb4`**（2026-10-23 经正式发布器上线，220 个文件逐字节回读一致）。包含吸积主题与指令坞布局、
-  h3_edit_n 服务端建图合同、h3 时长上限 25 秒。说明见 [accretion-theme](docs/accretion-theme-20261022.md)。
-- **待上线（发布候选）**：低功耗黑洞（软件渲染或低于 1 fps 时显示静止黑洞）与手机登录标题折行；付费证据已按用户授权放行
-  经审查的纯视觉前端改动，无需新的付费测试。说明见 [paid-evidence-visual-only](docs/paid-evidence-visual-only-20261023.md)。
-  上线前需用户确认。
+- **线上版本：`2309164`**（2026-10-23 15:24 经正式发布器上线，220 个文件逐字节回读一致；服务器 `.release-current.json`
+  记录同一提交，`--check-remote` 报告 `live == HEAD`）。包含吸积主题与指令坞布局、h3_edit_n 服务端建图合同、h3 时长上限 25 秒，
+  以及低功耗黑洞与手机登录标题折行。说明见 [accretion-theme](docs/accretion-theme-20261022.md)、
+  [paid-evidence-visual-only](docs/paid-evidence-visual-only-20261023.md)。
 - 线上入口：`https://studio.dreamapi.club/`，登录域名 `auth.dreamapi.club`。会员、激活码与运维说明见 [membership-operations](docs/membership-operations.md)。
 - 测试门：`run_release_tests()`（`tools/deploy_realism_release.py`）在本地已恢复为绿色。真实回归和待决定事项见 [test-gate-triage](docs/test-gate-triage-20261019.md)。
 - 发布：正式发布器 `tools/deploy_realism_release.py` 已适配会员上线后的拓扑（面板只监听本机回环，公网 API 需登录）：
