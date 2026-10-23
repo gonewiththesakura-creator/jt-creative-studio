@@ -1176,6 +1176,7 @@ def test_visual_only_frontend_change_accepts_styles_and_a_reviewed_scene():
     "style-api", "style-import", "style-external-spaced", "style-escape", "style-image-set", "style-src",
     "style-new-relative", "unreadable-tested-style",
     "style-comment-in-string", "style-url-in-string", "style-target-case", "style-image-function",
+    "style-charset-shift",
 ])
 def test_visual_only_frontend_change_rejects_business_drift_and_unproven_visuals(change):
     module = load_module()
@@ -1231,6 +1232,9 @@ def test_visual_only_frontend_change_rejects_business_drift_and_unproven_visuals
         current[app_css] = b"b{background:url(/static/a.png?v=A)}"
     elif change == "style-image-function":
         current[app_css] = b"b{background:image('https://example.test/a.png')}"
+    # Third Codex review (T261023-142838-b6bf): ISO-2022-JP turns "@im ESC ( B port" into @import.
+    elif change == "style-charset-shift":
+        current[app_css] = b'@charset "iso-2022-jp";@im' + bytes([27]) + b'(Bport "/api/jobs";'  # ESC ( B returns to ASCII
     assert not module.visual_only_frontend_change("tested", "current", show=visual_show(files),
                                                   reviewed_scripts=reviewed)
 
@@ -1253,6 +1257,8 @@ def test_css_fetch_targets_reads_nested_data_uris_and_fails_closed():
                        b"@import url(a.css);", b"@IMPORT 'a.css';", b"a{background:-webkit-image-set(url(a.png) 1x)}",
                        b"a{background:image('a.png')}", b"a{background:-webkit-cross-fade(url(a.png),url(b.png),50%)}",
                        b"a{content:'unterminated}", b"/* never closed",
+                       b'@charset "utf-8";a{}', b"a{}" + bytes([27]) + b"(B", b"a{}" + bytes([0]),
+                       bytes([0xFF, 0xFE]) + "a{}".encode("utf-16-le"),
                        b"a{content:'" + BACKSLASH + b"75rl'}"):
         assert module.css_fetch_targets(unreadable) is None, unreadable
 

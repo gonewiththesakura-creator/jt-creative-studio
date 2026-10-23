@@ -2086,13 +2086,18 @@ def css_fetch_targets(css):
     A small CSS Syntax 3 lexer: comments and strings are their own states, so
     neither can hide or invent a url(); function names compare ASCII
     case-insensitively while URL values keep their exact text. Escapes,
-    @import and functions taking bare image strings fail closed.
+    @import and functions taking bare image strings fail closed. The sheet is
+    read as UTF-8 like the browser does for a UTF-8 page, so anything that
+    could switch its encoding (@charset, a UTF-16 byte order mark, ISO-2022
+    shift bytes such as ESC) fails closed as well.
     """
-    if bytes([92]) in css:
+    if bytes([92]) in css or css.startswith((bytes([0xFF, 0xFE]), bytes([0xFE, 0xFF]))):
         return None
     try:
         text = css.decode("utf-8")
     except UnicodeDecodeError:
+        return None
+    if any((ord(char) < 32 and char not in CSS_WHITESPACE) or ord(char) == 127 for char in text):
         return None
     targets, index, size = [], 0, len(text)
 
@@ -2123,7 +2128,7 @@ def css_fetch_targets(css):
             end = index + 1
             while end < size and is_name(text[end]):
                 end += 1
-            if text[index + 1:end].lower() == "import":
+            if text[index + 1:end].lower() in ("import", "charset"):
                 return None
             index = end
         elif is_name(char):
