@@ -42,6 +42,9 @@ const motion = controls.querySelector('#singularityMotion');
 const focus = controls.querySelector('#singularityFocus');
 const reduced = matchMedia('(prefers-reduced-motion: reduce)');
 let paused = reduced.matches, immersive = false, draw = () => {}, available = false, businessBusy = false;
+// Low-power still frame: chosen automatically for software rasterizers or a
+// scene that stays under 1 fps; the motion button resumes it for the session.
+let autoStill = false, stillOverride = false;
 // Accretion: a running task feeds the disk instead of freezing it. energy eases
 // toward 1 while any page is busy; pulse flashes the photon ring once a task ends.
 let energy = 0, pulse = 0;
@@ -72,12 +75,26 @@ function observePage(root) {
 observePage(shell);
 try { paused ||= localStorage.getItem('jt-singularity-paused') === 'true'; } catch {}
 function updateMotion() {
-  motion.textContent = paused ? '继续光场' : '暂停光场';
-  motion.setAttribute('aria-pressed', String(paused));
+  const still = paused || autoStill;
+  motion.textContent = still ? '继续光场' : '暂停光场';
+  motion.setAttribute('aria-pressed', String(still));
+}
+function enterStill(reason) {
+  if (autoStill || stillOverride) return;
+  autoStill = true;
+  document.body.dataset.singularityPower = 'still';
+  if (window.jtApp) window.jtApp.metrics.lowPower = reason;
+  updateMotion(); draw();
 }
 motion.onclick = () => {
-  paused = !paused;
-  try { localStorage.setItem('jt-singularity-paused', String(paused)); } catch {}
+  if (autoStill && !paused) {
+    // Resuming an automatic still frame is a choice for this session only.
+    autoStill = false; stillOverride = true;
+    delete document.body.dataset.singularityPower;
+  } else {
+    paused = !paused;
+    try { localStorage.setItem('jt-singularity-paused', String(paused)); } catch {}
+  }
   updateMotion(); draw();
 };
 function setImmersive(value) {
@@ -121,7 +138,11 @@ async function startScene() {
     ]);
     const renderer = new THREE.WebGLRenderer({canvas, antialias:innerWidth>820, powerPreference:'low-power'});
     const gl=renderer.getContext();
-    if(window.jtApp){window.jtApp.metrics.renderers++;window.jtApp.metrics.initialized=performance.now();}
+    if(window.jtApp){window.jtApp.metrics.renderers++;window.jtApp.metrics.initialized=performance.now();window.jtApp.metrics.lowPower=false;}
+    // Software rasterizers spend seconds on one frame and stall input with it.
+    const rendererInfo=gl.getExtension('WEBGL_debug_renderer_info');
+    const rendererName=String(gl.getParameter(rendererInfo?rendererInfo.UNMASKED_RENDERER_WEBGL:gl.RENDERER)||'');
+    if(/swiftshader|llvmpipe|softpipe|software|basic render/i.test(rendererName))enterStill('software');
     renderer.debug.onShaderError = () => fallback(new Error('Black-hole shader could not compile'));
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = .95;
@@ -157,7 +178,7 @@ async function startScene() {
     let entryActive=false,hasFrame=false,entryReady=Promise.resolve(false),pendingFrame=null;
     let azimuth=0, elevation=12, radius=20, width=1, height=1, frameId=0, last=0, sim=0, pointer=null;
     let settings=appearance.get();
-    let budget = (innerWidth <= 820 ? 550000 : 1400000)*settings.quality, slowFrames=0;
+    let budget = (innerWidth <= 820 ? 550000 : 1400000)*settings.quality, slowFrames=0, verySlowFrames=0;
     const up = new THREE.Vector3(0,1,0);
     function resize() {
       width=innerWidth; height=innerHeight;
@@ -174,10 +195,11 @@ async function startScene() {
       if (last && now-last < (width<=820?50:33)) { frameId=requestAnimationFrame(render); return; }
       const dt=Math.max(0,(now-(last||now))/1000);last=now;
       const target=businessBusy?1:0;
-      // A paused or reduced-motion scene shows the end state in one still frame.
-      if (paused) { energy=target; pulse=0; }
+      // A paused, reduced-motion or low-power scene shows the end state in one still frame.
+      const still=paused||autoStill;
+      if (still) { energy=target; pulse=0; }
       else { energy+=(target-energy)*Math.min(1,dt*1.6); pulse=Math.max(0,pulse-dt*.9); }
-      if (!paused) sim+=dt*settings.speed*(1+2.4*energy);
+      if (!still) sim+=dt*settings.speed*(1+2.4*energy);
       uniforms.time.value=sim;
       uniforms.flashEnergy.value=energy*1.4+pulse*2.2;
       uniforms.ringPulse.value=pulse;
@@ -195,12 +217,19 @@ async function startScene() {
       if(window.jtApp){window.jtApp.metrics.frames=(window.jtApp.metrics.frames||0)+1;window.jtApp.metrics.sim=sim;window.jtApp.metrics.energy=energy;window.jtApp.metrics.pixelBudget=budget;}
       // GPU commands are asynchronous: CPU submission time alone misses a slow
       // compositor. Also observe consecutive active frame intervals.
-      if (performance.now()-before>60 || (!paused&&dt>.1)) slowFrames++; else slowFrames=Math.max(0,slowFrames-1);
-      if (slowFrames>8 && budget>300000) { budget=Math.max(300000,budget*.6);slowFrames=0;resize(); }
+      if (performance.now()-before>60 || (!still&&dt>.1)) slowFrames++; else slowFrames=Math.max(0,slowFrames-1);
+      // Under 1 fps the slow-frame count needs tens of seconds; two such frames
+      // in a row go straight to the still frame.
+      if (!still&&dt>1) { if (++verySlowFrames>=2) enterStill('slow'); } else verySlowFrames=0;
+      const floor=width<=820?120000:300000;
+      if (slowFrames>8 && budget>floor) {
+        // Step down from the pixels actually drawn: a phone canvas is smaller than its nominal budget.
+        budget=Math.max(floor,Math.min(budget,canvas.width*canvas.height)*.6);slowFrames=0;resize();
+      } else if (slowFrames>8 && !still) enterStill('slow');
       document.body.dataset.singularity='ready';
       if(window.jtApp&&!window.jtApp.metrics.firstFrame)window.jtApp.metrics.firstFrame=performance.now();
       const settling=Math.abs(target-energy)>.005||pulse>0;
-      if (!paused && (settings.speed>0||settling) && settings.opacity>0 && !frameId){
+      if (!(paused||autoStill) && (settings.speed>0||settling) && settings.opacity>0 && !frameId){
         // Keep at most one expensive frame in flight. A slow GPU must not build
         // up a backlog that later blocks input or the login transition.
         pendingFrame=gl.fenceSync?.(gl.SYNC_GPU_COMMANDS_COMPLETE,0);gl.flush();
