@@ -32,6 +32,9 @@ def test_optimized_upload_controls_queue_and_redo(browser,tmp_path,width):
                 media={'reference_image':'person.png'},params=payload['params'],prompt=payload['prompt'],created=1,style_id='video',images=[]))
         route.fulfill(json={'job_id':('b' if payload.get('redo_job_id') else 'a')*12})
     page.route('**/api/video-generate',generate)
+    page.route('**/api/video-redo-draft?job_id=*', lambda r:r.fulfill(json=dict(
+        jobs[0], media={'reference_image': dict(filename='person.png',
+        token='restored-token-1', valid=True, expired=False)})))
     try:
         page.goto('http://fixture.test/video');host=current(page)
         host.locator('button[data-wf=h3_reference_optimized]').click()
@@ -70,8 +73,20 @@ def test_optimized_upload_controls_queue_and_redo(browser,tmp_path,width):
         jobs[0].update(status='error',editable=False,redoable=True,provider_status='FAILED',error='offline failure')
         page.reload();host=current(page);expect(host.locator('.task-redo')).to_have_count(1)
         host.locator('.task-card').hover()
-        with page.expect_request('**/api/video-generate'):host.locator('.task-redo-quick').click()
-        assert submitted[-1]['redo_job_id']=='a'*12
+        with page.expect_request('**/api/video-redo-draft?job_id=*'):
+            host.locator('.task-redo-quick').click()
+        expect(host.locator('#genStatus')).to_contain_text('已恢复任务配置')
+        assert len(submitted)==1
+        expect(host.locator('#param_second_pass')).to_be_checked()
+        expect(host.locator('#param_second_scale')).to_have_value('2')
+        expect(host.locator('#param_lora_1_enabled')).not_to_be_checked()
+        expect(host.locator('#param_lora_2_strength')).to_have_value('0.3')
+        expect(host.locator('[data-media-key=reference_image] .fn')).to_contain_text('person.png 已上传')
+        with page.expect_request('**/api/video-generate'):
+            host.locator('#genBtn').click()
+        assert len(submitted)==2 and 'redo_job_id' not in submitted[-1]
+        assert submitted[-1]['params']==payload['params']
+        assert submitted[-1]['media']=={'reference_image':'restored-token-1'}
         host.locator('button[data-wf=h3_reference_optimized]').click()
         host.locator('.compact-uploads').screenshot(path=str(tmp_path/f'uploads-{width}.png'))
         host.locator('.remix-group[data-group="基本设置"]').scroll_into_view_if_needed()
