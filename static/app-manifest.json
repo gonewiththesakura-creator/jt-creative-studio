@@ -13,7 +13,7 @@
       "title": "图片编辑 · JT 灵感工作台"
     },
     "/video": {
-      "module": "/static/assets/video.5872a7bc91ea.js",
+      "module": "/static/assets/video.631d5d072b86.js",
       "markup": "/static/assets/video.2795d23060ae.html",
       "css": "/static/assets/video.2b667bc2b132.css",
       "title": "JT 视频工作台"
@@ -94,7 +94,7 @@
     "/static/assets/three-module.71e909ad3fc6.js",
     "/static/assets/video.2795d23060ae.html",
     "/static/assets/video.2b667bc2b132.css",
-    "/static/assets/video.5872a7bc91ea.js",
+    "/static/assets/video.631d5d072b86.js",
     "/static/assets/workbench.8c2d3015f7af.js"
   ]
 }
