@@ -1283,3 +1283,9 @@ def test_visual_only_rule_never_classifies_business_assets_as_visual():
     assert business_paths and not [path for path in business_paths if module.VISUAL_FRONTEND_ASSET.fullmatch(path)]
     assert not [path for path in manifest["assets"] if "/style-" in path and module.VISUAL_FRONTEND_ASSET.fullmatch(path)]
     assert {"workbench", "shaders", "appearance", "preview"} <= visual
+
+
+def test_av1_upload_exception_rejects_other_commits_and_payloads():
+    module = load_module()
+    assert not module.reviewed_av1_upload_patch('tested', 'HEAD', module.REVIEWED_AV1_UPLOAD_RUNTIME_SHA256)
+    assert not module.reviewed_av1_upload_patch(module.REVIEWED_AV1_UPLOAD_TESTED_COMMIT, 'HEAD', '0' * 64)

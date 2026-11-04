@@ -120,8 +120,8 @@ IDLE_STABILITY_INTERVAL = 1.0
 # which checks that those scripts run this whole gate (run_feature_release_gate) before production.
 # 2026-10-20 merging ops/scheduled-backups: +tests/test_backup_scripts.py (backup, retention, restore drill).
 MIN_SCRIPT_CONTRACTS = 55
-MIN_PYTEST_FILES = 98
-RELEASE_TEST_INVENTORY_SHA256 = "03b0f6112d1f0c764124d2cade9f12871619d7a5b4c190e92676bc3a4cb282e5"
+MIN_PYTEST_FILES = 99
+RELEASE_TEST_INVENTORY_SHA256 = "5e51d4d5e531b84fcde48b8287d17ff47084d6e5fa926cab906a32c53d0278e0"
 DREAMAPI_CONTRACT_SHA256 = "d2e692e229a0525590fbbc5ffc4f466faebe70675278d263a44bfd0dffc6f0fa"
 HISTORICAL_DREAMAPI_CONTRACT_SHA256 = "665d283bd420f76f031d9530f1d757f022d6cc16a5c9e9bc315e4966da797959"
 # 2026-10-22: owner-authorized single canary for the accretion release (job a190e498799f, commit ec0c01c).
@@ -2327,6 +2327,35 @@ def reviewed_video_queue_patch(tested_commit, current_head):
         return False
 
 
+REVIEWED_AV1_UPLOAD_TESTED_COMMIT = "ec0c01c8668a15337199d489bb01f2328302c6db"
+REVIEWED_AV1_UPLOAD_RUNTIME_SHA256 = "b4bc34e42f8a0befa8e9277d547944f17421f543f7e132c06138dbd5a87b3833"
+
+
+def reviewed_av1_upload_patch(tested_commit, current_head, current):
+    """Pin the offline-reviewed AV1 upload rejection; not proof of a new paid run.
+
+    Only server.py changes: video uploads are parsed for their codec before
+    reaching RunningHub, and AV1 is refused with a Chinese hint. Image
+    generation code is untouched; every other runtime file must be byte-equal
+    to the tested commit. Covered by tests/test_video_codec_rejection.py.
+    """
+    if tested_commit != REVIEWED_AV1_UPLOAD_TESTED_COMMIT or current != REVIEWED_AV1_UPLOAD_RUNTIME_SHA256:
+        return False
+    try:
+        if git_runtime_payload_sha256(current_head, files=NATIVE_RUNTIME_PAYLOAD_FILES) != current:
+            return False
+        for path in NATIVE_RUNTIME_PAYLOAD_FILES:
+            if path == 'server.py':
+                continue
+            before = subprocess.check_output(['git', 'show', tested_commit + ':' + path], cwd=BASE)
+            after = subprocess.check_output(['git', 'show', current_head + ':' + path], cwd=BASE)
+            if before != after:
+                return False
+        return True
+    except Exception:
+        return False
+
+
 def validate_native_dreamapi_evidence():
     """Require reviewed native-media evidence for the exact current runtime bytes."""
     try:
@@ -2352,7 +2381,8 @@ def validate_native_dreamapi_evidence():
         unchanged_generation = (current == expected or reviewed_error_presentation_patch(commit, current_head, current)
                                 or reviewed_singularity_patch(commit, current_head, current)
                                 or reviewed_video_duration_patch(commit, current_head)
-                                or reviewed_video_queue_patch(commit, current_head))
+                                or reviewed_video_queue_patch(commit, current_head)
+                                or reviewed_av1_upload_patch(commit, current_head, current))
         if payload != {"format": "framed-v1", "files": list(NATIVE_RUNTIME_PAYLOAD_FILES), "sha256": expected} or not unchanged_generation:
             errors.append("native DreamAPI runtime payload drift")
         if subprocess.run(["git", "merge-base", "--is-ancestor", commit, current_head], cwd=BASE, capture_output=True).returncode:

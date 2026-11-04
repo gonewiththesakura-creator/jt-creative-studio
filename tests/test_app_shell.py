@@ -30,11 +30,18 @@ def test_packaging_preserves_business_functions_and_backend_contracts():
                          # Remix branches and audio admission have dedicated graph/HTTP tests.
                          'validate_h3_remix_inputs','rh_build_h3_remix_graph','rh_submit_h3_multi',
                          'validate_h3_optimized_inputs','rh_build_h3_optimized_graph',
-                         'rh_run_video','_upload_media_content_type_from_header'}
+                         'rh_run_video','_upload_media_content_type_from_header',
+                         # AV1 upload rejection has dedicated tests in test_video_codec_rejection.
+                         'validate_workflow_upload','validate_workflow_upload_file','_mp4_sample_fourccs',
+                         '_detect_rejected_video_codec','_check_video_codec_bytes','_check_video_codec_file',
+                         'UnsupportedVideoCodec'}
+        excluded_names={'VIDEO_QUEUE_LIMIT','VIDEO_QUEUE_SESSION_LIMIT','REJECTED_VIDEO_CODECS',
+                        '_UNSUPPORTED_VIDEO_MESSAGES','_MP4_CONTAINER_BOXES','_MP4_MAX_BOXES',
+                        '_MP4_MAX_DEPTH','_MKV_SCAN_BYTES'}
         tree.body=[n for n in tree.body if not (
-            isinstance(n,ast.FunctionDef) and n.name in queue_functions) and not (
+            isinstance(n,(ast.FunctionDef,ast.ClassDef)) and n.name in queue_functions) and not (
             isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id in
-                {'VIDEO_QUEUE_LIMIT','VIDEO_QUEUE_SESSION_LIMIT'} for t in n.targets))]
+                excluded_names for t in n.targets))]
         for node in tree.body:
             if isinstance(node,ast.ClassDef) and node.name=='Handler':
                 node.body=[item for item in node.body if not isinstance(item,ast.FunctionDef) or item.name not in ('do_GET','_send_static','do_POST','_running_job_id')]
