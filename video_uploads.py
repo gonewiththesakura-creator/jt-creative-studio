@@ -67,7 +67,7 @@ class UploadStaging:
                     except Exception as error:
                         # Never expose provider filenames or credentials.
                         print('VIDEO_UPLOAD_FAILED', type(error).__name__, flush=True)
-                        with row['lock']: row.update(status='error', error='云端接收失败，请重新选择文件重试')
+                        with row['lock']: row.update(status='error', error=(getattr(error, 'public_message', None) if isinstance(getattr(error, 'public_message', None), str) else '云端接收失败，请重新选择文件重试'))
                     finally:
                         row['path'].unlink(missing_ok=True)
                         row['updated'] = time.time()

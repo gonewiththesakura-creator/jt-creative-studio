@@ -2121,6 +2121,102 @@ def upload_media_file_content_type(path, filename, expected_type):
         return _upload_media_content_type_from_header(source.read(16), filename, expected_type)
 
 
+REJECTED_VIDEO_CODECS = {"av01"}
+_UNSUPPORTED_VIDEO_MESSAGES = {
+    "av01": "该视频是 AV1 编码，云端视频节点无法读取。请先转成 H.264（MP4）再上传，例如：ffmpeg -i 原视频.mp4 -c:v libx264 -pix_fmt yuv420p -c:a aac 新视频.mp4",
+}
+_MP4_CONTAINER_BOXES = {b"moov", b"trak", b"mdia", b"minf", b"stbl"}
+_MP4_MAX_BOXES = 4096
+_MP4_MAX_DEPTH = 8
+_MKV_SCAN_BYTES = 1024 * 1024
+
+
+class UnsupportedVideoCodec(ValueError):
+    """Raised when an uploaded video uses a codec the cloud nodes cannot read."""
+
+    def __init__(self, codec):
+        self.codec = codec
+        self.public_message = _UNSUPPORTED_VIDEO_MESSAGES.get(
+            codec, "该视频编码云端视频节点无法读取，请先转成 H.264（MP4）再上传")
+        super().__init__(self.public_message)
+
+
+def _mp4_sample_fourccs(f, size):
+    """Collect stsd sample-entry fourccs by seeking through the box tree (no full read)."""
+    found = []
+    budget = [_MP4_MAX_BOXES]
+
+    def walk(start, end, depth):
+        pos = start
+        while pos + 8 <= end and budget[0] > 0:
+            budget[0] -= 1
+            f.seek(pos)
+            head = f.read(8)
+            if len(head) < 8:
+                return
+            box_size, kind = struct.unpack(">I4s", head)
+            header = 8
+            if box_size == 1:
+                ext = f.read(8)
+                if len(ext) < 8:
+                    return
+                box_size = struct.unpack(">Q", ext)[0]
+                header = 16
+            elif box_size == 0:
+                box_size = end - pos
+            if box_size < header:
+                return
+            box_end = min(pos + box_size, end)
+            if kind in _MP4_CONTAINER_BOXES and depth < _MP4_MAX_DEPTH:
+                walk(pos + header, box_end, depth + 1)
+            elif kind == b"stsd" and box_end - pos >= header + 16:
+                f.seek(pos + header + 8)
+                entry = f.read(8)
+                if len(entry) == 8:
+                    found.append(entry[4:8].decode("latin-1"))
+            pos = box_end
+
+    try:
+        walk(0, size, 0)
+    except Exception:
+        pass
+    return found
+
+
+def _detect_rejected_video_codec(f, size, header):
+    """Return a rejected codec fourcc/name, or None (unknown/allowed). Never raises."""
+    try:
+        if header[4:8] == b"ftyp":
+            for code in _mp4_sample_fourccs(f, size):
+                if code in REJECTED_VIDEO_CODECS:
+                    return code
+        elif header[:4] == b"\x1aE\xdf\xa3":
+            f.seek(0)
+            if b"V_AV1" in f.read(_MKV_SCAN_BYTES) and "av01" in REJECTED_VIDEO_CODECS:
+                return "av01"
+    except Exception:
+        pass
+    return None
+
+
+def _check_video_codec_bytes(data):
+    data = bytes(data)
+    codec = _detect_rejected_video_codec(io.BytesIO(data), len(data), data[:16])
+    if codec:
+        raise UnsupportedVideoCodec(codec)
+
+
+def _check_video_codec_file(path):
+    with pathlib.Path(path).open("rb") as source:
+        source.seek(0, 2)
+        size = source.tell()
+        source.seek(0)
+        header = source.read(16)
+        codec = _detect_rejected_video_codec(source, size, header)
+    if codec:
+        raise UnsupportedVideoCodec(codec)
+
+
 def validate_workflow_upload(workflow, input_key, filename, raw):
     mapping = (workflow.get("rh_media") or {}).get(str(input_key or ""))
     if not mapping:
@@ -2128,6 +2224,8 @@ def validate_workflow_upload(workflow, input_key, filename, raw):
     safe_name = _safe_upload_filename(filename)
     media_type = str(mapping.get("type") or "").lower()
     ctype = upload_media_content_type(raw, safe_name, media_type)
+    if media_type == "video":
+        _check_video_codec_bytes(raw)
     return safe_name, ctype, media_type
 
 
@@ -2138,6 +2236,8 @@ def validate_workflow_upload_file(workflow, input_key, filename, path):
     safe_name = _safe_upload_filename(filename)
     media_type = str(mapping.get("type") or "").lower()
     ctype = upload_media_file_content_type(path, safe_name, media_type)
+    if media_type == "video":
+        _check_video_codec_file(path)
     return safe_name, ctype, media_type
 
 
