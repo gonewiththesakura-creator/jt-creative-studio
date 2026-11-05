@@ -88,6 +88,33 @@ def test_video_redo_restore_exception_rejects_drift(monkeypatch, changed_payload
         'unreviewed-canary', '15b512482aa25fe43d95d51743715b6427088e05')
 
 
+AV1_VIDEO_REDO_MERGE = '641c08a46232241dd9a7f7cc4d360040cd4593d4'
+
+
+def test_av1_video_redo_merge_exception_accepts_only_the_reviewed_merge():
+    module = load_module()
+    tested = module.REVIEWED_AV1_UPLOAD_TESTED_COMMIT
+    assert module.reviewed_av1_video_redo_patch(tested, AV1_VIDEO_REDO_MERGE)
+    assert not module.reviewed_av1_video_redo_patch('unreviewed-canary', AV1_VIDEO_REDO_MERGE)
+    # Neither branch tip alone carries both server.py changes.
+    assert not module.reviewed_av1_video_redo_patch(tested, 'ae6d7968736115bbcda2cc88f5bff596784ee18a')
+    assert not module.reviewed_av1_video_redo_patch(tested, 'ca87fa0c44e7259d7976f55c3db4967cb6b75842')
+
+
+@pytest.mark.parametrize('changed_payload', ['runtime', 'frontend'])
+def test_av1_video_redo_merge_exception_rejects_drift(monkeypatch, changed_payload):
+    module = load_module()
+    original = module.git_runtime_payload_sha256
+    def digest(commit, **kwargs):
+        is_runtime = kwargs.get('files') == module.NATIVE_RUNTIME_PAYLOAD_FILES
+        if is_runtime == (changed_payload == 'runtime'):
+            return '0' * 64
+        return original(commit, **kwargs)
+    monkeypatch.setattr(module, 'git_runtime_payload_sha256', digest)
+    assert not module.reviewed_av1_video_redo_patch(
+        module.REVIEWED_AV1_UPLOAD_TESTED_COMMIT, AV1_VIDEO_REDO_MERGE)
+
+
 def test_transparent_host_exception_rejects_changed_css(monkeypatch):
     module = load_module()
     import subprocess

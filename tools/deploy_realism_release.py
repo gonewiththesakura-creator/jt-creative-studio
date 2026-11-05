@@ -2384,6 +2384,40 @@ def reviewed_video_redo_restore_patch(tested_commit, current_head):
         return False
 
 
+REVIEWED_AV1_VIDEO_REDO_RUNTIME_SHA256 = "4248c0fd52b3dae65d27279115c2eeb2b054418b15fbf1e8928430bf7f25804f"
+REVIEWED_AV1_VIDEO_REDO_FRONTEND_SHA256 = "015f4d5f59e37c3c0572af29932550ca4b032b1a35bccefeb28490ae1e335d3a"
+
+
+def reviewed_av1_video_redo_patch(tested_commit, current_head):
+    """Pin merge 641c08a46232241dd9a7f7cc4d360040cd4593d4 of the two reviewed patches.
+
+    Union of reviewed_av1_upload_patch (server.py rejects AV1 uploads) and
+    reviewed_video_redo_restore_patch (server.py draft endpoint plus the video
+    page). The two server.py edits do not overlap; the merge only combines
+    them. Offline review only, not evidence of a new paid run. Runtime and
+    frontend payloads are pinned; every other runtime file must equal the
+    tested canary byte for byte, so any further drift fails closed.
+    """
+    if tested_commit != REVIEWED_AV1_UPLOAD_TESTED_COMMIT:
+        return False
+    try:
+        if git_runtime_payload_sha256(current_head, files=NATIVE_RUNTIME_PAYLOAD_FILES) != REVIEWED_AV1_VIDEO_REDO_RUNTIME_SHA256:
+            return False
+        frontend = tuple(p for p in RELEASE_RELATIVE_PATHS if p.startswith('static/assets/') or p in ('static/app.html', 'static/app-manifest.json'))
+        if git_runtime_payload_sha256(current_head, files=frontend) != REVIEWED_AV1_VIDEO_REDO_FRONTEND_SHA256:
+            return False
+        for path in NATIVE_RUNTIME_PAYLOAD_FILES:
+            if path in ('server.py', 'static/video.html'):
+                continue
+            before = subprocess.check_output(['git', 'show', tested_commit + ':' + path], cwd=BASE)
+            after = subprocess.check_output(['git', 'show', current_head + ':' + path], cwd=BASE)
+            if before != after:
+                return False
+        return True
+    except Exception:
+        return False
+
+
 def validate_native_dreamapi_evidence():
     """Require reviewed native-media evidence for the exact current runtime bytes."""
     try:
@@ -2411,7 +2445,8 @@ def validate_native_dreamapi_evidence():
                                 or reviewed_video_duration_patch(commit, current_head)
                                 or reviewed_video_queue_patch(commit, current_head)
                                 or reviewed_av1_upload_patch(commit, current_head, current)
-                                or reviewed_video_redo_restore_patch(commit, current_head))
+                                or reviewed_video_redo_restore_patch(commit, current_head)
+                                or reviewed_av1_video_redo_patch(commit, current_head))
         if payload != {"format": "framed-v1", "files": list(NATIVE_RUNTIME_PAYLOAD_FILES), "sha256": expected} or not unchanged_generation:
             errors.append("native DreamAPI runtime payload drift")
         if subprocess.run(["git", "merge-base", "--is-ancestor", commit, current_head], cwd=BASE, capture_output=True).returncode:
@@ -2435,6 +2470,7 @@ def validate_native_dreamapi_evidence():
                          or reviewed_video_duration_patch(commit, current_head)
                          or reviewed_video_queue_patch(commit, current_head)
                          or reviewed_video_redo_restore_patch(commit, current_head)
+                         or reviewed_av1_video_redo_patch(commit, current_head)
                          or visual_only_frontend_change(commit, current_head)))
                     or subprocess.run(["git", "diff", "--quiet", "HEAD", "--", *frontend_files],
                                       cwd=BASE, capture_output=True).returncode):
