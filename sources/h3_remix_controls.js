@@ -62,7 +62,7 @@ function installVideoCompactForm(form,workflow,state){
     if(!box){box=document.createElement('div');box.className='compact-upload-field';const label=drop.previousElementSibling;drop.before(box);if(label?.tagName==='LABEL')box.append(label);box.append(drop)}
     return {key,type:mapping.type,label:mapping.label||key,box,drop,
       shortcut:workflow.id==='h3_remix_full'&&key==='face_reference',
-      filled:()=>!!state.tokens[key],hasFile:()=>!!state.files[key],
+      filled:()=>!!state.tokens[key],hasFile:()=>!!state.files[key]||!!state.expired?.[key],
       enabled:()=>videoInputEnabled(workflow,mapping,Object.fromEntries(Object.entries(workflow.rh_params||{}).map(([key,p])=>[key,document.getElementById('param_'+key)?readParamValue(document.getElementById('param_'+key)):p.default])))};
   });
   installCompactUploads(form,items,{before:form.children[1]});

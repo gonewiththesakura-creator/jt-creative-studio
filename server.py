@@ -3727,6 +3727,72 @@ def video_queue_snapshot(session_id, page='video'):
                 'waiting': len(waiting), 'limit': VIDEO_MAX_CONCURRENT, 'draining': bool(_release_draining)}
 
 
+def video_redo_draft(session_id, job_id, page='video'):
+    """Read task state without enqueueing; reissue bounded owner capabilities.
+
+    Jobs retain filenames and provider references, never the original bearer
+    token (the capability registry stores only its hash). Reissue for the
+    authenticated owner's current session without extending the saved TTL.
+    No provider request or change to the original job is made here.
+    """
+    with _lock_jobs:
+        job = _jobs.get(str(job_id or ''))
+        if not job or not session_owns_record(session_id, job):
+            raise LookupError('任务不存在')
+        if job.get('style_id') != page:
+            raise ValueError('请在原任务所属工作台重做')
+        if not video_redoable(job):
+            raise ValueError('正在运行或核对中的任务暂不能重做')
+        snapshot = dict(job)
+        thumbnails = public_video_thumbnails(job)
+    workflow_id = str(snapshot.get('workflow') or '')
+    w = WORKFLOWS.get(workflow_id)
+    if not w or w.get('kind') != 'video' or w.get('backend') != 'runninghub':
+        raise ValueError('未知的视频工作流')
+    params = public_job_params(snapshot)
+    prompt = str(snapshot.get('prompt') or params.get('prompt') or '')
+    negative_prompt = str(snapshot.get('negative_prompt') or params.get('negative') or '')
+    raw_media = snapshot.get('media') if isinstance(snapshot.get('media'), dict) else {}
+    public_media = public_job_media(raw_media)
+    provider_media = snapshot.get('provider_media') if isinstance(snapshot.get('provider_media'), dict) else {}
+    created = float(snapshot.get('created') or 0)
+    expires = float(snapshot.get('queue_media_expires') or (created + UPLOAD_CAPABILITY_TTL))
+    now = time.time()
+    media = {}
+    for key, mapping in (w.get('rh_media') or {}).items():
+        if key not in raw_media and key not in provider_media:
+            continue
+        filename = public_media.get(key) or '素材'
+        provider_name = str(provider_media.get(key) or '').strip()
+        media_type = str(mapping.get('type') or '').lower()
+        valid = bool(now < expires and provider_name and key in public_media)
+        token = (issue_upload_capability(provider_name, workflow_id, key, media_type,
+                                         filename, session_id, expires=expires)
+                 if valid else None)
+        entry = {
+            'filename': filename,
+            'token': token,
+            'valid': valid,
+            'expired': not valid,
+            'expires': expires,
+        }
+        if key in thumbnails:
+            entry['thumbnail'] = thumbnails[key]
+        media[key] = entry
+    return {
+        'job_id': snapshot['id'],
+        'workflow': workflow_id,
+        'wf_name': snapshot.get('wf_name') or w.get('name') or '',
+        'prompt': prompt,
+        'negative_prompt': negative_prompt,
+        'params': params,
+        'media': media,
+        'thumbnails': thumbnails,
+        'expires': expires,
+        'expired': any(not item['valid'] for item in media.values()),
+    }
+
+
 def edit_video_queue(session_id, body, page='video'):
     """Only the owner can edit a not-yet-dispatched job; races fail closed."""
     with _admission_lock, _lock_jobs:
@@ -4529,6 +4595,19 @@ class Handler(http.server.BaseHTTPRequestHandler):
             session_id, _ = self._upload_session(create=False)
             page = 'realism' if path == '/api/image-edit-queue' else 'video'
             return self._send(200, json.dumps(video_queue_snapshot(session_id, page), ensure_ascii=False).encode())
+        if path == '/api/video-redo-draft' or path.startswith('/api/video-redo-draft/'):
+            if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
+            session_id, _ = self._upload_session(create=False)
+            query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            job_id = path.split('/api/video-redo-draft/', 1)[1] if path.startswith('/api/video-redo-draft/') else (query.get('job_id') or [''])[0]
+            try:
+                draft = video_redo_draft(session_id, job_id, 'video')
+            except LookupError:
+                return self._send(404, b'{"error":"job not found"}')
+            except ValueError as error:
+                return self._send(409, json.dumps({'error': str(error)}, ensure_ascii=False).encode())
+            return self._send(200, json.dumps(draft, ensure_ascii=False).encode(),
+                              headers={'Cache-Control': 'private, no-store', 'Vary': 'Cookie'})
         if path == "/api/live":
             payload = {"ok": True, "service": "comfy-panel", **self.server.liveness_snapshot()}
             self._send(200, json.dumps(payload, separators=(",", ":")).encode())

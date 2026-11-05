@@ -71,6 +71,23 @@ def test_video_queue_exception_rejects_unreviewed_digest(monkeypatch):
     assert not module.reviewed_video_queue_patch('41d2e7479bed751c457f7535f1994eae00ebae76', 'current')
 
 
+@pytest.mark.parametrize('changed_payload', ['runtime', 'frontend'])
+def test_video_redo_restore_exception_rejects_drift(monkeypatch, changed_payload):
+    module = load_module()
+    original = module.git_runtime_payload_sha256
+    def digest(commit, **kwargs):
+        is_runtime = kwargs.get('files') == module.NATIVE_RUNTIME_PAYLOAD_FILES
+        if is_runtime == (changed_payload == 'runtime'):
+            return '0' * 64
+        return original(commit, **kwargs)
+    monkeypatch.setattr(module, 'git_runtime_payload_sha256', digest)
+    assert not module.reviewed_video_redo_restore_patch(
+        'ec0c01c8668a15337199d489bb01f2328302c6db',
+        '15b512482aa25fe43d95d51743715b6427088e05')
+    assert not module.reviewed_video_redo_restore_patch(
+        'unreviewed-canary', '15b512482aa25fe43d95d51743715b6427088e05')
+
+
 def test_transparent_host_exception_rejects_changed_css(monkeypatch):
     module = load_module()
     import subprocess
@@ -91,9 +108,10 @@ def test_transparent_host_exception_rejects_changed_css(monkeypatch):
 def test_app_shell_rejects_frontend_drift(monkeypatch):
     module = load_module()
     original = module.git_runtime_payload_sha256
+    tested = json.loads(module.DREAMAPI_NATIVE_MANIFEST.read_bytes())['tested_release_commit']
     calls = []
     def digest(*args, **kwargs):
-        if 'static/app.html' in kwargs.get('files', ()):
+        if 'static/app.html' in kwargs.get('files', ()) and args[0] != tested:
             calls.append(True)
             if len(calls) > 1:
                 return '0' * 64
@@ -107,9 +125,10 @@ def test_app_shell_rejects_frontend_drift(monkeypatch):
 def test_app_shell_drift_is_accepted_only_through_the_visual_only_rule(monkeypatch):
     module = load_module()
     original = module.git_runtime_payload_sha256
+    tested = json.loads(module.DREAMAPI_NATIVE_MANIFEST.read_bytes())['tested_release_commit']
     calls, checked = [], []
     def digest(*args, **kwargs):
-        if 'static/app.html' in kwargs.get('files', ()):
+        if 'static/app.html' in kwargs.get('files', ()) and args[0] != tested:
             calls.append(True)
             if len(calls) > 1:
                 return '0' * 64

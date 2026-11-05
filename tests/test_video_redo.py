@@ -225,3 +225,95 @@ def test_redo_queue_limit_does_not_change_original_or_accept_another_job(
         assert duplicate['job_id'] == accepted['job_id']
     assert original == before
     assert len(panel._jobs) == 2
+
+
+
+def test_redo_draft_returns_owned_config_and_reusable_tokens_without_provider_media(panel):
+    original = completed_video(panel)
+    before = copy.deepcopy(original)
+    with running_server(panel) as httpd:
+        status, draft, raw = json_request(
+            httpd, 'GET', '/api/video-redo-draft?job_id=' + original['id'],
+            cookie=session_cookie(panel))
+        assert status == 200, draft
+        assert 'provider_media' not in draft
+        assert b'api/movement.mp4' not in raw and b'api/subject.png' not in raw
+        assert draft['job_id'] == original['id']
+        assert draft['workflow'] == 'h3_edit_n'
+        assert draft['prompt'] == original['prompt']
+        assert draft['negative_prompt'] == original['negative_prompt']
+        assert draft['params']['seed'] == original['params']['seed']
+        assert draft['params']['duration'] == 18
+        assert draft['params']['lora_1_model'] == 'minimax-n1'
+        assert draft['params']['lora_1_strength'] == .43
+        assert draft['thumbnails']['source_video'].startswith(
+            '/api/video-thumbnail/' + original['id'] + '/')
+        media_tokens = {}
+        for key, filename in original['media'].items():
+            slot = draft['media'][key]
+            assert slot['filename'] == filename
+            assert slot['valid'] is True and slot['expired'] is False
+            assert slot['token'].startswith('upl_')
+            assert slot['expires'] == original['queue_media_expires']
+            media_tokens[key] = slot['token']
+        # Reissued capabilities remain session/workflow/input bound and reusable.
+        with pytest.raises(ValueError, match='session mismatch'):
+            panel.resolve_upload_capabilities(panel.WORKFLOWS['h3_edit_n'], media_tokens,
+                                              'other-session-1234567890', draft['params'])
+        updated_params = dict(draft['params'], prompt='Modified prompt after restoring form.')
+        status, submitted, _ = json_request(
+            httpd, 'POST', '/api/video-generate',
+            {
+                'workflow': draft['workflow'],
+                'prompt': 'Modified prompt after restoring form.',
+                'negative_prompt': draft['negative_prompt'],
+                'media': media_tokens,
+                'params': updated_params,
+                'client_request_id': 'normal-submit-from-draft',
+            },
+            cookie=session_cookie(panel))
+        assert status == 200, submitted
+    child = panel._jobs[submitted['job_id']]
+    assert child['status'] == 'queued'
+    assert 'redo_of' not in child
+    assert child['prompt'] == 'Modified prompt after restoring form.'
+    assert child['negative_prompt'] == original['negative_prompt']
+    assert child['media'] == original['media']
+    assert child['provider_media'] == original['provider_media']
+    assert child['params']['seed'] == original['params']['seed']
+    assert child['params']['lora_1_model'] == 'minimax-n1'
+    resolved, _ = panel.resolve_upload_capabilities(
+        panel.WORKFLOWS['h3_edit_n'], media_tokens, SESSION_ID, draft['params'])
+    assert resolved == original['provider_media']
+    assert original == before
+
+
+def test_redo_draft_rejects_non_owner_unresolved_and_marks_expired_media(panel):
+    original = completed_video(panel)
+    with running_server(panel) as httpd:
+        status, _, _ = json_request(
+            httpd, 'GET', '/api/video-redo-draft?job_id=' + original['id'],
+            cookie=session_cookie(panel, 'other-session-1234567890'))
+        assert status == 404
+        status, _, _ = json_request(
+            httpd, 'GET', '/api/video-redo-draft',
+            cookie=session_cookie(panel))
+        assert status == 404
+        original['status'] = 'running'
+        status, rejected, _ = json_request(
+            httpd, 'GET', '/api/video-redo-draft?job_id=' + original['id'],
+            cookie=session_cookie(panel))
+        assert status == 409 and '暂不能重做' in rejected['error']
+        original['status'] = 'done'
+        original['queue_media_expires'] = time.time() - 5
+        status, expired_draft, raw = json_request(
+            httpd, 'GET', '/api/video-redo-draft?job_id=' + original['id'],
+            cookie=session_cookie(panel))
+        assert status == 200, expired_draft
+        assert b'api/movement.mp4' not in raw and b'api/subject.png' not in raw
+        for key, filename in original['media'].items():
+            slot = expired_draft['media'][key]
+            assert slot['filename'] == filename
+            assert slot['valid'] is False and slot['expired'] is True
+            assert slot['token'] is None
+            assert slot['expires'] == original['queue_media_expires']
