@@ -197,7 +197,6 @@ def test_packaged_creator_results_fit_full_image_and_preserve_gallery_loading(tm
         page.route('**/*',serve);page.goto('http://fixture.test/')
         host=page.locator('.page-host:not([hidden])')
         expect(host.locator('#genCloudBtn')).to_be_enabled()
-        result=host.locator('#genCloudResult')
 
         def assert_uncropped(gallery, label):
             image=gallery.locator('.gallery-result-image')
@@ -218,15 +217,44 @@ def test_packaged_creator_results_fit_full_image_and_preserve_gallery_loading(tm
             assert preview.getpixel((preview.width//2, round(top+1459*scale)))==(70,140,220)
             (tmp_path/(label+'.png')).write_bytes(screenshot)
 
+        # 2026-11-10 (owner decision, stage-2 creator UI): the creator shows results as a stream of
+        # batches instead of one large viewer, so the main-result checks below target the stream
+        # (every image of the batch, uncropped) and its enlarge view; the history checks are unchanged.
+        def assert_image_uncropped(image, label):
+            expect(image).to_be_visible()
+            page.mouse.move(1,1);page.evaluate('()=>document.activeElement?.blur?.()')
+            image.evaluate("el=>{el.blur?.();const root=el.getRootNode();root.activeElement?.blur?.()}")
+            bounds=image.evaluate('''image=>({image:image.getBoundingClientRect().toJSON(),view:image.parentElement.getBoundingClientRect().toJSON(),
+                natural:image.naturalHeight/image.naturalWidth,src:image.getAttribute('src')})''')
+            image_box, view=bounds['image'], bounds['view']
+            assert '/api/rh-preview/' in bounds['src'], bounds
+            assert abs(image_box['height']/image_box['width']-bounds['natural'])<.02, bounds
+            assert image_box['top']>=view['top']-1 and image_box['bottom']<=view['bottom']+1, bounds
+            assert image_box['left']>=view['left']-1 and image_box['right']<=view['right']+1, bounds
+            screenshot=image.screenshot()
+            preview=Image.open(BytesIO(screenshot)).convert('RGB')
+            scale=min(preview.width/860,preview.height/1536)
+            top=(preview.height-1536*scale)/2
+            assert preview.getpixel((preview.width//2, round(top+76*scale)))==(220,70,70)
+            assert preview.getpixel((preview.width//2, round(top+1459*scale)))==(70,140,220)
+            (tmp_path/(label+'.png')).write_bytes(screenshot)
+
+        stream=host.locator('.acc-feed .acc-group[data-job="test"]')
+        expect(stream.locator('.acc-shot img')).to_have_count(4)
         for width,height in [(1320,806),(1920,1080),(320,760)]:
             page.set_viewport_size({'width':width,'height':height})
-            assert_uncropped(result,'main-'+str(width))
+            for index in range(4):
+                shot=stream.locator('.acc-shot').nth(index)
+                shot.evaluate("el=>el.scrollIntoView({block:'start'})")
+                assert_image_uncropped(shot.locator('img'),f'main-{width}-{index}')
             assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
-            before=result.locator('.gallery-image-viewport').bounding_box()
-            result.get_by_role('button',name='查看结果 3',exact=True).click()
-            assert_uncropped(result,'selected-'+str(width))
-            assert result.locator('.gallery-image-viewport').bounding_box()['height']==before['height']
-            result.get_by_role('button',name='查看结果 1',exact=True).click()
+            first=stream.locator('.acc-shot').first
+            first.evaluate("el=>el.scrollIntoView({block:'start'})")
+            first.get_by_role('button',name='放大查看',exact=True).click()
+            assert_image_uncropped(host.locator('.acc-viewer img'),'selected-'+str(width))
+            expect(host.locator('.acc-viewer a[download]')).to_have_attribute('href',images[0]['url'])
+            page.keyboard.press('Escape')
+            expect(host.locator('.acc-viewer')).to_be_hidden()
         page.set_viewport_size({'width':1440,'height':900})
         page.locator('body > .app-shell > .topbar #histOpen').click()
         host.get_by_role('button',name='查看图片',exact=True).click()
@@ -234,13 +262,16 @@ def test_packaged_creator_results_fit_full_image_and_preserve_gallery_loading(tm
         expect(history.locator('.gallery-thumb img:visible')).to_have_count(4)
         assert_uncropped(history,'history-desktop')
         expect(history.locator('.gallery-actions a')).to_have_attribute('href',images[0]['url'])
-        assert len([url for method,url in requests if '/api/rh-preview/' in url])==6
+        # Stage-2 stream: 4 stream images + the hidden result panel the page still renders (1 view + 4 thumbs)
+        # + 1 per enlarge (3 viewports); history reuses them. Previously 6. Originals are never fetched.
+        assert len([url for method,url in requests if '/api/rh-preview/' in url])==12
         assert not [url for method,url in requests if '/api/result-media/' in url]
         history.get_by_role('button',name='查看结果 3',exact=True).click()
         expect(history.locator('.gallery-result-image')).to_be_visible()
         history.get_by_role('button',name='查看结果 1',exact=True).click()
         expect(history.locator('.gallery-result-image')).to_be_visible()
-        assert len([url for method,url in requests if '/api/rh-preview/' in url])==6
+        # +1: history's 查看结果 3 is the gallery loader's first load of that view (the old test had loaded it from the main viewer).
+        assert len([url for method,url in requests if '/api/rh-preview/' in url])==13
         page.screenshot(path=str(tmp_path/'packaged-gallery-desktop.png'))
         page.set_viewport_size({'width':320,'height':760})
         assert_uncropped(history,'history-mobile')

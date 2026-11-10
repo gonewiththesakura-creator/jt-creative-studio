@@ -66,3 +66,65 @@ body.singularity .admin-form fieldset{border-color:var(--line-2)}
 body.singularity .admin-form legend,body.singularity .admin-table-wrap th{color:var(--text-3)}
 body.singularity .admin-table-wrap td{border-color:var(--line)}
 body.singularity .admin-form input[type=checkbox]{accent-color:var(--amber)}
+/* STUDIO shell: the bar is a sidebar on the left (an icon rail on narrower windows, a tab bar at the
+   bottom on phones). Class names and entry ids are unchanged; --side-w / --side-h are inherited by the
+   pages so their fixed panes (styles/accretion.css) leave room for it. */
+body.singularity{--side-w:248px;--side-h:0px}
+/* The page hosts stay at the window's left edge: while a host plays its enter animation it is the
+   containing block of its fixed panes, so an offset here would make them jump sideways. */
+body.singularity>.app-shell>:is(.shell-top,#routeStatus){margin-left:var(--side-w)}
+body.singularity>.app-shell>.topbar{position:fixed;z-index:70;inset:0 auto 0 0;width:var(--side-w);height:auto;display:flex;flex-direction:column;align-items:stretch;gap:4px;padding:18px 14px 14px;border:0;border-right:1px solid var(--line);background:linear-gradient(var(--appearance-chrome,rgba(0,0,0,.62)),var(--appearance-chrome,rgba(0,0,0,.62))),rgba(14,12,10,.6)}
+body.singularity>.app-shell>.topbar .brand{padding:4px 8px 16px}
+body.singularity>.app-shell>.topbar .brand>span:last-child{font-size:12px;color:var(--text-3)}
+body.singularity>.app-shell>.topbar .side-label{display:block;padding:14px 10px 6px;font-size:11px;letter-spacing:.12em;color:var(--text-3)}
+body.singularity>.app-shell>.topbar .topnav{order:0;width:auto;display:flex;flex-direction:column;justify-content:flex-start;gap:4px}
+body.singularity>.app-shell>.topbar .topnav-link{flex:none;justify-content:flex-start;gap:11px;min-height:40px;padding:0 10px;border-radius:10px;color:var(--text-2);font-size:14px;transition:background .15s,color .15s}
+body.singularity>.app-shell>.topbar .topnav-link svg{flex:none;width:18px;height:18px}
+body.singularity>.app-shell>.topbar .topnav-link:hover{background:rgba(255,236,214,.05);color:var(--text)}
+body.singularity>.app-shell>.topbar .topnav-link.active{background:var(--amber-soft);color:var(--text);box-shadow:inset 0 0 0 1px rgba(255,180,92,.16)}
+body.singularity>.app-shell>.topbar .topnav-link.active svg{color:var(--amber)}
+body.singularity>.app-shell>.topbar .topnav-link.active::after{content:none}
+body.singularity>.app-shell>.topbar .topbar-tools{display:contents}
+body.singularity>.app-shell>.topbar :is(.topbar-tools,.scene-menu-anchor)>.topbar-action{justify-content:flex-start;gap:11px;width:100%;min-height:40px;margin:0;padding:0 10px;border-radius:10px;font-size:14px}
+body.singularity>.app-shell>.topbar .scene-menu-anchor{flex-direction:column}
+body.singularity>.app-shell>.topbar .scene-menu-toggle::after{margin-left:auto}
+body.singularity>.app-shell>.topbar .scene-menu{top:calc(100% + 6px);left:0;right:0}
+body.singularity>.app-shell>.topbar .side-spacer{flex:1;order:7}
+body.singularity>.app-shell>.topbar .side-quota{order:8;display:grid;gap:8px;margin-bottom:6px;padding:12px;border:1px solid var(--line);border-radius:12px;background:rgba(255,236,214,.03)}
+.side-quota-row{display:flex;align-items:baseline;justify-content:space-between;gap:10px;font-size:12px;color:var(--text-2)}
+.side-quota-row b{font:600 13px/1 var(--mono);color:var(--text);overflow-wrap:anywhere;text-align:right}
+body.singularity>.app-shell>.topbar #accountOpen{order:9;margin:0;min-height:44px;border:1px solid var(--line-2);background:rgba(255,236,214,.04);color:var(--text)}
+.shell-top{position:relative;z-index:3;display:flex;align-items:baseline;gap:14px;height:56px;padding:20px 28px 0;pointer-events:none}
+.shell-top h1{margin:0;font:400 22px/1.2 var(--serif);letter-spacing:.04em;color:var(--hot);white-space:nowrap}
+.shell-top .shell-seg{margin-left:auto;align-self:center;display:flex;gap:2px;padding:3px;border-radius:10px;background:rgba(255,236,214,.05);pointer-events:auto}
+.shell-top .shell-seg button{min-height:28px;padding:0 12px;border:0;border-radius:8px;background:transparent;color:var(--text-2);font:12px var(--sans);cursor:pointer}
+.shell-top .shell-seg button[aria-pressed=true]{background:rgba(255,236,214,.12);color:var(--text)}
+.shell-top .shell-run{align-self:center;display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 10px;border-radius:8px;background:var(--amber-soft,rgba(255,150,70,.14));color:var(--hot,#ffd9b0);font-size:12px;white-space:nowrap}
+.shell-top .shell-run svg{width:14px;height:14px}
+.shell-top .shell-run[hidden],.shell-top .shell-off{display:none}
+.shell-top p{margin:0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;color:var(--text-3)}
+@media(max-width:1320px){
+ body.singularity{--side-w:72px}
+ body.singularity>.app-shell>.topbar{padding:16px 10px 12px}
+ body.singularity>.app-shell>.topbar .brand{justify-content:center;padding:4px 0 12px}
+ body.singularity>.app-shell>.topbar .brand-mark{font-size:0;gap:0}
+ body.singularity>.app-shell>.topbar :is(.brand>span:last-child,.side-label,.topnav-link>span,.side-quota),body.singularity>.app-shell>.topbar .scene-menu-toggle::after,body.singularity>.app-shell>.topbar .topbar-action:is(#favOpen,#histOpen,#sceneMenuOpen)>span{display:none}
+ body.singularity>.app-shell>.topbar .topnav{margin-bottom:10px}
+ body.singularity>.app-shell>.topbar .topnav-link,body.singularity>.app-shell>.topbar :is(.topbar-tools,.scene-menu-anchor)>.topbar-action{justify-content:center;min-height:44px;padding:0}
+ body.singularity>.app-shell>.topbar #accountOpen{font-size:0;gap:0}
+ body.singularity>.app-shell>.topbar .scene-menu{right:auto}
+}
+@media(max-width:760px){
+ body.singularity{--side-w:0px;--side-h:calc(56px + env(safe-area-inset-bottom))}
+ body.singularity>.app-shell>.topbar{inset:auto 0 0 0;width:auto;height:var(--side-h);flex-direction:row;align-items:center;justify-content:space-around;gap:0;padding:0 4px env(safe-area-inset-bottom);border-right:0;border-top:1px solid var(--line);background:rgba(10,9,8,.95)}
+ body.singularity>.app-shell>.topbar :is(.brand,.side-spacer){display:none}
+ body.singularity>.app-shell>.topbar .topnav{display:contents}
+ body.singularity>.app-shell>.topbar .topnav-link{flex-direction:column;gap:2px;min-width:52px;min-height:48px;font-size:10px}
+ body.singularity>.app-shell>.topbar .topnav-link>span{display:block}
+ body.singularity>.app-shell>.topbar :is(.topbar-tools,.scene-menu-anchor)>.topbar-action{width:auto;min-width:44px}
+ body.singularity>.app-shell>.topbar #accountOpen{border-color:transparent;background:transparent}
+ body.singularity>.app-shell>.topbar .scene-menu{top:auto;bottom:calc(100% + 8px);left:auto;right:0}
+ .shell-top{height:44px;padding:12px 16px 0}
+ .shell-top h1{font-size:19px}
+ .shell-top p{display:none}
+}
