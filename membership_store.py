@@ -199,6 +199,10 @@ class MembershipStore:
             # previous server for rollback; purchased snapshots stay untouched.
             if "max_video_queued" not in {row["name"] for row in db.execute("PRAGMA table_info(plans)")}:
                 db.execute("ALTER TABLE plans ADD COLUMN max_video_queued INTEGER NOT NULL DEFAULT 100")
+            # 2026-11-11: an unresolved reservation can stop occupying a concurrency slot
+            # (execution ended, provider outcome unconfirmed) while its quota stays held.
+            if "slot_released_at" not in {row["name"] for row in db.execute("PRAGMA table_info(reservations)")}:
+                db.execute("ALTER TABLE reservations ADD COLUMN slot_released_at INTEGER")
             db.execute(f"PRAGMA user_version={self.SCHEMA_VERSION}")
             db.commit()
         self._restrict_files()
@@ -549,9 +553,12 @@ class MembershipStore:
         user = self._user(db, user_id, False)
         result["active"] = not user["disabled"] and row["expires_at"] > self._now()
         counts = {item["state"]: item["n"] for item in db.execute(
-            "SELECT state,COUNT(*) AS n FROM reservations WHERE user_id=? AND state IN('reserved','running') GROUP BY state", (user_id,))}
+            """SELECT CASE WHEN state='running' AND slot_released_at IS NOT NULL THEN 'held' ELSE state END AS state,
+                      COUNT(*) AS n FROM reservations WHERE user_id=? AND state IN('reserved','running') GROUP BY 1""", (user_id,))}
         result["reserved_jobs"] = counts.get("reserved", 0)
         result["running_jobs"] = counts.get("running", 0)
+        # Ended jobs whose quota awaits review; they no longer count toward max_concurrent.
+        result["held_jobs"] = counts.get("held", 0)
         result["video_queued_jobs"] = db.execute(
             "SELECT COUNT(*) FROM reservations WHERE user_id=? AND kind='video' AND state='reserved'", (user_id,)).fetchone()[0]
         return result
@@ -662,11 +669,31 @@ class MembershipStore:
             if row["state"] != "reserved":
                 raise MembershipError("reservation_settled", "任务额度已结算", 409)
             _, plan = self._access(db, row["user_id"], row["kind"], row["backend"])
-            running = db.execute("SELECT COUNT(*) FROM reservations WHERE user_id=? AND state='running'", (row["user_id"],)).fetchone()[0]
+            # Only reservations whose execution is still live hold a slot. Ended-but-unconfirmed
+            # jobs keep their quota (see release_slot) yet must not block new work forever.
+            running = db.execute("""SELECT COUNT(*) FROM reservations
+                                    WHERE user_id=? AND state='running' AND slot_released_at IS NULL""",
+                                 (row["user_id"],)).fetchone()[0]
             if running >= plan["max_concurrent"]:
-                raise MembershipError("concurrency_limit", "当前套餐并发已满，任务继续排队", 409)
+                raise MembershipError("concurrency_limit",
+                                      f"当前套餐最多同时运行 {plan['max_concurrent']} 个任务，请等前面的任务完成后再提交", 409)
             db.execute("UPDATE reservations SET state='running',started_at=? WHERE job_id=?", (self._now(), job_id))
             return dict(db.execute("SELECT * FROM reservations WHERE job_id=?", (job_id,)).fetchone())
+
+    def release_slot(self, job_id):
+        """Free a running reservation's concurrency slot without settling its quota.
+
+        Used once the job's execution has ended but the provider outcome is not
+        confirmed (unclassified error, service restart). Quota stays reserved for
+        administrator review; only the per-plan concurrency count is released.
+        Returns True when this call released the slot.
+        """
+        job_id = _text(job_id, "任务编号", 128)
+        with self._connection(True) as db:
+            changed = db.execute("""UPDATE reservations SET slot_released_at=?
+                                    WHERE job_id=? AND state='running' AND slot_released_at IS NULL""",
+                                 (self._now(), job_id)).rowcount
+            return changed == 1
 
     def settle_job(self, job_id, success):
         if not isinstance(success, bool):

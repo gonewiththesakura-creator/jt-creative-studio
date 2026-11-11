@@ -1,4 +1,4 @@
-import {cachedFetch} from "/static/assets/api.1e898baa005a.js";
+import {cachedFetch} from "/static/assets/api.39c989b27101.js";
 import {accountStorage} from "/static/assets/account-storage.0c5081b9ad66.js";
 export function createPageScope(root,body,path){
  const localStorage=accountStorage(window.localStorage),sessionStorage=accountStorage(window.sessionStorage);

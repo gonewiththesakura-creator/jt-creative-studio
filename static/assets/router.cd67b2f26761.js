@@ -1,4 +1,4 @@
-import {createPageScope} from "/static/assets/page-scope.347478376310.js";
+import {createPageScope} from "/static/assets/page-scope.b09f5588ff90.js";
 export function createRouter(manifest){
  const pages=new Map(),preloads=new Map(),root=document.getElementById('pageRoot');
  let version=0,active=null;

@@ -1,7 +1,7 @@
 import "/static/assets/retired-upload-storage.04c0ee0da954.js";
-import "/static/assets/accretion-layout.473dcd560450.js";
-import {createRouter} from "/static/assets/router.9d20830207ba.js";
-import {initializeAccount} from "/static/assets/account.8392a04d835f.js";
+import "/static/assets/accretion-layout.091d2d313371.js";
+import {createRouter} from "/static/assets/router.cd67b2f26761.js";
+import {initializeAccount} from "/static/assets/account.39eca9764438.js";
 import {initializeLoginScene,revealWorkbenchFromLogin} from "/static/assets/login-scene.659131d536e8.js";
 const manifest=JSON.parse(document.getElementById('appManifest').textContent);
 window.jtApp={router:null,metrics:{renderers:0,firstFrame:null}};

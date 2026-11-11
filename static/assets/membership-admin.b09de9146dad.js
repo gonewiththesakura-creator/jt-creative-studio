@@ -1,4 +1,4 @@
-import {accountFetch} from "/static/assets/api.1e898baa005a.js";
+import {accountFetch} from "/static/assets/api.39c989b27101.js";
 
 export function initializeMembershipAdmin({verify,codeLogin=false}={}){
  const trigger=document.createElement('button');trigger.type='button';trigger.id='membershipAdminOpen';trigger.className='account-secondary account-admin-entry';trigger.textContent='管理后台';document.querySelector('#accountDialog .account-dialog-footer').prepend(trigger);

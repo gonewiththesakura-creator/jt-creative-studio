@@ -3,8 +3,8 @@
 // few existing nodes and adds chips that reveal existing sections; business
 // code keeps its own elements, ids and handlers. Values change only through the
 // same input/change events a person would fire, or a click on an existing button.
-import {accountFetch} from "/static/assets/api.1e898baa005a.js";
-import {addFavorite, fetchPrompt, sendImageTo, toast} from "/static/assets/media-actions.231c29c7402c.js";
+import {accountFetch} from "/static/assets/api.39c989b27101.js";
+import {addFavorite, fetchPrompt, sendImageTo, toast} from "/static/assets/media-actions.64dce7fe9a85.js";
 
 const PATHS = {
  shuffle:'<path d="M4 7h3.2c4.3 0 5.3 10 9.6 10H20"/><path d="M4 17h3.2c1.6 0 2.7-1.4 3.6-3.2M13.2 10.2C14.1 8.4 15.2 7 16.8 7H20"/><path d="m17.5 4.5 2.5 2.5-2.5 2.5M17.5 14.5l2.5 2.5-2.5 2.5"/>',

@@ -2,7 +2,7 @@
 // Everything goes through endpoints and controls that already exist:
 // /api/favorites (POST, the same call the old result panel makes), the owner-only
 // /api/job-prompt/<id>, and the edit/video pages' own image upload inputs.
-import {accountFetch} from "/static/assets/api.1e898baa005a.js";
+import {accountFetch} from "/static/assets/api.39c989b27101.js";
 
 async function json(response, fallback) {
  let data = null; try { data = await response.json(); } catch {}

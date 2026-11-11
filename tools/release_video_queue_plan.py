@@ -47,7 +47,11 @@ def verify_database(before_path, after_path):
             assert re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', table), 'Unexpected table identifier'
             old_columns = [row[1] for row in old.execute('PRAGMA table_info(' + table + ')')]
             columns = [row[1] for row in db.execute('PRAGMA table_info(' + table + ')')]
-            expected = set(old_columns) | ({'max_video_queued'} if table == 'plans' else set())
+            # Reviewed additive columns: plans.max_video_queued (2026-10-17) and the nullable
+            # reservations.slot_released_at (2026-11-11, frees a concurrency slot of an ended
+            # but unconfirmed job; rollback code ignores it and keeps counting that slot).
+            expected = set(old_columns) | ({'max_video_queued'} if table == 'plans' else
+                                           {'slot_released_at'} if table == 'reservations' else set())
             assert set(columns) == expected, 'Unexpected columns: ' + table
             projection = ','.join('"' + name.replace('"', '""') + '"' for name in old_columns)
             query = 'SELECT ' + projection + ' FROM "' + table + '" ORDER BY rowid'
@@ -56,6 +60,8 @@ def verify_database(before_path, after_path):
             counts[table] = len(previous)
         definition = next(row for row in db.execute('PRAGMA table_info(plans)') if row[1] == 'max_video_queued')
         assert definition[2].upper() == 'INTEGER' and definition[3] == 1 and str(definition[4]) == '100', 'Queue column contract changed'
+        released = next(row for row in db.execute('PRAGMA table_info(reservations)') if row[1] == 'slot_released_at')
+        assert released[2].upper() == 'INTEGER' and released[3] == 0 and released[4] is None, 'Slot release column contract changed'
         old_columns = {row[1] for row in old.execute('PRAGMA table_info(plans)')}
         if 'max_video_queued' not in old_columns:
             assert db.execute('SELECT COUNT(*) FROM plans WHERE max_video_queued != 100').fetchone()[0] == 0, 'Legacy plan defaults changed'

@@ -14,6 +14,12 @@ export async function accountFetch(input,options={}){
  if(url.origin===location.origin&&url.pathname.startsWith('/api/')&&response.status===401){
   catalog=null;window.dispatchEvent(new CustomEvent('jt:auth-expired'));
  }
+ // 2026-11-11: an accepted submission, cancel or retry can reserve or refund quota; let the
+ // account surfaces refetch instead of showing the pre-submit numbers until a reload.
+ if(url.origin===location.origin&&response.ok&&!['GET','HEAD','OPTIONS'].includes(method)&&
+    /^\/api\/(?:[a-z-]*generate|video-queue|image-edit-queue)$/.test(url.pathname)){
+  window.dispatchEvent(new CustomEvent('jt:quota-maybe-changed'));
+ }
  return response;
 }
 export async function cachedFetch(input,options={}){

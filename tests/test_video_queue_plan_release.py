@@ -54,6 +54,8 @@ def test_additive_migration_preserves_all_old_rows_and_old_runtime_starts(tmp_pa
     ("PRAGMA user_version=3", 'Schema version must remain compatible'),
     ("CREATE TABLE unexpected(value TEXT)", 'Unexpected membership table changes'),
     ("ALTER TABLE plans ADD COLUMN unexpected TEXT", 'Unexpected columns'),
+    # 2026-11-11: reservations gained the reviewed slot_released_at column; others still fail.
+    ("ALTER TABLE reservations ADD COLUMN unexpected TEXT", 'Unexpected columns'),
     ("INSERT INTO rate_buckets VALUES('new',1,999999)", 'Existing membership data changed'),
     ("UPDATE entitlements SET plan_snapshot='{}'", 'Existing membership data changed'),
     ("UPDATE activation_codes SET plan_snapshot='{}'", 'Existing membership data changed'),

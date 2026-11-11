@@ -26,6 +26,7 @@ class MembershipGateway:
         self.store = store
         self.oidc = oidc
         self._settled_jobs = set()
+        self._released_slots = set()
         self.origin = os.environ.get("JT_PUBLIC_ORIGIN", "").rstrip("/")
         self.login_mode = os.environ.get('JT_LOGIN_MODE', 'oidc')
         if self.login_mode not in ('oidc', 'access_code'):
@@ -367,6 +368,18 @@ class MembershipGateway:
             if confirmed:
                 self.store.settle_job(job["id"], False)
                 self._settled_jobs.add(job['id'])
+            elif status == "error" and float(job.get("api_pending_until") or 0) <= time.time():
+                # 2026-11-11: execution has ended but the provider outcome is unconfirmed
+                # (unclassified error, service restart). Quota stays held for review, but
+                # the plan's concurrency slot is freed; otherwise each such job blocked the
+                # user with "并发已满" until an administrator settled it by hand.
+                self.release_slot(job["id"])
+
+    def release_slot(self, job_id):
+        if job_id in self._released_slots:
+            return
+        self.store.release_slot(job_id)
+        self._released_slots.add(job_id)
 
     def reconcile(self, jobs):
         if not self.enabled:
@@ -381,6 +394,17 @@ class MembershipGateway:
         # recovered backup can be older than SQL. Keep those for admin review,
         # including across repeated restarts, rather than inventing a refund.
         self.reconcile(jobs.values())
+        # No worker of this process runs a job the ledger does not know, so such a
+        # reservation keeps its quota but must not hold a concurrency slot (2026-11-11).
+        after = ""
+        while True:
+            rows = self.store.list_unsettled_reservations(limit=1000, after_job_id=after)
+            for row in rows:
+                if row["state"] == "running" and row["job_id"] not in jobs:
+                    self.release_slot(row["job_id"])
+            if len(rows) < 1000:
+                break
+            after = rows[-1]["job_id"]
 
     def security_headers(self, handler):
         if not self.enabled:

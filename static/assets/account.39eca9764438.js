@@ -1,6 +1,6 @@
-import {accountFetch,configureAccountRequests} from "/static/assets/api.1e898baa005a.js";
+import {accountFetch,configureAccountRequests} from "/static/assets/api.39c989b27101.js";
 import {setStorageAccount} from "/static/assets/account-storage.0c5081b9ad66.js";
-import {initializeMembershipAdmin} from "/static/assets/membership-admin.dfdc292b717f.js";
+import {initializeMembershipAdmin} from "/static/assets/membership-admin.b09de9146dad.js";
 import {showLoginScene,markLoginTransition,consumeLoginTransition,prepareLoginEntry,revealWorkbenchImmediately} from "/static/assets/login-scene.659131d536e8.js";
 
 const template=`<section class="account-gate" id="accountGate" aria-labelledby="accountGateTitle">
@@ -118,6 +118,9 @@ export async function initializeAccount(){
  };
  window.addEventListener('jt:auth-expired',()=>gate('登录已过期，请重新登录后继续。',{login:true}));
  window.addEventListener('jt:admin-verification-required',()=>adminUI?.setVerification(true));
+ // Quota and running counts change on submit/cancel; refetch quietly once the burst settles.
+ let quotaTimer=0;
+ window.addEventListener('jt:quota-maybe-changed',()=>{if(!ready)return;clearTimeout(quotaTimer);quotaTimer=setTimeout(()=>refresh({gateOnError:false}),700)});
  // Recheck when returning to a background tab, including after another tab logs out.
  document.addEventListener('visibilitychange',()=>{if(!document.hidden&&ready)refresh()});
  window.addEventListener('pageshow',event=>{if(event.persisted)refresh()});
