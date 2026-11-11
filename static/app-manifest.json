@@ -20,7 +20,7 @@
     }
   },
   "singularity": "/static/assets/workbench.f3dbbfb611a2.js",
-  "main": "/static/assets/main.681a1309f91c.js",
+  "main": "/static/assets/main.bc3aa65083af.js",
   "assets": [
     "/static/assets/CopyShader.a33057d5ac91.js",
     "/static/assets/EffectComposer.88857d0d9347.js",
@@ -34,7 +34,7 @@
     "/static/assets/UnrealBloomPass.6b2ef6cf2ccd.js",
     "/static/assets/account-storage.0c5081b9ad66.js",
     "/static/assets/account.39eca9764438.js",
-    "/static/assets/accretion-layout.091d2d313371.js",
+    "/static/assets/accretion-layout.fb717cb5d48a.js",
     "/static/assets/api.39c989b27101.js",
     "/static/assets/app.114f340b9299.css",
     "/static/assets/appearance.4502ac7e3877.js",
@@ -42,7 +42,7 @@
     "/static/assets/index.14cdf23edb85.html",
     "/static/assets/index.ff6743a99cab.js",
     "/static/assets/login-scene.659131d536e8.js",
-    "/static/assets/main.681a1309f91c.js",
+    "/static/assets/main.bc3aa65083af.js",
     "/static/assets/media-actions.64dce7fe9a85.js",
     "/static/assets/membership-admin.b09de9146dad.js",
     "/static/assets/page-scope.b09f5588ff90.js",

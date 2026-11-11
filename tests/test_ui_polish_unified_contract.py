@@ -1,5 +1,6 @@
 from pathlib import Path
 import sys
+import re
 ROOT = Path(__file__).resolve().parents[1]
 VIDEO_SOURCE=(ROOT/'sources/video_business.js').read_text(encoding='utf8')
 VIDEO_BUILDER=(ROOT/'build_video_workbench.py').read_text(encoding='utf8')
@@ -25,7 +26,7 @@ checks={
  'video libraries open at top':all(x in VIDEO for x in ["favOverlay.querySelector('.library-scroll').scrollTop=0","histOverlay.querySelector('.library-scroll').scrollTop=0"]),
  'active pages workbench shell':all(all(x in p for x in ['class="app-shell"','class="topbar"','class="brand-mark"']) for p in ACTIVE),
  # 4aa41f6 renamed the 真人化 nav entry to 图片编辑; every active page carries it since the 2026-10-20 rebuild.
- 'active pages consolidated nav':all(all(x in p for x in ['JT 灵感工作台','创作台','视频']) and 'href="/realism">图片编辑' in p and 'href="/original-sketch"' not in p for p in ACTIVE) and 'href="/realism">图片编辑' in SHELL,
+ 'active pages consolidated nav':all(all(x in p for x in ['JT 灵感工作台','创作台','视频']) and 'href="/realism">图片编辑' in p and 'href="/original-sketch"' not in p for p in ACTIVE) and re.search(r'href="/realism">(?:<svg.*?</svg>)?(?:<span>)?图片编辑',SHELL) is not None,  # 2026-11-11: studio v2 shell nav links carry an icon + span
  'creator and realism preview panes':all('class="preview-pane"' in p for p in [MAIN,REALISM]),
  'shared palette':all(all(x in p for x in ['--brand:#536cff','--canvas:#f6f7fb']) for p in ACTIVE),
  'original styles unified':all(x in MAIN for x in ['data-style="original_sketch"','data-style="original_graphic"','style-original-sketch.webp','style-original-graphic.webp']),

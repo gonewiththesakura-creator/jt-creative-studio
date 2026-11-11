@@ -17,7 +17,9 @@ CREATOR_BUDGET=452_000
 # pages; with legacy-only theme rules dropped and comments stripped the route measures 33,532. Budget 32,000 -> 34,000.
 # 2026-11-10: studio v2 creator (owner-approved prototype: result stream, composer, sheets, three-column person
 # panel, full-page history/favourites, live banner hole) measures 36,550 (35,905 at e72f987). Budget 34,000 -> 37,000.
-SHELL_CREATOR_GZIP_BUDGET=37_000
+# 2026-11-11: stages 4-6 (three-column workbench, account/admin surfaces, form tiles, library tiles) add shared
+# stylesheet rules that the creator route also downloads; it measures 39,981. Budget 37,000 -> 40,500.
+SHELL_CREATOR_GZIP_BUDGET=40_500
 MANIFEST=json.loads((ROOT/"static"/"app-manifest.json").read_text(encoding="utf8"))
 SHELL_CREATOR_GZIP=sum(len(gzip.compress((ROOT/path.lstrip('/')).read_bytes().replace(b'\r\n',b'\n'),6,mtime=0))
                        for path in MANIFEST['pages']['/'].values() if path.startswith('/static/'))

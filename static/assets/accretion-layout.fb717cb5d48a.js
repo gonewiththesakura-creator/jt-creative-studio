@@ -628,8 +628,11 @@ function workflowPage(root, body, key) {
  library.hidden = true;
  body.append(library);
  let filter = '全部';
+ let drawnSchemes = '';
+ const schemeKey = list => list.map(item => item.id + (item.active ? '*' : '')).join('|');
  const drawLibrary = () => {
   const list = schemes(), groups = ['全部', ...new Set(list.map(item => item.group))];
+  drawnSchemes = schemeKey(list);
   html(library, `<div class="wb-lib-card" role="dialog" aria-modal="true" aria-label="选择方案"><header><div><h2>选择方案</h2><p>按你想做的事来选，模型名在卡片下方</p></div><button type="button" class="acc-icon-button" data-close aria-label="关闭">${icon('x')}</button></header>${
    groups.length > 2 ? `<nav>${groups.map(name => `<button type="button" class="wb-filter" data-filter="${safe(name)}" aria-pressed="${name === filter}">${safe(name)}</button>`).join('')}</nav>` : ''
   }<div class="wb-grid">${list.map((item, index) => {
@@ -666,6 +669,8 @@ function workflowPage(root, body, key) {
   const current = schemes().find(item => item.active), [title, model] = split(name || '选择方案');
   text(schemeCard.querySelector('b'), title);
   text(schemeCard.querySelector('small'), [model, current?.group].filter(Boolean).join(' · ') || '点击选择');
+  // 2026-11-11: the library opened before the workflow list arrived stayed empty; redraw it when the list changes.
+  if (!library.hidden && schemeKey(schemes()) !== drawnSchemes) drawLibrary();
  }
  root.addEventListener('change', refresh);
  root.addEventListener('click', () => requestAnimationFrame(refresh));
