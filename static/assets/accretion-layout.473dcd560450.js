@@ -657,7 +657,9 @@ function workflowPage(root, body, key) {
   const tile = card.querySelector('.task-tile'), name = card.querySelector('.task-name')?.textContent.trim() || '';
   if (tile) attr(tile, 'data-wb-title', split(name)[0] || '任务');
  });
- if (rail) { new MutationObserver(nameTasks).observe(rail, {subtree:true, childList:true}); nameTasks(); }
+ // The count reads as one badge: the fixed "（最多 N 个并发）" tail is left out of the badge text.
+ const badgeCount = () => { const count = rail?.querySelector('#taskCount'); if (!count) return; const short = count.textContent.replace(/\s*[（(].*$/, '').trim(); attr(count, 'data-wb', short); attr(count, 'data-live', String(/[1-9]/.test(short.replace(/\/\s*\d+/, '')))); };
+ if (rail) { new MutationObserver(() => { nameTasks(); badgeCount(); }).observe(rail, {subtree:true, childList:true, characterData:true}); nameTasks(); badgeCount(); }
  function refresh() {
   const name = (select ? select.selectedOptions[0]?.textContent : root.querySelector('#wfSwitch button.active')?.textContent) || '';
   text(flowChip.querySelector('.acc-flow'), (name || '选择方案').trim());

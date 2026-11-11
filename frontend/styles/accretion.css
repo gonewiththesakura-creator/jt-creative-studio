@@ -456,3 +456,102 @@
  .acc-wb .wb-empty b{font:500 18px/1.4 var(--serif,"Noto Serif SC","Songti SC",serif);letter-spacing:.04em;color:#b9afa2}
  .acc-wb .preview-stage:has(#mediaGallery[hidden]):has(.preview-empty.hidden) .wb-empty{display:grid}
 }
+
+/* Studio v2 stage 6 (2026-11-11): workbench form internals, task head and library tiles.
+   Presentation only. The form still shows one real upload box at a time (the selected slot);
+   the other slots are the same slot buttons drawn as tiles beside it, in slot order. */
+@media(min-width:1100px){
+ .acc.acc-wb .operate-title{display:none}
+ .acc.acc-wb .compact-uploads{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;align-items:stretch;margin:16px 0 0}
+ .acc.acc-wb .compact-uploads::before{grid-column:1/-1;order:-3;margin:0}
+ .acc.acc-wb .compact-media-tabs{grid-column:1/-1;order:-2;margin:0}
+ .acc.acc-wb .compact-uploads>.note{grid-column:1/-1;order:40;margin:0}
+ /* A single media type needs no tab: its count sits beside the label. */
+ .acc.acc-wb .compact-uploads:not(:has(.compact-media-tab:not([hidden])~.compact-media-tab:not([hidden])))::before{grid-column:1}
+ .acc.acc-wb .compact-uploads:not(:has(.compact-media-tab:not([hidden])~.compact-media-tab:not([hidden]))) .compact-media-tabs{grid-column:2;justify-content:flex-end}
+ .acc.acc-wb .compact-uploads:not(:has(.compact-media-tab:not([hidden])~.compact-media-tab:not([hidden]))) .compact-media-tab{height:auto;padding:0;border:0;background:none;color:#857c70;font-size:12px;pointer-events:none}
+ .acc.acc-wb .compact-media-strip{display:contents}
+ .acc.acc-wb .compact-media-strip[hidden]{display:none}
+ .acc.acc-wb .compact-media-slot{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;width:auto;height:auto;min-height:132px;margin:0;padding:12px;border:1.5px dashed rgba(255,236,214,.24);border-radius:14px;background:none;color:#b9afa2;font-size:13px;line-height:1.4;white-space:normal;text-align:center;overflow:hidden;transition:border-color .15s,background .15s}
+ .acc.acc-wb .compact-media-slot:is([hidden],[aria-pressed=true]){display:none}
+ .acc.acc-wb .compact-media-slot:hover,.acc.acc-wb .compact-media-slot:focus-visible{border-color:#ffa95c;background:rgba(255,169,92,.08);color:#f4eee6;outline:0}
+ .acc.acc-wb .compact-media-slot img{position:absolute;inset:0;width:100%;height:100%;max-width:none;max-height:none;object-fit:cover;border-radius:0;opacity:.6}
+ .acc.acc-wb .compact-media-slot:has(img){border-style:solid;border-color:rgba(255,236,214,.14)}
+ .acc.acc-wb .compact-media-slot:has(img) span{position:absolute;left:8px;top:8px;padding:2px 8px;border-radius:6px;background:rgba(0,0,0,.62);color:#fff;font-size:12px}
+ .acc.acc-wb .compact-media-stage{min-width:0;margin:0}
+ .acc.acc-wb .compact-uploads:not(:has(.compact-media-slot:not([hidden],[aria-pressed=true]))) .compact-media-stage{grid-column:1/-1}
+ .acc.acc-wb .compact-media-stage .control{margin:0;padding:0}
+ .acc.acc-wb .compact-media-stage .control-head{display:none}
+ .acc.acc-wb .compact-media-stage .drop{min-height:132px!important}
+ .acc.acc-wb .compact-media-stage .drop small,.acc.acc-wb .compact-media-stage .upload-formats{font-size:11px;line-height:1.5;color:#857c70;text-align:center}
+ .acc.acc-wb .compact-media-stage .upload-status{margin-top:6px;font-size:12px;color:#857c70}
+ .acc.acc-wb .compact-media-stage>.remix-field{margin:0;padding:0}
+ .acc.acc-wb .compact-media-stage>.remix-field>label{display:none}
+ .acc.acc-wb .compact-media-stage .paste-target{font-size:11px;white-space:nowrap;padding:2px 4px}
+ .acc.acc-wb .compact-uploads:has(.compact-media-tab:not([hidden])~.compact-media-tab:not([hidden])) .compact-media-tabs{gap:4px;flex-wrap:nowrap}
+ .acc.acc-wb .compact-uploads:has(.compact-media-tab:not([hidden])~.compact-media-tab:not([hidden])) .compact-media-tab{flex:1 1 0;justify-content:center;padding:0 6px;font-size:12px;white-space:nowrap}
+ .acc.acc-wb .compact-uploads:has(.compact-media-tab:not([hidden])~.compact-media-tab:not([hidden])) .compact-count{margin-left:4px;padding:1px 4px}
+ .acc.acc-wb .upload-retry{min-height:30px;padding:0 12px;border:1px solid rgba(255,236,214,.14);border-radius:8px;background:none;color:#f4eee6;font-size:12px;font-weight:400;box-shadow:none}
+ .acc.acc-wb .upload-retry:hover{border-color:#ffa95c;background:rgba(255,169,92,.08)}
+ .acc.acc-wb .compact-media-slot:nth-child(1){order:1}
+ .acc.acc-wb .compact-uploads:has(.compact-media-slot:nth-child(1)[aria-pressed=true]) .compact-media-stage{order:1}
+ .acc.acc-wb .compact-media-slot:nth-child(2){order:2}
+ .acc.acc-wb .compact-uploads:has(.compact-media-slot:nth-child(2)[aria-pressed=true]) .compact-media-stage{order:2}
+ .acc.acc-wb .compact-media-slot:nth-child(3){order:3}
+ .acc.acc-wb .compact-uploads:has(.compact-media-slot:nth-child(3)[aria-pressed=true]) .compact-media-stage{order:3}
+ .acc.acc-wb .compact-media-slot:nth-child(4){order:4}
+ .acc.acc-wb .compact-uploads:has(.compact-media-slot:nth-child(4)[aria-pressed=true]) .compact-media-stage{order:4}
+ .acc.acc-wb .compact-media-slot:nth-child(5){order:5}
+ .acc.acc-wb .compact-uploads:has(.compact-media-slot:nth-child(5)[aria-pressed=true]) .compact-media-stage{order:5}
+ .acc.acc-wb .compact-media-slot:nth-child(6){order:6}
+ .acc.acc-wb .compact-uploads:has(.compact-media-slot:nth-child(6)[aria-pressed=true]) .compact-media-stage{order:6}
+ .acc.acc-wb .compact-media-slot:nth-child(7){order:7}
+ .acc.acc-wb .compact-uploads:has(.compact-media-slot:nth-child(7)[aria-pressed=true]) .compact-media-stage{order:7}
+ .acc.acc-wb .compact-media-slot:nth-child(8){order:8}
+ .acc.acc-wb .compact-uploads:has(.compact-media-slot:nth-child(8)[aria-pressed=true]) .compact-media-stage{order:8}
+ .acc.acc-wb .compact-media-slot:nth-child(9){order:9}
+ .acc.acc-wb .compact-uploads:has(.compact-media-slot:nth-child(9)[aria-pressed=true]) .compact-media-stage{order:9}
+ .acc.acc-wb .compact-media-slot:nth-child(10){order:10}
+ .acc.acc-wb .compact-uploads:has(.compact-media-slot:nth-child(10)[aria-pressed=true]) .compact-media-stage{order:10}
+ .acc.acc-wb .compact-media-slot:nth-child(11){order:11}
+ .acc.acc-wb .compact-uploads:has(.compact-media-slot:nth-child(11)[aria-pressed=true]) .compact-media-stage{order:11}
+ .acc.acc-wb .compact-media-slot:nth-child(12){order:12}
+ .acc.acc-wb .compact-uploads:has(.compact-media-slot:nth-child(12)[aria-pressed=true]) .compact-media-stage{order:12}
+
+ /* Toggles read as a title with a switch on the right. */
+ .acc.acc-wb .workflow-toggle-button{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:36px;padding:6px 0;border:0;border-radius:0;background:none;box-shadow:none;color:#f4eee6;font-size:13px;font-weight:500;text-align:left;transform:none}
+ .acc.acc-wb .workflow-toggle-button::before{display:none}
+ .acc.acc-wb .workflow-toggle-button::after{content:"";flex:none;width:36px;height:20px;border-radius:20px;background:radial-gradient(circle at 10px 50%,#fff 0 7.5px,transparent 8px),rgba(255,236,214,.14);transition:background .2s}
+ .acc.acc-wb .workflow-toggle-button[aria-pressed=true]{border:0;background:none;box-shadow:none;color:#f4eee6}
+ .acc.acc-wb .workflow-toggle-button[aria-pressed=true]::after{background:radial-gradient(circle at 26px 50%,#fff 0 7.5px,transparent 8px),#ff8438}
+ .acc.acc-wb .workflow-toggle-button:disabled{opacity:.5}
+ .acc.acc-wb .workflow-toggle-button:focus-visible{outline:2px solid #ffa95c;outline-offset:2px;border-radius:6px}
+ .acc.acc-wb .reference-toggle{display:flex;flex-direction:column-reverse;width:100%;margin:14px 0 0;padding:0;border:0;background:none}
+ .acc.acc-wb .reference-toggle .control-help{margin:-2px 0 0;padding-right:52px;font-size:12px;color:#857c70}
+ .acc.acc-wb .operate-controls>.control{margin-top:16px;padding:0;border:0;background:none}
+ .acc.acc-wb .operate-controls>.control>textarea{min-height:120px}
+ /* Task rail head: title, one badge, quiet clear button, all in one row. */
+ .acc.acc-wb .task-panel-head{flex-wrap:nowrap;align-items:center;gap:8px;padding:0 2px 12px;border:0}
+ .acc.acc-wb .task-panel-head b{margin-right:auto;white-space:nowrap}
+ .acc.acc-wb .task-panel-head #taskCount{margin:0;white-space:nowrap}
+ .acc.acc-wb .task-panel-head #taskCount[data-wb]{font-size:0}
+ .acc.acc-wb .task-panel-head #taskCount[data-wb]::after{content:attr(data-wb);display:inline-block;padding:4px 7px;border-radius:99px;background:rgba(255,236,214,.07);color:#b9afa2;font:500 11px/1 var(--mono,ui-monospace,monospace)}
+ .acc.acc-wb .task-panel-head #taskCount[data-wb][data-live=true]::after{background:rgba(255,169,92,.14);color:#ffa95c}
+ .acc.acc-wb .task-panel-head .video-clear{order:3;min-height:0;height:24px;padding:0 6px;border:0;border-radius:6px;background:none;color:#857c70;font-size:12px}
+ .acc.acc-wb .task-panel-head .video-clear:hover{background:rgba(255,236,214,.06);color:#f4eee6}
+ /* History / favourites page: a slim title row and picture tiles. */
+ .acc .library-header{min-height:56px;padding:10px 28px;border-bottom:0}
+ .acc .library-header h2{font-size:16px;font-weight:600;letter-spacing:0}
+ .acc .library-header .close{width:34px;height:34px;border-radius:10px;font-size:18px}
+ .acc .library-scroll{padding:4px 28px 60px}
+ .acc :is(#histList,#favList):has(.history-card){grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px}
+ .acc .library-scroll .history-card{display:flex;flex-direction:column;gap:0;padding:0;border-radius:14px;overflow:hidden;transition:border-color .2s,transform .2s}
+ .acc .library-scroll .history-card:hover{border-color:rgba(255,236,214,.24);transform:translateY(-2px)}
+ .acc .library-scroll .history-card .history-thumbnail{width:100%;height:auto;aspect-ratio:3/4;border-radius:0;background:radial-gradient(120% 90% at 50% 0,rgba(255,236,214,.05),transparent 60%),#15120f;color:#857c70;font-size:12px}
+ .acc .library-scroll .history-card .history-thumbnail :is(img,video){width:100%;height:100%;object-fit:cover}
+ .acc .library-scroll .history-card .history-summary{padding:10px 12px 12px}
+ .acc .library-scroll .history-card .history-summary b{font-size:13px;font-weight:500}
+ .acc .library-scroll .history-card .history-summary .note{font-size:12px;color:#857c70}
+ .acc .library-scroll .history-card .history-summary .dl{width:100%;min-height:30px;margin-top:8px;border-radius:8px;font-size:12px}
+ .acc .library-scroll .history-card .history-details{margin:0;padding:0 12px 10px;font-size:12px;color:#857c70}
+}
