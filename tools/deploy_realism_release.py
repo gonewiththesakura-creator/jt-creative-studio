@@ -2074,6 +2074,10 @@ REVIEWED_VISUAL_SCRIPTS_SHA256 = frozenset({
     # ui/blackhole-low-power (2026-10-23, Codex T261023-141048-f7f7 + follow-up):
     # still black hole on software rendering or under 1 fps.
     "8c2d3015f7af4019e0373da5fbe821aa57534716ab249b8f35166067e41d5845",
+    # ui/studio-v2 stage 3 (03df600, reviewed 2026-11-11): 13 added lines publish the hole's
+    # canvas position on window.jtApp.sceneFrame and a 'jt:scene-frame' event for the
+    # creator banner mirror. No network, storage or business DOM access.
+    "f3dbbfb611a24c996fd2d2e9bfc350519a18d85ea133dabb87f59ec5c57222e7",
 })
 CSS_WHITESPACE = " \t\r\n\f"
 # Functions whose bare-string arguments can load an image; unreadable here.
@@ -2418,6 +2422,43 @@ def reviewed_av1_video_redo_patch(tested_commit, current_head):
         return False
 
 
+REVIEWED_STUDIO_V2_RUNTIME_SHA256 = "0b8466d21a72e88c9682c2ce19b33773e3ac66718c30ed59545a12b12e6d2c4e"
+REVIEWED_STUDIO_V2_FRONTEND_SHA256 = "bb7cf4450aa54129d3f5e8e2f5701e7e3ead4bb79d74583ec871540595a38b27"
+REVIEWED_STUDIO_V2_CHANGED_RUNTIME_FILES = ("server.py", "static/index.html", "static/promptgen.html", "static/video.html")
+
+
+def reviewed_studio_v2_patch(tested_commit, current_head):
+    """Pin the Studio v2 branch at 63c009fba868b1da8db39e253d28fe3476a6599b (owner-approved 2026-11-11).
+
+    Seven commits on top of the last release a826f3a: the Studio v2 presentation
+    layer (stages 1-6, new App Shell and page markup), administrator sign-in by
+    their own login code, the /api/job-prompt read endpoint and prompt excerpt in
+    /api/jobs, and the membership concurrency-slot release for ended-but-unconfirmed
+    jobs. Generation, provider submission and DreamAPI request code are untouched.
+    Offline review only (full pytest: 1215 passed), not evidence of a new paid run.
+    Runtime and frontend payloads are pinned; only the listed runtime files may
+    differ from the tested canary, so any further drift fails closed.
+    """
+    if tested_commit != REVIEWED_AV1_UPLOAD_TESTED_COMMIT:
+        return False
+    try:
+        if git_runtime_payload_sha256(current_head, files=NATIVE_RUNTIME_PAYLOAD_FILES) != REVIEWED_STUDIO_V2_RUNTIME_SHA256:
+            return False
+        frontend = tuple(p for p in RELEASE_RELATIVE_PATHS if p.startswith('static/assets/') or p in ('static/app.html', 'static/app-manifest.json'))
+        if git_runtime_payload_sha256(current_head, files=frontend) != REVIEWED_STUDIO_V2_FRONTEND_SHA256:
+            return False
+        for path in NATIVE_RUNTIME_PAYLOAD_FILES:
+            if path in REVIEWED_STUDIO_V2_CHANGED_RUNTIME_FILES:
+                continue
+            before = subprocess.check_output(['git', 'show', tested_commit + ':' + path], cwd=BASE)
+            after = subprocess.check_output(['git', 'show', current_head + ':' + path], cwd=BASE)
+            if before != after:
+                return False
+        return True
+    except Exception:
+        return False
+
+
 def validate_native_dreamapi_evidence():
     """Require reviewed native-media evidence for the exact current runtime bytes."""
     try:
@@ -2446,7 +2487,8 @@ def validate_native_dreamapi_evidence():
                                 or reviewed_video_queue_patch(commit, current_head)
                                 or reviewed_av1_upload_patch(commit, current_head, current)
                                 or reviewed_video_redo_restore_patch(commit, current_head)
-                                or reviewed_av1_video_redo_patch(commit, current_head))
+                                or reviewed_av1_video_redo_patch(commit, current_head)
+                                or reviewed_studio_v2_patch(commit, current_head))
         if payload != {"format": "framed-v1", "files": list(NATIVE_RUNTIME_PAYLOAD_FILES), "sha256": expected} or not unchanged_generation:
             errors.append("native DreamAPI runtime payload drift")
         if subprocess.run(["git", "merge-base", "--is-ancestor", commit, current_head], cwd=BASE, capture_output=True).returncode:
@@ -2471,6 +2513,7 @@ def validate_native_dreamapi_evidence():
                          or reviewed_video_queue_patch(commit, current_head)
                          or reviewed_video_redo_restore_patch(commit, current_head)
                          or reviewed_av1_video_redo_patch(commit, current_head)
+                         or reviewed_studio_v2_patch(commit, current_head)
                          or visual_only_frontend_change(commit, current_head)))
                     or subprocess.run(["git", "diff", "--quiet", "HEAD", "--", *frontend_files],
                                       cwd=BASE, capture_output=True).returncode):

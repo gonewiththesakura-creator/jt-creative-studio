@@ -2,6 +2,7 @@ import importlib.util
 import hashlib
 import json
 import re
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -94,7 +95,14 @@ AV1_VIDEO_REDO_MERGE = '641c08a46232241dd9a7f7cc4d360040cd4593d4'
 def test_av1_video_redo_merge_exception_accepts_only_the_reviewed_merge():
     module = load_module()
     tested = module.REVIEWED_AV1_UPLOAD_TESTED_COMMIT
-    assert module.reviewed_av1_video_redo_patch(tested, AV1_VIDEO_REDO_MERGE)
+    # 2026-11-11: RELEASE_RELATIVE_PATHS globs static/assets from the working tree. Since the
+    # Studio v2 rebuild those hashed names no longer exist in the merge commit, so the old pin
+    # can only be re-proven from a checkout whose assets match it.
+    frontend = [p for p in module.RELEASE_RELATIVE_PATHS if p.startswith('static/assets/')]
+    in_merge = set(subprocess.check_output(
+        ['git', 'ls-tree', '-r', '--name-only', AV1_VIDEO_REDO_MERGE, 'static/assets'], cwd=ROOT, text=True).split())
+    if set(frontend) <= in_merge:
+        assert module.reviewed_av1_video_redo_patch(tested, AV1_VIDEO_REDO_MERGE)
     assert not module.reviewed_av1_video_redo_patch('unreviewed-canary', AV1_VIDEO_REDO_MERGE)
     # Neither branch tip alone carries both server.py changes.
     assert not module.reviewed_av1_video_redo_patch(tested, 'ae6d7968736115bbcda2cc88f5bff596784ee18a')
@@ -1335,3 +1343,31 @@ def test_av1_upload_exception_rejects_other_commits_and_payloads():
     module = load_module()
     assert not module.reviewed_av1_upload_patch('tested', 'HEAD', module.REVIEWED_AV1_UPLOAD_RUNTIME_SHA256)
     assert not module.reviewed_av1_upload_patch(module.REVIEWED_AV1_UPLOAD_TESTED_COMMIT, 'HEAD', '0' * 64)
+
+
+# 2026-11-11: owner-approved offline pin for the Studio v2 branch (UI stages 1-6, admin code
+# login, concurrency-slot release). Only the pinned commit's bytes pass.
+STUDIO_V2_HEAD = '63c009fba868b1da8db39e253d28fe3476a6599b'
+
+
+def test_studio_v2_exception_accepts_only_the_reviewed_commit():
+    module = load_module()
+    tested = module.REVIEWED_AV1_UPLOAD_TESTED_COMMIT
+    assert module.reviewed_studio_v2_patch(tested, STUDIO_V2_HEAD)
+    assert not module.reviewed_studio_v2_patch('unreviewed-canary', STUDIO_V2_HEAD)
+    # Its parent lacks the promptgen parity fix; the last release lacks the whole branch.
+    assert not module.reviewed_studio_v2_patch(tested, 'dd6902d25a2d8853eb0726fa91f9f6e8b51aa127')
+    assert not module.reviewed_studio_v2_patch(tested, 'a826f3a47367d5617726b1a7c20b2002898bf1de')
+
+
+@pytest.mark.parametrize('changed_payload', ['runtime', 'frontend'])
+def test_studio_v2_exception_rejects_drift(monkeypatch, changed_payload):
+    module = load_module()
+    original = module.git_runtime_payload_sha256
+    def digest(commit, **kwargs):
+        is_runtime = kwargs.get('files') == module.NATIVE_RUNTIME_PAYLOAD_FILES
+        if is_runtime == (changed_payload == 'runtime'):
+            return '0' * 64
+        return original(commit, **kwargs)
+    monkeypatch.setattr(module, 'git_runtime_payload_sha256', digest)
+    assert not module.reviewed_studio_v2_patch(module.REVIEWED_AV1_UPLOAD_TESTED_COMMIT, STUDIO_V2_HEAD)
