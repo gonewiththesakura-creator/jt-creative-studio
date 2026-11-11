@@ -45,7 +45,9 @@ def test_long_queue_keeps_compact_tiles_after_hover_reorder_and_completion(brows
         dimensions = page.locator('[data-group=active] .task-tile').evaluate_all(
             '(tiles)=>tiles.map(e=>{const r=e.getBoundingClientRect();return [r.width,r.height]})')
         assert dimensions
-        assert all(100 <= width < 250 and abs(height - width / 1.6) < 1
+        # 2026-11-10: on wide screens the task rail lists compact rows (thumbnail + name + state);
+        # narrower layouts keep the 16:10 contact-sheet tiles.
+        assert all((100 <= width < 250 and abs(height - width / 1.6) < 1) or (200 <= width <= 290 and 48 <= height <= 72)
                    for width, height in dimensions), dimensions
 
     try:

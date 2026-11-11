@@ -590,6 +590,8 @@ function feed(root, body, {reuse, engineButton}) {
 
 // Image edit and video: their forms are long and mostly uploads, so the dock
 // keeps the whole form in one panel above it, open until the person folds it.
+const WB_MODEL = /^(MiniMax|Wan|SCAIL|Qwen|GPT|Flux|Kling|Seedance|Hunyuan)/i;
+const WB_ICON = {'视频生成':'video', '视频编辑':'edit', '动作迁移':'shuffle', '图片编辑':'image'};
 function workflowPage(root, body, key) {
  const pane = root.querySelector('.creation-pane'), footer = pane.querySelector('.creation-footer');
  body.classList.add('acc', 'acc-workflow');
@@ -608,9 +610,60 @@ function workflowPage(root, body, key) {
   onChange: group => remember(storeKey, group ? 'open' : 'closed')});
  chips.addEventListener('click', event => { if (event.target.closest('.acc-chip')) controls.toggle('panel'); });
  measure(body, pane);
+ // Workbench: one scheme card stands in for the wall of workflow names; the library dialog lists them
+ // as cards grouped by purpose. Picking a card clicks the page's own button / changes its own select.
+ body.classList.add('acc-wb');
+ const safe = value => String(value).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+ const split = name => { const at = name.indexOf(' · '); return at > 0 && WB_MODEL.test(name) ? [name.slice(at + 3).trim(), name.slice(0, at).trim()] : [name.trim(), '']; };
+ const schemes = () => select
+  ? [...select.options].map(option => ({id: option.value, name: option.textContent.trim(), group: option.parentElement.tagName === 'OPTGROUP' ? option.parentElement.label : '图片编辑', active: option.selected, pick: () => fire(select, option.value)}))
+  : [...root.querySelectorAll('#wfSwitch button[data-wf]')].map(button => ({id: button.dataset.wf, name: button.textContent.trim(), group: button.closest('.workflow-section')?.querySelector('.workflow-section-title')?.textContent.trim() || '其他', active: button.classList.contains('active'), pick: () => button.click()}));
+ if (select) { select.classList.add('wb-hide'); if (select.previousElementSibling?.tagName === 'LABEL') select.previousElementSibling.classList.add('wb-hide'); }
+ const schemeCard = el('button', 'wb-scheme', `<span class="wb-art">${icon('layers')}</span><span class="wb-scheme-text"><b></b><small></small></span>${icon('chevron')}`);
+ schemeCard.type = 'button'; schemeCard.setAttribute('aria-haspopup', 'dialog'); schemeCard.setAttribute('aria-label', '更换方案');
+ const schemeWrap = el('div', 'wb-scheme-wrap', '<span class="wb-label">方案</span>');
+ schemeWrap.append(schemeCard);
+ pane.querySelector('.creation-scroll').prepend(schemeWrap);
+ const library = el('div', 'wb-lib');
+ library.hidden = true;
+ body.append(library);
+ let filter = '全部';
+ const drawLibrary = () => {
+  const list = schemes(), groups = ['全部', ...new Set(list.map(item => item.group))];
+  html(library, `<div class="wb-lib-card" role="dialog" aria-modal="true" aria-label="选择方案"><header><div><h2>选择方案</h2><p>按你想做的事来选，模型名在卡片下方</p></div><button type="button" class="acc-icon-button" data-close aria-label="关闭">${icon('x')}</button></header>${
+   groups.length > 2 ? `<nav>${groups.map(name => `<button type="button" class="wb-filter" data-filter="${safe(name)}" aria-pressed="${name === filter}">${safe(name)}</button>`).join('')}</nav>` : ''
+  }<div class="wb-grid">${list.map((item, index) => {
+   if (filter !== '全部' && item.group !== filter) return '';
+   const [title, model] = split(item.name);
+   return `<button type="button" class="wb-card" data-index="${index}" data-pick="${safe(item.id)}" aria-pressed="${item.active}"><span class="wb-art" style="--h:${(index * 47 + 18) % 360}">${icon(WB_ICON[item.group] || 'layers')}</span><b>${safe(title)}</b><span class="wb-tags"><i>${safe(item.group)}</i>${model ? `<i>${safe(model)}</i>` : ''}</span></button>`;
+  }).join('')}</div></div>`);
+ };
+ const closeLibrary = () => { if (!library.hidden) { library.hidden = true; schemeCard.focus(); } };
+ schemeCard.addEventListener('click', () => { filter = '全部'; drawLibrary(); library.hidden = false; library.querySelector('[aria-pressed="true"].wb-card')?.focus(); });
+ library.addEventListener('click', event => {
+  const target = event.target;
+  if (target === library || target.closest('[data-close]')) return closeLibrary();
+  const tab = target.closest('[data-filter]');
+  if (tab) { filter = tab.dataset.filter; return drawLibrary(); }
+  const card = target.closest('.wb-card');
+  if (card) { schemes()[Number(card.dataset.index)]?.pick(); closeLibrary(); }
+ });
+ root.addEventListener('keydown', event => { if (event.key === 'Escape' && !library.hidden) { event.stopPropagation(); closeLibrary(); } }, true);
+ const stage = root.querySelector('.preview-stage');
+ if (stage) stage.append(el('div', 'wb-empty', icon(key === 'video' ? 'video' : 'image') + '<b>结果会显示在这里</b><span>任务完成后自动出现，也可以在右侧点开已完成的任务</span>'));
+ // Task rail rows read "thumbnail + name + state"; the name lives in each card's details popover.
+ const rail = root.querySelector('#taskPanel, .task-panel');
+ const nameTasks = () => rail?.querySelectorAll('.task-card').forEach(card => {
+  const tile = card.querySelector('.task-tile'), name = card.querySelector('.task-name')?.textContent.trim() || '';
+  if (tile) attr(tile, 'data-wb-title', split(name)[0] || '任务');
+ });
+ if (rail) { new MutationObserver(nameTasks).observe(rail, {subtree:true, childList:true}); nameTasks(); }
  function refresh() {
-  const name = select ? select.selectedOptions[0]?.textContent : root.querySelector('#wfSwitch button.active')?.textContent;
+  const name = (select ? select.selectedOptions[0]?.textContent : root.querySelector('#wfSwitch button.active')?.textContent) || '';
   text(flowChip.querySelector('.acc-flow'), (name || '选择方案').trim());
+  const current = schemes().find(item => item.active), [title, model] = split(name || '选择方案');
+  text(schemeCard.querySelector('b'), title);
+  text(schemeCard.querySelector('small'), [model, current?.group].filter(Boolean).join(' · ') || '点击选择');
  }
  root.addEventListener('change', refresh);
  root.addEventListener('click', () => requestAnimationFrame(refresh));
@@ -679,4 +732,5 @@ addEventListener('jt:route', event => {
  shellTools();
  const creatorPage = event.detail.path === '/';
  for (const id of ['shellSrc', 'shellRun']) { const node = document.getElementById(id); if (node) node.classList.toggle('shell-off', !creatorPage); }
+ document.body.classList.toggle('wb-route', !creatorPage);
 });

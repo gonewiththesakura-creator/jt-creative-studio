@@ -38,7 +38,7 @@ def test_remix_controls_upload_queue_and_redo(browser,tmp_path,width):
         token='restored-token-1', valid=True, expired=False)})))
     try:
         page.goto('http://fixture.test/video');host=current(page)
-        host.locator('button[data-wf=h3_remix_full]').click()
+        host.locator('.wb-scheme').click();host.locator('.wb-card[data-pick=h3_remix_full]').click()
         expect(host.locator('#param_second_pass')).to_be_checked()
         expect(host.locator('#param_face_refine')).to_be_checked()
         expect(host.locator('.remix-group')).to_have_count(10)
@@ -58,9 +58,9 @@ def test_remix_controls_upload_queue_and_redo(browser,tmp_path,width):
         host.locator('#param_lora_2_strength').fill('0.3')
         host.locator('#param_lora_2_strength').dispatch_event('change')
         # A round-trip to another workflow must retain switches and selected media.
-        host.locator('button[data-wf=h3_edit_n]').click()
+        host.locator('.wb-scheme').click();host.locator('.wb-card[data-pick=h3_edit_n]').click()
         host.locator('#param_duration').fill('8');host.locator('#param_duration').dispatch_event('change')
-        host.locator('button[data-wf=h3_remix_full]').click()
+        host.locator('.wb-scheme').click();host.locator('.wb-card[data-pick=h3_remix_full]').click()
         expect(host.locator('#param_second_pass')).not_to_be_checked()
         expect(host.locator('#param_mode')).to_have_value('image')
         expect(host.locator('[data-media-key=reference_image] .fn')).to_contain_text('已上传')
@@ -92,7 +92,7 @@ def test_remix_controls_upload_queue_and_redo(browser,tmp_path,width):
         assert submitted[-1]['params']==payload['params']
         assert submitted[-1]['media']=={'reference_image':'restored-token-1'}
         assert not errors
-        host.locator('button[data-wf=h3_remix_full]').click()
+        host.locator('.wb-scheme').click();host.locator('.wb-card[data-pick=h3_remix_full]').click()
         host.locator('.remix-group[data-group="基本设置"]').scroll_into_view_if_needed()
         page.screenshot(path=str(tmp_path/f'remix-{width}.png'))
     finally:page.close()

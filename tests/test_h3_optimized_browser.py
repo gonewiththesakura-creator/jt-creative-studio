@@ -37,7 +37,7 @@ def test_optimized_upload_controls_queue_and_redo(browser,tmp_path,width):
         token='restored-token-1', valid=True, expired=False)})))
     try:
         page.goto('http://fixture.test/video');host=current(page)
-        host.locator('button[data-wf=h3_reference_optimized]').click()
+        host.locator('.wb-scheme').click();host.locator('.wb-card[data-pick=h3_reference_optimized]').click()
         expect(host.locator('.drop:visible')).to_have_count(1)
         expect(host.locator('#wfForm input[type=checkbox]:visible')).to_have_count(0)
         expect(host.locator('.compact-media-tab[data-media-type=image] .compact-count')).to_have_text('0 / 9')
@@ -59,8 +59,8 @@ def test_optimized_upload_controls_queue_and_redo(browser,tmp_path,width):
         host.locator('.remix-group[data-group="LoRA 设置"] > summary').click()
         host.locator('[data-toggle-for=param_lora_1_enabled]').click()
         host.locator('#param_lora_2_strength').fill('0.3');host.locator('#param_lora_2_strength').dispatch_event('change')
-        host.locator('button[data-wf=h3_edit_n]').click()
-        host.locator('button[data-wf=h3_reference_optimized]').click()
+        host.locator('.wb-scheme').click();host.locator('.wb-card[data-pick=h3_edit_n]').click()
+        host.locator('.wb-scheme').click();host.locator('.wb-card[data-pick=h3_reference_optimized]').click()
         expect(host.locator('#param_second_pass')).to_be_checked()
         expect(host.locator('#param_second_scale')).to_have_value('2')
         expect(host.locator('[data-media-key=reference_image] .fn')).to_contain_text('已上传')
@@ -87,7 +87,7 @@ def test_optimized_upload_controls_queue_and_redo(browser,tmp_path,width):
         assert len(submitted)==2 and 'redo_job_id' not in submitted[-1]
         assert submitted[-1]['params']==payload['params']
         assert submitted[-1]['media']=={'reference_image':'restored-token-1'}
-        host.locator('button[data-wf=h3_reference_optimized]').click()
+        host.locator('.wb-scheme').click();host.locator('.wb-card[data-pick=h3_reference_optimized]').click()
         host.locator('.compact-uploads').screenshot(path=str(tmp_path/f'uploads-{width}.png'))
         host.locator('.remix-group[data-group="基本设置"]').scroll_into_view_if_needed()
         page.screenshot(path=str(tmp_path/f'optimized-{width}.png'))

@@ -40,8 +40,10 @@ def test_accepted_submission_waits_in_grid_until_queue_recovers(browser, tmp_pat
         assert card.evaluate('(e)=>e.parentElement.classList.contains("task-grid")')
         assert card.evaluate('(e)=>e.closest("[data-group]").dataset.group') == 'active'
         dimensions = card.bounding_box()
-        assert dimensions and dimensions['width'] < 250, dimensions
-        assert abs(dimensions['height'] - dimensions['width'] / 1.6) < 1, dimensions
+        # 2026-11-10: on wide screens the task rail lists compact rows; narrower layouts keep 16:10 tiles.
+        assert dimensions and dimensions['width'] < 290, dimensions
+        assert (abs(dimensions['height'] - dimensions['width'] / 1.6) < 1
+                or (dimensions['width'] >= 200 and 48 <= dimensions['height'] <= 72)), dimensions
         expect(card.locator('.task-badge')).to_have_text(re.compile('排队|同步|等待|提交'))
         # No revision or confirmed state exists until the snapshot arrives.
         assert card.locator('.queue-actions').evaluate(

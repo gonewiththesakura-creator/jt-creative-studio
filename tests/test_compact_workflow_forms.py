@@ -41,7 +41,7 @@ def paste(drop):
 def test_video_progressive_slots_buttons_and_restore(browser,tmp_path,width):
     page=browser.new_page(viewport={'width':width,'height':1000},reduced_motion='reduce');errors,uploads,submitted=setup(page)
     try:
-        page.goto('http://fixture.test/video');host=current(page);host.locator('button[data-wf=h3_remix_full]').click()
+        page.goto('http://fixture.test/video');host=current(page);host.locator('.wb-scheme').click();host.locator('.wb-card[data-pick=h3_remix_full]').click()
         expect(host.locator('.drop:visible')).to_have_count(1)
         expect(host.locator('.compact-media-tab[data-media-type=image] .compact-count')).to_have_text('0 / 9')
         expect(host.locator('#param_prompt_optimizer_enabled')).to_have_count(0)
@@ -86,8 +86,8 @@ def test_video_progressive_slots_buttons_and_restore(browser,tmp_path,width):
         expect(host.locator('#genStatus')).to_contain_text('已提交')
         assert submitted[0]['media']=={'reference_image':'token-3','reference_image_2':'token-2'}
         assert submitted[0]['params']['face_refine'] is False
-        host.locator('button[data-wf=h3_edit_n]').click();expect(host.locator('.drop:visible')).to_have_count(1)
-        host.locator('button[data-wf=h3_remix_full]').click()
+        host.locator('.wb-scheme').click();host.locator('.wb-card[data-pick=h3_edit_n]').click();expect(host.locator('.drop:visible')).to_have_count(1)
+        host.locator('.wb-scheme').click();host.locator('.wb-card[data-pick=h3_remix_full]').click()
         expect(host.locator('.compact-media-tab[data-media-type=image] .compact-count')).to_have_text('2 / 2')
         expect(host.locator('[data-toggle-for=param_face_refine]')).to_have_attribute('aria-pressed','false')
         host.locator('.compact-uploads').scroll_into_view_if_needed();page.screenshot(path=str(tmp_path/f'compact-video-{width}.png'))
@@ -135,12 +135,12 @@ def test_all_catalog_workflows_start_with_at_most_one_upload(browser):
     try:
         page.goto('http://fixture.test/video');host=current(page)
         for workflow in [w for w in WORKFLOWS if w.get('kind')=='video']:
-            host.locator('button[data-wf="'+workflow['id']+'"]').click()
+            host.locator('.wb-scheme').click();host.locator('.wb-card[data-pick="'+workflow['id']+'"]').click()
             expect(host.locator('.drop:visible')).to_have_count(1 if workflow.get('rh_media') else 0)
             expect(host.locator('#wfForm input[type=checkbox]:visible')).to_have_count(0)
         page.goto('http://fixture.test/realism');host=current(page)
         for workflow in [w for w in WORKFLOWS if w.get('kind') in ('ai_app','rh_workflow')]:
-            host.locator('#workflowSelect').select_option(workflow['id'])
+            host.locator('.wb-scheme').click();host.locator('.wb-card[data-pick="'+workflow['id']+'"]').click()
             expect(host.locator('.drop:visible')).to_have_count(1 if workflow.get('rh_media') else 0)
             expect(host.locator('.creation-scroll input[type=checkbox]:visible')).to_have_count(0)
         assert not errors
@@ -161,7 +161,7 @@ def test_failed_upload_stays_visible_until_successful_retry(browser,route,first,
     page.route('**/api/upload-finish',finish)
     try:
         page.goto('http://fixture.test/'+route);host=current(page)
-        if route=='video':host.locator('button[data-wf=h3_remix_full]').click()
+        if route=='video':host.locator('.wb-scheme').click();host.locator('.wb-card[data-pick=h3_remix_full]').click()
         drop=host.locator('.drop[data-media-key='+first+']');paste(drop)
         button=host.get_by_role('button',name=retry,exact=True)
         expect(button).to_be_visible()
@@ -179,7 +179,7 @@ def test_independent_face_reference_does_not_require_filling_nine_optional_slots
     page=browser.new_page(reduced_motion='reduce');errors,uploads,_=setup(page)
     try:
         page.goto('http://fixture.test/video');host=current(page)
-        host.locator('button[data-wf=h3_remix_full]').click()
+        host.locator('.wb-scheme').click();host.locator('.wb-card[data-pick=h3_remix_full]').click()
         host.locator('.remix-group[data-group="人脸精修设置"] > summary').click()
         host.locator('[data-toggle-for=param_use_face_reference]').click()
         host.locator('.compact-media-slot[data-slot=face_reference]').click()

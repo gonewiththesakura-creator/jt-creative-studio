@@ -1,6 +1,6 @@
 import {accountFetch,configureAccountRequests} from "/static/assets/api.1e898baa005a.js";
 import {setStorageAccount} from "/static/assets/account-storage.0c5081b9ad66.js";
-import {initializeMembershipAdmin} from "/static/assets/membership-admin.abf0e0dba296.js";
+import {initializeMembershipAdmin} from "/static/assets/membership-admin.0f4a9cf5e0cb.js";
 import {showLoginScene,markLoginTransition,consumeLoginTransition,prepareLoginEntry,revealWorkbenchImmediately} from "/static/assets/login-scene.659131d536e8.js";
 
 const template=`<section class="account-gate" id="accountGate" aria-labelledby="accountGateTitle">
@@ -65,7 +65,7 @@ export async function initializeAccount(){
    else{revealWorkbenchImmediately();el('accountGate').hidden=true;shell.hidden=false;shell.inert=false}
    // The same account signed back in: keep unsubmitted drafts and refetch the private images cleared on expiry.
    if(restoreMedia)window.dispatchEvent(new CustomEvent('jt:media-restore'));
-   if(data.user.is_admin&&!adminUI)adminUI=initializeMembershipAdmin({verify:login});
+   if(data.user.is_admin&&!adminUI)adminUI=initializeMembershipAdmin({verify:login,codeLogin:data.login_method==='access_code'});
    if(adminUI)adminUI.setVerification(data.admin_verification_required===true,data.admin_verification_expires_at,!!data.user.is_admin);
    const returnTo=new URL(location.href),adminTab=returnTo.searchParams.get('admin');
    if(returnTo.searchParams.has('admin')){returnTo.searchParams.delete('admin');history.replaceState(history.state,'',returnTo.pathname+returnTo.search+returnTo.hash);if(data.user.is_admin&&adminTabs.has(adminTab))adminUI.open(adminTab)}

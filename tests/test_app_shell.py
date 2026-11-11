@@ -163,7 +163,8 @@ def test_keep_alive_navigation_and_back_forward(browser,width):
         current(page).locator('.acc-chip[data-group=params]').click()
         current(page).locator('#genSeed').fill('123456')
         page.locator('body > .app-shell > .topbar a[href="/realism"]').click()
-        expect(current(page).locator('#workflowSelect')).to_be_visible()
+        # 2026-11-10: the scheme card stands in for the select, which stays in the page but is no longer drawn.
+        expect(current(page).locator('.wb-scheme')).to_be_visible()
         # DOM state, including custom properties and file objects, must retain identity.
         current(page).evaluate('(host)=>host.shadowRoot.querySelector("#workflowSelect").dataset.kept="realism"')
         page.locator('body > .app-shell > .topbar a[href="/video"]').click()
