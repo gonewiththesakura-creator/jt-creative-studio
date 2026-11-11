@@ -4720,12 +4720,25 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 j["selection_snapshot"] = public_job_selection_snapshot(src.get("selection_snapshot"))
                 j["redoable"] = video_redoable(src)
             self._send(200, json.dumps(j, ensure_ascii=False).encode())
+        elif path.startswith("/api/job-prompt/"):
+            # Owner-only full prompt for the result stream's 复用 action; the
+            # list endpoint only carries a short excerpt.
+            if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
+            jid = path.split("/api/job-prompt/", 1)[1]
+            with _lock_jobs:
+                src = _jobs.get(jid)
+                session_id, _ = self._upload_session(create=False)
+                if not src or not session_owns_record(session_id, src):
+                    return self._send(404, b'{"error":"job not found"}')
+                body = {"id": jid, "prompt": str(src.get("prompt") or ""), "prompt_mode": src.get("prompt_mode")}
+            self._send(200, json.dumps(body, ensure_ascii=False).encode(),
+                       headers={"Cache-Control": "private, no-store", "Vary": "Cookie"})
         elif path == "/api/jobs":
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
             with _lock_jobs:
-                # Lightweight copies: prompts can be many KB and are not used by
-                # history/status UI. Omitting them cuts /api/jobs from ~60KB to
-                # a few KB and prevents slow mobile polling/timeouts.
+                # Lightweight copies: full prompts can be many KB, so the list
+                # carries only a short excerpt (240 characters); the full
+                # text is fetched on demand from /api/job-prompt/<id>.
                 items = []
                 query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
                 scope = (query.get("scope") or [None])[0]
@@ -4770,6 +4783,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     j["error"] = public_job_error(src)
                     j["media"] = public_job_media(src.get("media"))
                     j["selection_snapshot"] = public_job_selection_snapshot(src.get("selection_snapshot"))
+                    prompt_text = str(src.get("prompt") or "")
+                    j["prompt_excerpt"] = prompt_text[:240]
+                    j["prompt_truncated"] = len(prompt_text) > 240
                     if scope in ('video', 'realism'):
                         j['thumbnails'] = public_video_thumbnails(src)
                     items.append(j)

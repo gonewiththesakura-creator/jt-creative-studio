@@ -342,6 +342,10 @@ function addResult(j,container){
  img.alt='生成结果';img.decoding='async';img.hidden=true;status.setAttribute('aria-live','polite');
  download.target='_blank';download.rel='noopener noreferrer';download.textContent='⬇ 下载原图';
  viewport.append(img,status);actions.append(fav,download);main.append(meta,viewport,actions);strip.append(prev,thumbs,next);gallery.append(main,strip);container.append(gallery);
+ // Load images only once the gallery is on screen: a hidden result panel (the shell's
+ // creator shows results in its own stream) must not fetch previews nobody sees.
+ container._galleryWatch?.disconnect();let onScreen=!('IntersectionObserver'in window);const waiting=[];const whenShown=load=>onScreen?load():waiting.push(load);
+ if(!onScreen){const watch=new IntersectionObserver(entries=>{if(!entries.some(entry=>entry.isIntersecting))return;watch.disconnect();onScreen=true;waiting.splice(0).forEach(load=>load())});container._galleryWatch=watch;watch.observe(gallery)}
  const ui=backendUi(j.generation_backend),seedText=j.seed_supported===false?'Seed：不适用':'种子：'+(j.seed??j.sequence_seed??'未知');
  const requested=j.generation_backend==='api'?('比例 '+(j.api_ratio||'未知')+' · 请求质量 '+(j.api_quality||'未知')):'';
  const actual=j.generation_backend==='api'?('上游实际 '+[j.api_upstream_model,j.api_upstream_quality,j.api_upstream_size].filter(Boolean).join(' · ')):'';
@@ -352,11 +356,11 @@ function addResult(j,container){
   meta.textContent=[im.stage_label||('结果 '+(selected+1)),ui.label,creatorCoinText(j),seedText,requested,actual].filter(Boolean).join(' · ');
   download.href=im.url;img.alt='结果 '+(selected+1);img.hidden=true;updateFavorite();
   [...thumbs.children].forEach((button,i)=>{button.classList.toggle('active',i===selected);button.setAttribute('aria-pressed',String(i===selected))});
-  galleryImageLoader.bind(img,im.preview_url||im.url,{priority:100,onState:state=>{
+  whenShown(()=>{if(renderVersion!==version)return;galleryImageLoader.bind(img,im.preview_url||im.url,{priority:100,onState:state=>{
    if(renderVersion!==version)return;
    const ready=state==='ready';img.hidden=!ready;status.hidden=ready;status.disabled=state!=='error';viewport.setAttribute('aria-busy',String(state==='loading'||state==='retrying'));
    status.textContent=state==='error'?'图片暂未加载，点击重试':state==='retrying'?'正在重试加载图片…':'正在加载图片…';
-  }}).catch(()=>{});
+  }}).catch(()=>{})});
  };
  status.onclick=()=>show(selected);
  fav.onclick=async()=>{
@@ -372,7 +376,7 @@ function addResult(j,container){
   const loadThumbnail=()=>galleryImageLoader.bind(thumb,im.thumb_url||im.preview_url||im.url,{priority:0,onState:state=>{
    thumb.hidden=state!=='ready';label.hidden=state==='ready';label.textContent=state==='error'?'重试':state==='retrying'?'重试中':String(index+1);button.dataset.thumbnailState=state;
   }}).catch(()=>{});
-  button.addEventListener('click',()=>{if(button.dataset.thumbnailState==='error')loadThumbnail()});loadThumbnail();
+  button.addEventListener('click',()=>{if(button.dataset.thumbnailState==='error')loadThumbnail()});whenShown(loadThumbnail);
  });
  prev.onclick=()=>show(selected-1);next.onclick=()=>show(selected+1);prev.disabled=next.disabled=images.length<2;show(0);
 }

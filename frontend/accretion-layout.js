@@ -4,6 +4,7 @@
 // code keeps its own elements, ids and handlers. Values change only through the
 // same input/change events a person would fire, or a click on an existing button.
 import {accountFetch} from './api.js';
+import {addFavorite, fetchPrompt, sendImageTo, toast} from './media-actions.js';
 
 const PATHS = {
  shuffle:'<path d="M4 7h3.2c4.3 0 5.3 10 9.6 10H20"/><path d="M4 17h3.2c1.6 0 2.7-1.4 3.6-3.2M13.2 10.2C14.1 8.4 15.2 7 16.8 7H20"/><path d="m17.5 4.5 2.5 2.5-2.5 2.5M17.5 14.5l2.5 2.5-2.5 2.5"/>',
@@ -26,6 +27,9 @@ const PATHS = {
  unlock:'<rect x="5.5" y="10.5" width="13" height="9" rx="2"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 6.8-1.2"/>',
  search:'<circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5"/>',
  image:'<rect x="4" y="5" width="16" height="14" rx="2.5"/><circle cx="9.5" cy="10" r="1.6"/><path d="m4.5 17 4.5-4.5 3.5 3.5 2.5-2.5 4.5 4.5"/>',
+ heart:'<path d="M12 19.5s-7-4.3-7-9.3A3.9 3.9 0 0 1 12 8a3.9 3.9 0 0 1 7 2.2c0 5-7 9.3-7 9.3Z"/>',
+ edit:'<path d="m4.5 19.5 4-1 10-10a2.1 2.1 0 0 0-3-3l-10 10-1 4Z"/><path d="m13.5 7 3 3"/>',
+ video:'<rect x="3.5" y="6" width="12" height="12" rx="2.5"/><path d="m15.5 10.5 5-2.5v8l-5-2.5"/>',
  clock:'<circle cx="12" cy="12" r="8"/><path d="M12 7.5V12l3 2"/>',
 };
 const icon = name => `<svg class="acc-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${PATHS[name]}</svg>`;
@@ -409,14 +413,39 @@ function creator(root, body) {
  }
 }
 
-// The creator's result stream: recent batches from the history the page already reads
-// (/api/jobs?scope=creator: the latest 12 jobs, no prompt text), newest first, filtered by channel.
+// The banner's hole is a live window onto the real background black hole: after
+// each scene frame (jt:scene-frame) copy the region around the hole into the
+// banner canvas. Until a frame arrives (or with WebGL off) the CSS hole shows.
+function mirrorHole(root, holeBox) {
+ const live = holeBox.querySelector('.acc-hole-live'), ctx = live.getContext('2d');
+ let seen = true;
+ new IntersectionObserver(entries => { seen = entries.some(entry => entry.isIntersecting); }).observe(holeBox);
+ const draw = () => {
+  const frame = window.jtApp?.sceneFrame;
+  if (!frame || !seen || root.host?.hidden) return;
+  const rect = holeBox.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
+  const ratio = Math.min(2, devicePixelRatio || 1), w = Math.round(rect.width * ratio), h = Math.round(rect.height * ratio);
+  if (live.width !== w || live.height !== h) { live.width = w; live.height = h; }
+  const W = frame.canvas.width, H = frame.canvas.height;
+  if (!W || !H) return;
+  // The hole's shadow takes about a third of the banner window's height.
+  const sh = Math.max(8, frame.r * H * 6), sw = sh * w / h;
+  try { ctx.drawImage(frame.canvas, frame.u * W - sw / 2, frame.v * H - sh / 2, sw, sh, 0, 0, w, h); holeBox.classList.add('live'); } catch {}
+ };
+ addEventListener('jt:scene-frame', draw);
+ addEventListener('jt:route', () => requestAnimationFrame(draw));
+}
+
+// The creator's result stream: recent batches from /api/jobs?scope=creator (the
+// latest 12 jobs with a prompt excerpt), newest first, filtered by channel.
 function feed(root, body, {reuse, engineButton}) {
  const $ = id => root.getElementById(id);
  const box = el('div', 'acc-feed');
- box.innerHTML = `<section class="acc-feed-hero"><div><p class="acc-eyebrow">SINGULARITY · 文生图</p><h2>向内坠落，向外成像。</h2><p>选好画风和人物，写下一个画面。它先坠入视界，再从光环里升起。</p></div><div class="acc-hole" aria-hidden="true"><i class="disk"></i><i class="lens"></i><i class="core"></i></div></section><div class="acc-groups" aria-live="polite"></div>`;
+ box.innerHTML = `<section class="acc-feed-hero"><div><p class="acc-eyebrow">SINGULARITY · 文生图</p><h2>向内坠落，向外成像。</h2><p>选好画风和人物，写下一个画面。它先坠入视界，再从光环里升起。</p></div><div class="acc-hole" aria-hidden="true"><i class="disk"></i><i class="lens"></i><i class="core"></i><canvas class="acc-hole-live"></canvas></div></section><div class="acc-groups" aria-live="polite"></div>`;
  root.querySelector('.preview-stage').append(box);
  const groupsBox = box.querySelector('.acc-groups');
+ mirrorHole(root, box.querySelector('.acc-hole'));
  const viewer = el('div', 'acc-viewer');
  viewer.hidden = true;
  viewer.innerHTML = `<img alt=""><div class="acc-viewer-bar"><a class="acc-shot-btn" download title="下载原文件">${icon('download')}<span>下载</span></a><button type="button" class="acc-shot-btn" data-close>${icon('x')}<span>关闭</span></button></div>`;
@@ -461,7 +490,11 @@ function feed(root, body, {reuse, engineButton}) {
   const ratio = job.width && job.height ? `aspect-ratio:${job.width}/${job.height}` : '';
   const full = image.url || image.preview_url, src = image.preview_url || image.url;
   return `<figure class="acc-shot" data-open="${esc(src)}" data-full="${esc(full)}" tabindex="0"><img class="acc-art" loading="lazy" decoding="async" alt="${esc(image.stage_label || '结果 ' + (index + 1))}" src="${esc(src)}">`
-   + `<div class="acc-shot-bar"><a class="acc-shot-btn icon" href="${esc(full)}" download title="下载原文件" aria-label="下载原文件">${icon('download')}</a><span class="acc-grow"></span><button type="button" class="acc-shot-btn icon" data-open="${esc(src)}" data-full="${esc(full)}" title="放大查看" aria-label="放大查看">${icon('expand')}</button></div></figure>`;
+   + `<div class="acc-shot-bar"><a class="acc-shot-btn icon" href="${esc(full)}" download title="下载原文件" aria-label="下载原文件">${icon('download')}</a>`
+   + (job.id ? `<button type="button" class="acc-shot-btn icon" data-fav="${esc(job.id)}" data-index="${index}" title="收藏" aria-label="收藏">${icon('heart')}</button>`
+     + `<button type="button" class="acc-shot-btn icon" data-send="/realism" data-full="${esc(full)}" data-src="${esc(src)}" title="送去图片编辑" aria-label="送去图片编辑">${icon('edit')}</button>`
+     + `<button type="button" class="acc-shot-btn icon" data-send="/video" data-full="${esc(full)}" data-src="${esc(src)}" title="生成视频" aria-label="生成视频">${icon('video')}</button>` : '')
+   + `<span class="acc-grow"></span><button type="button" class="acc-shot-btn icon" data-open="${esc(src)}" data-full="${esc(full)}" title="放大查看" aria-label="放大查看">${icon('expand')}</button></div></figure>`;
  }
  function pendingShot(ratio, pct, note) {
   return `<div class="acc-shot pending" style="${ratio}"><div class="acc-prog"><b>${pct > 0 ? Math.round(pct) + '%' : '排队中'}</b><div class="acc-bar"><i style="width:${Math.max(0, Math.min(100, pct || 0))}%"></i></div>${note ? `<small>${esc(note)}</small>` : ''}</div></div>`;
@@ -473,7 +506,7 @@ function feed(root, body, {reuse, engineButton}) {
    + `<span class="acc-tag acc-tag-acc">${esc(styleName(job.style_id))}${variant}</span>${dims ? `<span class="acc-tag acc-mono">${dims}</span>` : ''}`
    + `<span class="acc-tag">${icon(ENGINE_ICON[engine])}${ENGINE_NAME[engine]}</span><span class="acc-grow"></span>`
    + (job.id ? `<button type="button" class="acc-ghost" data-reuse="${esc(job.id)}">${icon('refresh')}复用参数</button>` : '')
-   + (prompt ? `<button type="button" class="acc-ghost" data-copy="${esc(job.id)}">${icon('copy')}复制提示词</button>` : '')
+   + (prompt && job.id ? `<button type="button" class="acc-ghost" data-copy="${esc(job.id)}">${icon('copy')}复制提示词</button>` : '')
    + `</div>${prompt ? `<p class="acc-group-prompt">${esc(prompt)}</p>` : ''}<div class="acc-grid">${items}</div></section>`;
  }
  function render() {
@@ -510,7 +543,7 @@ function feed(root, body, {reuse, engineButton}) {
     if (!images.length) continue;
     items = images.map((image, i) => shot(job, image, i)).join('');
    }
-   parts.push(group(job, engine, items, prompts[job.id] || ''));
+   parts.push(group(job, engine, items, prompts[job.id] || job.prompt_excerpt || ''));
   }
   html(groupsBox, parts.join('') || `<div class="acc-emptybox">${icon('image')}<h3>${source === 'all' ? '还没有作品' : '这个通道还没有作品'}</h3><p>${source === 'all' ? '在下方输入台选好画风和人物后生成，结果会出现在这里。' : `在下方输入台选择「${ENGINE_NAME[source]}」通道后生成，结果会出现在这里。`}</p></div>`);
   const running = sorted.filter(job => !FINISHED.has(String(job.status))).length || Object.values(state).filter(Boolean).length;
@@ -519,12 +552,28 @@ function feed(root, body, {reuse, engineButton}) {
   schedule();
  }
  box.addEventListener('click', event => {
-  const target = event.target.closest('[data-open],[data-reuse],[data-copy],[data-retry]');
+  const target = event.target.closest('[data-open],[data-reuse],[data-copy],[data-retry],[data-fav],[data-send]');
   if (!target || event.target.closest('a[download]')) return;
   const find = id => jobs.find(job => String(job.id) === id);
-  if (target.dataset.reuse) { const job = find(target.dataset.reuse); if (job) reuse(job, prompts[job.id]); }
-  else if (target.dataset.copy) { const prompt = prompts[target.dataset.copy]; if (prompt) navigator.clipboard?.writeText(prompt).then(() => { target.dataset.done = '1'; setTimeout(() => delete target.dataset.done, 1200); }, () => {}); }
-  else if (target.dataset.retry) { const job = find(target.dataset.retry); if (job) { reuse(job, prompts[job.id]); requestAnimationFrame(() => engineButton(backendOf(job))?.click()); } }
+  // Full prompt: what this page sent, else the server's owner-only copy.
+  const fullPrompt = async job => prompts[job.id] || (job.prompt_truncated === false ? job.prompt_excerpt || '' : await fetchPrompt(job.id).catch(() => job.prompt_excerpt || ''));
+  if (target.dataset.reuse) { const job = find(target.dataset.reuse); if (job) fullPrompt(job).then(prompt => reuse(job, prompt)); }
+  else if (target.dataset.copy) { const job = find(target.dataset.copy); if (job) fullPrompt(job).then(prompt => prompt && navigator.clipboard?.writeText(prompt)).then(() => { target.dataset.done = '1'; setTimeout(() => delete target.dataset.done, 1200); }, () => {}); }
+  else if (target.dataset.retry) { const job = find(target.dataset.retry); if (job) fullPrompt(job).then(prompt => { reuse(job, prompt); requestAnimationFrame(() => engineButton(backendOf(job))?.click()); }); }
+  else if (target.dataset.fav) {
+   if (target.dataset.state === 'saving' || target.dataset.state === 'saved') return;
+   target.dataset.state = 'saving';
+   addFavorite(target.dataset.fav, Number(target.dataset.index) || 0)
+    .then(() => { target.dataset.state = 'saved'; target.title = '已收藏'; toast('已收藏，可在「收藏」页查看'); },
+          error => { delete target.dataset.state; toast(error.message, true); });
+  }
+  else if (target.dataset.send) {
+   if (target.dataset.state === 'saving') return;
+   target.dataset.state = 'saving';
+   sendImageTo(target.dataset.send, {url: target.dataset.full, preview: target.dataset.src})
+    .then(() => toast(target.dataset.send === '/video' ? '图片已放进视频页的图片输入' : '图片已放进图片编辑的输入'), error => toast(error.message, true))
+    .finally(() => delete target.dataset.state);
+  }
   else if (target.dataset.open) { const img = viewer.querySelector('img'); img.src = target.dataset.open; viewer.querySelector('a').href = target.dataset.full || target.dataset.open; viewer.hidden = false; viewer.querySelector('[data-close]').focus(); }
  });
  box.addEventListener('keydown', event => { if (event.key === 'Enter' && event.target.matches('.acc-shot[data-open]')) event.target.click(); });

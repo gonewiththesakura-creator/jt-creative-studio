@@ -191,6 +191,18 @@ async function startScene() {
       uniforms.focal.value=(width<=820?.67:1.35)*settings.zoom;
       draw();
     }
+    // Where the hole sits on the canvas (u,v from the top-left, r = shadow
+    // radius as a fraction of canvas height), published right after a frame is
+    // drawn so page mirrors (the creator banner) can copy that region while the
+    // drawing buffer is still valid.
+    function publishFrame() {
+      if(!window.jtApp)return;
+      const res=uniforms.resolution.value,c=uniforms.centerOffset.value,zoom=displayUniforms.zoom.value,ce=displayUniforms.center.value;
+      const su=.5+c.x*res.y/res.x,sv=.5+c.y,dist=uniforms.cameraPositionBH.value.length(),b=2.598*uniforms.mass.value;
+      const r=uniforms.focal.value*b/Math.sqrt(Math.max(1e-6,dist*dist-b*b));
+      window.jtApp.sceneFrame={canvas,u:ce.x+(su-ce.x)*zoom,v:1-(ce.y+(sv-ce.y)*zoom),r:r*zoom,at:performance.now()};
+      dispatchEvent(new Event('jt:scene-frame'));
+    }
     function render(now) {
       frameId=0;
       if (!available || document.hidden || entryActive) return;
@@ -216,6 +228,7 @@ async function startScene() {
       const before=performance.now();
       try {composer.render();displayUniforms.image.value=composer.readBuffer.texture;display();hasFrame=true;} catch(error) { fallback(error); return; }
       if (!available) return;
+      publishFrame();
       if(window.jtApp){window.jtApp.metrics.frames=(window.jtApp.metrics.frames||0)+1;window.jtApp.metrics.sim=sim;window.jtApp.metrics.energy=energy;window.jtApp.metrics.pixelBudget=budget;}
       // GPU commands are asynchronous: CPU submission time alone misses a slow
       // compositor. Also observe consecutive active frame intervals.
