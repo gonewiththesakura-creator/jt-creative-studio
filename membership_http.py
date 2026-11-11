@@ -214,7 +214,7 @@ class MembershipGateway:
             raise MembershipError('invalid_input', '请求字段不正确')
         try:
             user = self.store.authenticate_access_code(body.get('code'))
-            session = self.store.create_session(user['id'], access_credential_id=user['access_credential_id'])
+            session = self.store.create_session(user['id'], access_credential_id=user['access_credential_id'], code_admin=True)
         except MembershipError:
             raise MembershipError('invalid_access_code', '激活码无效或已停用，请核对后重试', 401) from None
         # The new token is independent of the reusable login credential.

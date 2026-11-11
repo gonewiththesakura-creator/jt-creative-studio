@@ -77,7 +77,7 @@ def test_additive_assurance_migration_preserves_legacy_sessions_and_entitlements
         assert db.execute("PRAGMA user_version").fetchone()[0] == 2
 
 
-def test_admin_code_never_grants_management_even_with_forged_request_claims(membership_env):
+def test_admin_code_grants_management_for_its_own_session_only(membership_env):
     env = membership_env
     env.gateway.login_mode = "access_code"
     code = env.store.rotate_access_code(env.users["admin"]["id"], env.users["admin"]["id"])["code"]
@@ -86,8 +86,10 @@ def test_admin_code_never_grants_management_even_with_forged_request_claims(memb
     assert status == 200 and headers["Clear-Site-Data"] == '"cache"'
     cookie = headers["Set-Cookie"].split(";", 1)[0]
     status, me, headers = json_request(env, "GET", "/api/auth/me", headers={"Cookie": cookie})
-    assert me["user"]["is_admin"] and me["admin_verification_required"]
-    assert me["admin_verification_expires_at"] == 0
+    # 2026-11-10 (owner decision): an administrator's own login code is the management credential for
+    # that session, so there is one credential to keep. Forged request claims still decide nothing.
+    assert me["user"]["is_admin"] and not me["admin_verification_required"]
+    assert me["admin_verification_expires_at"] > 0
     assert headers["Clear-Site-Data"] == '"cache"'
     auth = {"Cookie": cookie, "Origin": env.gateway.origin, "X-CSRF-Token": me["csrf_token"],
             "X-Admin-Verified": "true", "X-OIDC-Verified": "true"}
@@ -95,7 +97,7 @@ def test_admin_code_never_grants_management_even_with_forged_request_claims(memb
                               ("GET", "/api/admin/membership/access-codes", None),
                               ("POST", "/api/admin/membership/plans", {"oidc_verified": True})]:
         status, result, _ = json_request(env, method, path, body, headers=auth)
-        assert status == 403 and result["code"] == "admin_verification_required"
+        assert status != 403 and result.get("code") != "admin_verification_required"
     assert json_request(env, "GET", "/api/jobs", headers=auth)[0] == 200
     status, result, headers = json_request(env, "POST", "/api/auth/logout", {}, headers=auth)
     assert status == 200 and result["ok"]
@@ -202,3 +204,23 @@ def test_real_browser_legacy_media_cache_is_cleared_before_account_use(membershi
         finally:
             context.close()
             browser.close()
+
+
+def test_member_code_never_grants_management_even_with_forged_request_claims(membership_env):
+    # The other half of the 2026-11-10 decision: only an administrator's own code carries management.
+    env = membership_env
+    env.gateway.login_mode = "access_code"
+    code = env.store.rotate_access_code(env.users["admin"]["id"], env.users["alice"]["id"])["code"]
+    status, _, headers = json_request(env, "POST", "/api/auth/code-login", {"code": code},
+                                     headers={"Origin": env.gateway.origin})
+    assert status == 200
+    cookie = headers["Set-Cookie"].split(";", 1)[0]
+    _, me, _ = json_request(env, "GET", "/api/auth/me", headers={"Cookie": cookie})
+    assert not me["user"]["is_admin"] and "admin_verification_expires_at" not in me
+    assert env.store.get_session(cookie.split("=", 1)[1])["admin_verified_until"] == 0
+    auth = {"Cookie": cookie, "Origin": env.gateway.origin, "X-CSRF-Token": me["csrf_token"],
+            "X-Admin-Verified": "true", "X-OIDC-Verified": "true"}
+    for method, path, body in [("GET", "/api/admin/membership/users?code_admin=true", None),
+                              ("POST", "/api/admin/membership/plans", {"code_admin": True, "is_admin": True})]:
+        status, result, _ = json_request(env, method, path, body, headers=auth)
+        assert status == 403 and result["code"] == "admin_required"

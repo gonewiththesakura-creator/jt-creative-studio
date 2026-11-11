@@ -736,7 +736,7 @@ class MembershipStore:
                 "SELECT * FROM reservations WHERE state IN('reserved','running') AND job_id>? ORDER BY job_id LIMIT ?",
                 (after_job_id, limit))]
 
-    def create_session(self, user_id, ttl=43200, access_credential_id=None, *, oidc_verified=False):
+    def create_session(self, user_id, ttl=43200, access_credential_id=None, *, oidc_verified=False, code_admin=False):
         ttl = _integer(ttl, "登录期限", 60, 604800)
         token, csrf, now = secrets.token_urlsafe(48), secrets.token_urlsafe(32), self._now()
         with self._connection(True) as db:
@@ -749,11 +749,14 @@ class MembershipStore:
             db.execute("DELETE FROM auth_sessions WHERE expires_at<=?", (now,))
             db.execute("INSERT INTO auth_sessions(token_hash,user_id,csrf,created_at,expires_at) VALUES(?,?,?,?,?)",
                        (_hash(token), user_id, csrf, now, now + ttl))
-            # This trusted flag is set only by a verified OIDC callback. A login
-            # code grants normal account access, never management assurance.
-            if oidc_verified and user["is_admin"] and access_credential_id is None:
+            # Management assurance comes from one of two server-side facts, never from request claims:
+            # a verified OIDC callback (15 minutes), or an administrator signing in with their own
+            # login code (owner decision 2026-11-10: one credential; lasts for that session).
+            # A member's code never reaches this branch because the account is not an administrator.
+            code_assured = bool(code_admin) and access_credential_id is not None
+            if user["is_admin"] and (code_assured or (oidc_verified and access_credential_id is None)):
                 db.execute("INSERT INTO admin_session_verifications(token_hash,verified_at,expires_at) VALUES(?,?,?)",
-                           (_hash(token), now, min(now + ttl, now + 900)))
+                           (_hash(token), now, now + ttl if code_assured else min(now + ttl, now + 900)))
             db.execute("""DELETE FROM auth_sessions WHERE user_id=? AND token_hash NOT IN
                 (SELECT token_hash FROM auth_sessions WHERE user_id=? ORDER BY created_at DESC,rowid DESC LIMIT 10)""", (user_id, user_id))
             self._audit(db, user_id, "session_create", user_id)
