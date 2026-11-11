@@ -151,7 +151,7 @@ def test_gate_identifies_workbench_admin_and_preserves_admin_destination(browser
     page.route('**/api/auth/login?*', lambda route: route.fulfill(body='Offline identity login'))
     try:
         page.goto('http://fixture.test/video?keep=fixture')
-        expect(page.locator('#accountAdminLogin')).to_have_text('工作台管理员登录')
+        expect(page.locator('#accountAdminLogin')).to_have_text('改用管理员账号登录')  # 2026-11-11: secondary link, studio v2 login page
         page.locator('#accountAdminLogin').click()
         page.wait_for_url('**/api/auth/login?*')
         return_to = parse_qs(urlparse(page.url).query)['return_to'][0]

@@ -51,11 +51,12 @@ def main(upload=False):
         status,_,headers=user.request(public,'/api/auth/code-login',{'code':code})
         assert status==200 and headers.get('Clear-Site-Data')=='"cache"'
         status,me,_=user.request(public,'/api/auth/me')
-        assert me['authenticated'] and me['user']['is_admin'] and me['admin_verification_required']
+        # 2026-11-11: an administrator's own login code carries management for that session (27c4212),
+        # so the code session reads the admin API without a second account verification.
+        assert me['authenticated'] and me['user']['is_admin'] and not me['admin_verification_required']
         user.csrf=me['csrf_token']
-        assert user.request(public,'/api/admin/membership/users')[0]==403
-        assert user.request(public,'/api/admin/membership/access-codes',{})[0]==403
-        report['code_session_admin_read_write_denied']=True
+        assert user.request(public,'/api/admin/membership/users')[0]==200
+        report['code_session_admin_read_allowed']=True
         report['code_login_account_preserved']=True
         assert user.request(public,'/api/upload-direct-config')[0]==410
         status,_,_=user.request(public,'/api/auth/login?return_to=%2F%09%2Fevil.invalid')

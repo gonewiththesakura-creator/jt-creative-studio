@@ -688,12 +688,22 @@ function mirrorQuota() {
  if (quotaBound || !source || !card) return;
  quotaBound = true;
  const render = () => {
-  const rows = [...source.querySelectorAll('dt')].map(dt => [dt.textContent.trim(), dt.nextElementSibling?.textContent.trim() || '']);
-  card.replaceChildren(...rows.map(([name, value]) => {
-   const row = el('div', 'side-quota-row'), label = el('span'), amount = el('b');
-   label.textContent = name; amount.textContent = value; row.append(label, amount);
-   return row;
-  }));
+  const rows = [...source.querySelectorAll('dt')].map(dt => [dt.textContent.trim(), dt.nextElementSibling?.textContent.trim() || '', dt.nextElementSibling?.dataset.ratio]);
+  // The two balances get a meter each; the two limits share one "任务" line.
+  const nodes = [], limits = [];
+  for (const [name, value, ratio] of rows) {
+   if (!/剩余额度/.test(name)) { limits.push((/排队/.test(name) ? '排队 ' : '同时 ') + value); continue; }
+   const row = el('div', 'side-quota-row'), label = el('span'), amount = el('b'), meter = el('div', 'side-meter'), fill = el('i');
+   label.textContent = name.replace('剩余', ''); amount.textContent = value; row.append(label, amount);
+   const number = Number(value);
+   fill.style.width = (ratio !== undefined ? Number(ratio) * 100 : number > 0 ? 100 : 0) + '%';
+   meter.append(fill); nodes.push(row, meter);
+  }
+  if (limits.length) {
+   const row = el('div', 'side-quota-row'), label = el('span'), badge = el('span', 'side-badge');
+   label.textContent = '任务'; badge.textContent = limits.join(' · '); row.append(label, badge); nodes.push(row);
+  }
+  card.replaceChildren(...nodes);
   card.hidden = !rows.length;
  };
  new MutationObserver(render).observe(source, {childList:true, subtree:true, characterData:true});
