@@ -1347,7 +1347,7 @@ def test_av1_upload_exception_rejects_other_commits_and_payloads():
 
 # 2026-11-11: owner-approved offline pin for the Studio v2 branch (UI stages 1-6, admin code
 # login, concurrency-slot release). Only the pinned commit's bytes pass.
-STUDIO_V2_HEAD = '63c009fba868b1da8db39e253d28fe3476a6599b'
+STUDIO_V2_HEAD = 'be20376e1f6cf0e57f3e85f35aa2d556d0748df4'
 
 
 def test_studio_v2_exception_accepts_only_the_reviewed_commit():
@@ -1355,8 +1355,8 @@ def test_studio_v2_exception_accepts_only_the_reviewed_commit():
     tested = module.REVIEWED_AV1_UPLOAD_TESTED_COMMIT
     assert module.reviewed_studio_v2_patch(tested, STUDIO_V2_HEAD)
     assert not module.reviewed_studio_v2_patch('unreviewed-canary', STUDIO_V2_HEAD)
-    # Its parent lacks the promptgen parity fix; the last release lacks the whole branch.
-    assert not module.reviewed_studio_v2_patch(tested, 'dd6902d25a2d8853eb0726fa91f9f6e8b51aa127')
+    # An earlier branch commit carries a different frontend; the last release lacks the whole branch.
+    assert not module.reviewed_studio_v2_patch(tested, '63c009fba868b1da8db39e253d28fe3476a6599b')
     assert not module.reviewed_studio_v2_patch(tested, 'a826f3a47367d5617726b1a7c20b2002898bf1de')
 
 
