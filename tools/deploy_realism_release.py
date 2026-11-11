@@ -121,7 +121,9 @@ IDLE_STABILITY_INTERVAL = 1.0
 # 2026-10-20 merging ops/scheduled-backups: +tests/test_backup_scripts.py (backup, retention, restore drill).
 MIN_SCRIPT_CONTRACTS = 55
 MIN_PYTEST_FILES = 99
-RELEASE_TEST_INVENTORY_SHA256 = "5e51d4d5e531b84fcde48b8287d17ff47084d6e5fa926cab906a32c53d0278e0"
+# 2026-11-11 (Studio v2): three pytest files added, none removed: test_admin_code_login_real_server,
+# test_membership_concurrency_release, test_studio_walkthrough_real_server.
+RELEASE_TEST_INVENTORY_SHA256 = "b9111c9ac076a420c65909b4708c22705386d45d27b72369571bbb11e40f7c96"
 DREAMAPI_CONTRACT_SHA256 = "d2e692e229a0525590fbbc5ffc4f466faebe70675278d263a44bfd0dffc6f0fa"
 HISTORICAL_DREAMAPI_CONTRACT_SHA256 = "665d283bd420f76f031d9530f1d757f022d6cc16a5c9e9bc315e4966da797959"
 # 2026-10-22: owner-authorized single canary for the accretion release (job a190e498799f, commit ec0c01c).
