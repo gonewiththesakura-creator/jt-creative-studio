@@ -104,6 +104,20 @@ def test_showcase_admin_saves_name_and_picture_and_members_read_them(showcase_en
     assert (status, body) == (200, {'items': {}})
 
 
+def test_showcase_covers_creator_style_cards(showcase_env):
+    """2026-11-12: a creator style is addressed as style.<style id>; unknown styles are refused."""
+    env = showcase_env
+    style = next(iter(env.panel.STYLE_PRESETS))
+    status, body, _ = json_request(env, 'POST', '/api/admin/membership/showcase',
+                                   {'workflow_id': 'style.' + style, 'name': '我的画风', 'image': PNG_URL}, user='admin')
+    assert status == 200, body
+    card = json_request(env, 'GET', '/api/showcase', user='alice')[1]['items']['style.' + style]
+    assert card['name'] == '我的画风' and card['image'].endswith('.png')
+    for bad in ('style.no-such-style', 'style.', 'style'):
+        assert json_request(env, 'POST', '/api/admin/membership/showcase',
+                            {'workflow_id': bad, 'name': 'x'}, user='admin')[0] == 400
+
+
 def test_showcase_is_administrator_only_and_validated(showcase_env):
     env = showcase_env
     good = {'workflow_id': 'member-video', 'name': 'x'}

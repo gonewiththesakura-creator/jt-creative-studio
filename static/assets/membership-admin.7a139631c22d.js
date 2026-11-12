@@ -17,7 +17,7 @@ export function initializeMembershipAdmin({verify,codeLogin=false}={}){
  <section data-admin-panel="reservations" hidden><p class="account-help">先核对生成服务中的实际结果，再处理未结算额度。进行中、排队中或仍在恢复核对的任务不可操作。</p><button type="button" class="account-secondary" id="adminReservationsRefresh">刷新待核对列表</button><form id="adminSettleForm" class="admin-issued admin-form" hidden><h3 id="adminSettleTitle" class="admin-full"></h3><p id="adminSettleTarget" class="account-help admin-full"></p><label class="admin-full">核对依据（至少 10 字）<textarea id="adminSettleNote" name="note" minlength="10" maxlength="500" rows="3" required placeholder="填写核对时间、实际结果及处理依据"></textarea></label><div class="admin-settle-actions admin-full"><button type="submit" id="adminSettleSubmit" class="account-primary">确认处理</button><button type="button" id="adminSettleCancel" class="account-secondary">返回列表</button></div></form><div class="admin-table-wrap admin-card"><table><thead><tr><th>任务 / 用户</th><th>额度占用</th><th>任务状态 / 原因</th><th>处理</th></tr></thead><tbody id="adminReservationsRows"></tbody></table></div></section></div>`;
  const content=dialog.querySelector('#membershipAdminContent');
  // 2026-11-12: showcase pictures and display names for the scheme cards of the image-edit and video pages.
- content.insertAdjacentHTML('beforeend','<section data-admin-panel="showcase" hidden><p class="account-help">给图片编辑和视频「选择方案」里的每个功能设置展示图和显示名字。名字留空就用原名；图片建议横图，会自动压缩后上传。保存后立即生效。</p><div id="adminShowcaseList"></div></section>');
+ content.insertAdjacentHTML('beforeend','<section data-admin-panel="showcase" hidden><p class="account-help">给创作台的画风卡、图片编辑和视频「选择方案」里的每个功能设置展示图和显示名字。名字留空就用原名；图片建议横图，会自动压缩后上传。保存后立即生效。</p><div id="adminShowcaseList"></div></section>');
  document.body.append(dialog);
  const el=id=>dialog.querySelector('#'+id),status=el('membershipAdminStatus'),verifyButton=el('membershipAdminVerify');let plans=[],tab='plans',busy=false,settlement=null,verificationTimer,verificationRequired=true,isAdmin=false,verifiedUntil=0,revision=0;
  const tabs=new Set(['plans','codes','renewals','users','reservations','showcase']);
@@ -78,7 +78,7 @@ export function initializeMembershipAdmin({verify,codeLogin=false}={}){
   const webp=canvas.toDataURL('image/webp',.86);return webp.startsWith('data:image/webp')?webp:canvas.toDataURL('image/jpeg',.88)}
  async function saveShowcase(path,payload,message){const data=await request(path,payload);drawShowcase(data.items||{});window.dispatchEvent(new CustomEvent('jt:showcase-changed'));status.textContent=message}
  function drawShowcase(items){const box=el('adminShowcaseList');box.replaceChildren();
-  for(const [label,kinds] of [['图片编辑',['rh_workflow','ai_app']],['视频',['video']]]){
+  for(const [label,kinds] of [['创作台画风',['style']],['图片编辑',['rh_workflow','ai_app']],['视频',['video']]]){
    const flows=showcaseFlows.filter(flow=>kinds.includes(flow.kind));if(!flows.length)continue;
    const heading=document.createElement('h3'),grid=document.createElement('div');heading.className='admin-showcase-group';heading.textContent=label+' · '+flows.length+' 个功能';grid.className='admin-showcase-grid';
    for(const flow of flows){const item=items[flow.id]||{},card=document.createElement('div'),art=document.createElement('div'),origin=document.createElement('small'),name=document.createElement('input'),controls=document.createElement('div'),file=document.createElement('input');
@@ -96,7 +96,10 @@ export function initializeMembershipAdmin({verify,codeLogin=false}={}){
     card.append(art,origin,name,controls,file);grid.append(card)}
    box.append(heading,grid)}
   if(!box.childElementCount)box.textContent='暂无可设置的功能。'}
- async function loadShowcase(){const expected=revision,[data,response]=await Promise.all([request('showcase'),accountFetch('/api/workflows',{cache:'no-store',signal:AbortSignal.timeout(20000)})]);const flows=await response.json();assertCurrent(expected);showcaseFlows=Array.isArray(flows)?flows:[];drawShowcase(data.items||{})}
+ // Creator styles come from the creator page's own markup (the style switch), keyed "style.<id>".
+ async function showcaseStyles(){try{const markup=JSON.parse(document.getElementById('appManifest').textContent).pages['/'].markup,page=new DOMParser().parseFromString(await(await fetch(markup,{signal:AbortSignal.timeout(20000)})).text(),'text/html');
+   return [...page.querySelectorAll('#styleSwitch button[data-style]')].map(button=>({id:'style.'+button.dataset.style,name:button.textContent.trim(),kind:'style'}))}catch{return []}}
+ async function loadShowcase(){const expected=revision,[data,response,styles]=await Promise.all([request('showcase'),accountFetch('/api/workflows',{cache:'no-store',signal:AbortSignal.timeout(20000)}),showcaseStyles()]);const flows=await response.json();assertCurrent(expected);showcaseFlows=[...styles,...(Array.isArray(flows)?flows:[])];drawShowcase(data.items||{})}
  async function loadTab(){await loadPlans();if(tab==='codes'||tab==='renewals')await loadCodes();if(tab==='users')await loadUsers();if(tab==='reservations')await loadReservations();if(tab==='showcase')await loadShowcase()}
  function selectTab(selected){tab=tabs.has(selected)?selected:'plans';dialog.querySelectorAll('[data-admin-tab]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.adminTab===tab)));dialog.querySelectorAll('[data-admin-panel]').forEach(panel=>panel.hidden=panel.dataset.adminPanel!==(tab==='renewals'?'codes':tab))}
  function open(selected=tab){if(!isAdmin)return;if(!allowed())setVerification(true,0,true);if(!dialog.open){invalidate();dialog.showModal()}selectTab(selected);if(allowed())action(async()=>{await loadTab();status.textContent=''})}

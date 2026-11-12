@@ -478,7 +478,28 @@ def test_admin_showcase_picture_and_name_reach_the_scheme_cards(browser, site, t
         expect(card.get_by_role('button', name='移除图片')).to_be_visible()
         assert page.locator('[data-showcase]').count() >= 4
         shot(page, '60-admin-showcase')
+        # Creator style cards are managed in the same tab (owner, 2026-11-12).
+        style = page.locator('[data-showcase="style.sketch"]')
+        expect(style).to_contain_text('原名：铅绘')
+        assert page.locator('[data-showcase^="style."]').count() == 10
+        style.locator('input[type=text]').fill('手绘铅笔')
+        style.get_by_role('button', name='保存名字').click()
+        expect(page.locator('#membershipAdminStatus')).to_have_text('名字已保存。')
+        style = page.locator('[data-showcase="style.sketch"]')
+        style.locator('input[type=file]').set_input_files(str(Path(__file__).parents[1] / 'static' / 'favicon.png'))
+        expect(style.locator('.admin-showcase-art img')).to_have_attribute('src', re.compile(r'^/api/showcase-image/'))
         page.locator('#membershipAdminClose').click()
+        # The creator's style sheet and style chip follow without a reload.
+        page.locator('.acc-chip[data-group="style"]').click()
+        tile = page.locator('#styleSwitch button[data-style="sketch"]')
+        expect(tile.locator('.acc-style-name')).to_have_text('手绘铅笔')
+        expect(tile.locator('.acc-style-art')).to_have_attribute('src', re.compile(r'^/api/showcase-image/'))
+        assert tile.locator('.acc-style-art').evaluate('img => img.complete && img.naturalWidth > 0')
+        expect(page.locator('#styleSwitch button[data-style="cold"] .acc-style-name')).to_have_text('冷脸萌')
+        shot(page, '63-creator-styles')
+        tile.click()
+        expect(page.locator('.acc-chip[data-group="style"] .acc-style-label')).to_have_text('手绘铅笔')
+        page.keyboard.press('Escape')
 
         page.locator('body > .app-shell > .topbar .topnav-link', has_text='视频').click()
         expect(page.locator('body')).to_have_attribute('data-page', '/video')
@@ -493,6 +514,7 @@ def test_admin_showcase_picture_and_name_reach_the_scheme_cards(browser, site, t
         # Rounded task rail (owner's screenshot 8) and one height for the result buttons.
         assert page.locator('#taskPanel').evaluate('node => getComputedStyle(node).borderTopLeftRadius') == '24px'
         shot(page, '62-video-page')
-        assert [p for p in page.problems if 'WebGL' not in p] == []
+        # The fixture server does not ship the stock style thumbnails; opening the style sheet logs their 404s.
+        assert [p for p in page.problems if 'WebGL' not in p and '404' not in p] == []
     finally:
         context.close()

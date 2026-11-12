@@ -3806,7 +3806,9 @@ def showcase_admin(actor, body, action='showcase'):
         if action == 'showcase/delete':
             items.pop(workflow_id, None)
         else:
-            if workflow_id not in WORKFLOWS:
+            # A creator style card is addressed as "style.<style id>".
+            if workflow_id not in WORKFLOWS and not (workflow_id.startswith('style.')
+                                                     and workflow_id[6:] in STYLE_PRESETS):
                 raise ValueError('没有这个功能')
             entry = dict(items.get(workflow_id) or {})
             if 'name' in body:

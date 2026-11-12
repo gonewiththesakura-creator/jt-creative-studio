@@ -169,10 +169,25 @@ function creator(root, body) {
   button.textContent = '';
   const art = el('img', 'acc-style-art'); art.alt = ''; art.decoding = 'async'; art.dataset.src = styleThumb(button.dataset.style);
   art.onerror = () => { art.hidden = true; };
-  const label = el('span', 'acc-style-name'); label.textContent = name;
+  const label = el('span', 'acc-style-name'); label.textContent = name; label.dataset.own = name;
   button.append(art, label);
  }
  const loadStyleArt = () => styleSwitch.querySelectorAll('img[data-src]').forEach(img => { img.src = img.dataset.src; img.removeAttribute('data-src'); });
+ // 2026-11-12: the administrator's showcase picture and display name per style ("style.<id>" in /api/showcase).
+ let styleShow = {};
+ const applyStyleShow = () => {
+  for (const button of styleSwitch.querySelectorAll('button[data-style]')) {
+   const show = styleShow['style.' + button.dataset.style] || {}, art = button.querySelector('.acc-style-art'), label = button.querySelector('.acc-style-name');
+   if (!art || !label) continue;
+   text(label, show.name || label.dataset.own);
+   const wanted = show.image || styleThumb(button.dataset.style);
+   if (art.dataset.src !== undefined) art.dataset.src = wanted;
+   else if (art.getAttribute('src') !== wanted) { art.hidden = false; art.src = wanted; }
+  }
+ };
+ const loadStyleShow = () => accountFetch('/api/showcase').then(response => response.ok ? response.json() : null)
+  .then(data => { if (!data?.items) return; styleShow = data.items; applyStyleShow(); refresh(); }).catch(() => {});
+ addEventListener('jt:showcase-changed', loadStyleShow);
 
  // Person: a three-column picker drawn from the page's own drawers. The drawers re-render on every
  // change, so the picker never holds them; it reads them and drives their selects, locks and rerolls.
@@ -352,7 +367,7 @@ function creator(root, body) {
   const style = root.querySelector('#styleSwitch button.active');
   const styleName = style?.querySelector('.acc-style-name')?.textContent.trim() || style?.textContent.trim() || '画风';
   text(styleChip.querySelector('.acc-style-label'), styleName);
-  const art = $('stylePreview')?.getAttribute('src');
+  const art = styleShow['style.' + style?.dataset.style]?.image || $('stylePreview')?.getAttribute('src');
   const img = styleChip.querySelector('img');
   if (art && img.getAttribute('src') !== art) img.src = art;
   if (img.hidden !== !art) img.hidden = !art;
@@ -409,6 +424,7 @@ function creator(root, body) {
  const statusWatch = new MutationObserver(refresh);
  for (const id of ['genCloudStatus', 'genLocalStatus', 'genApiStatus']) if ($(id)) statusWatch.observe($(id), {childList:true, characterData:true, subtree:true});
  refresh();
+ loadStyleShow();
  feed(root, body, {reuse, engineButton});
  // Library (2026-11-12): one button clears failed, cancelled and expired records from the list.
  const libraryHead = root.querySelector('#histOverlay .library-header');
