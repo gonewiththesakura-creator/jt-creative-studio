@@ -1,6 +1,6 @@
-import {accountFetch,configureAccountRequests} from "/static/assets/api.a6519138b399.js";
+import {accountFetch,configureAccountRequests} from "/static/assets/api.e4581fedd51a.js";
 import {setStorageAccount} from "/static/assets/account-storage.0c5081b9ad66.js";
-import {initializeMembershipAdmin} from "/static/assets/membership-admin.eb9de97403fb.js";
+import {initializeMembershipAdmin} from "/static/assets/membership-admin.38986767a819.js";
 import {showLoginScene,markLoginTransition,consumeLoginTransition,prepareLoginEntry,revealWorkbenchImmediately} from "/static/assets/login-scene.659131d536e8.js";
 
 const template=`<section class="account-gate" id="accountGate" aria-labelledby="accountGateTitle">

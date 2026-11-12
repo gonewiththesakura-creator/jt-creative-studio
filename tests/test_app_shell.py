@@ -37,14 +37,20 @@ def test_packaging_preserves_business_functions_and_backend_contracts():
                          'UnsupportedVideoCodec',
                          # 2026-11-11: sidebar library badges (/api/library-counts); covered through the real
                          # server in test_studio_walkthrough_real_server.
-                         'owned_history_sources','favorite_in_scope'}
-        excluded_names={'LIBRARY_SCOPES','VIDEO_QUEUE_LIMIT','VIDEO_QUEUE_SESSION_LIMIT','REJECTED_VIDEO_CODECS',
+                         'owned_history_sources','favorite_in_scope',
+                         # 2026-11-12: creator record clearing and the administrator's showcase cards; covered in
+                         # test_creator_clear_and_showcase_http and the real-server walkthrough.
+                         'clear_creator_ui','_showcase_read','_showcase_write','_showcase_image_kind',
+                         'public_showcase','showcase_admin'}
+        excluded_names={'SHOWCASE_DIR','SHOWCASE_MAX_IMAGE_BYTES','SHOWCASE_TYPES','_lock_showcase','LIBRARY_SCOPES','VIDEO_QUEUE_LIMIT','VIDEO_QUEUE_SESSION_LIMIT','REJECTED_VIDEO_CODECS',
                         '_UNSUPPORTED_VIDEO_MESSAGES','_MP4_CONTAINER_BOXES','_MP4_MAX_BOXES',
                         '_MP4_MAX_DEPTH','_MKV_SCAN_BYTES'}
         tree.body=[n for n in tree.body if not (
             isinstance(n,(ast.FunctionDef,ast.ClassDef)) and n.name in queue_functions) and not (
             isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id in
-                excluded_names for t in n.targets))]
+                excluded_names for t in n.targets)) and not (
+            # 2026-11-12: wiring of the showcase administrator callback (tested through HTTP).
+            isinstance(n,ast.Assign) and any(isinstance(t,ast.Attribute) and t.attr=='showcase_callback' for t in n.targets))]
         for node in tree.body:
             if isinstance(node,ast.ClassDef) and node.name=='Handler':
                 node.body=[item for item in node.body if not isinstance(item,ast.FunctionDef) or item.name not in ('do_GET','_send_static','do_POST','_running_job_id')]

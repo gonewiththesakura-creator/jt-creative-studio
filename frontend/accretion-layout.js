@@ -4,7 +4,7 @@
 // code keeps its own elements, ids and handlers. Values change only through the
 // same input/change events a person would fire, or a click on an existing button.
 import {accountFetch} from './api.js';
-import {addFavorite, fetchPrompt, sendImageTo, toast} from './media-actions.js';
+import {addFavorite, fetchPrompt, openLightbox, sendImageTo, toast} from './media-actions.js';
 
 const PATHS = {
  shuffle:'<path d="M4 7h3.2c4.3 0 5.3 10 9.6 10H20"/><path d="M4 17h3.2c1.6 0 2.7-1.4 3.6-3.2M13.2 10.2C14.1 8.4 15.2 7 16.8 7H20"/><path d="m17.5 4.5 2.5 2.5-2.5 2.5M17.5 14.5l2.5 2.5-2.5 2.5"/>',
@@ -101,6 +101,31 @@ function clock(ms) {
  const date = new Date(ms), now = new Date(), pad = n => String(n).padStart(2, '0');
  const time = pad(date.getHours()) + ':' + pad(date.getMinutes());
  return date.toDateString() === now.toDateString() ? '今天 ' + time : (date.getMonth() + 1) + '月' + date.getDate() + '日 ' + time;
+}
+
+// 2026-11-12: every result or favourite picture opens in the shell lightbox (larger, can go full screen).
+const ZOOMABLE = '.gallery-main img, #favList img, .favorite-media img';
+function zoomable(root) {
+ root.addEventListener('click', event => {
+  const img = event.target.closest?.('img');
+  if (!img || !img.matches(ZOOMABLE) || img.closest('.gallery-thumb, .gallery-thumbs') || !(img.currentSrc || img.src)) return;
+  const link = img.closest('.job, .gallery-main, .favorite-media')?.querySelector('a.dl[href]');
+  openLightbox({items: [{kind: 'image', src: img.currentSrc || img.src, full: link?.href || '', label: img.closest('.gallery-main')?.querySelector('.gallery-meta')?.textContent.trim() || ''}]});
+ });
+ // A library thumbnail whose file is gone reads as such instead of a broken-image mark.
+ root.addEventListener('error', event => {
+  const img = event.target;
+  if (!img.matches?.('.history-thumbnail img')) return;
+  const card = img.closest('.history-card');
+  if (card) card.dataset.expired = '1';
+  img.replaceWith('图片已失效');
+ }, true);
+}
+async function clearCreator(payload) {
+ const response = await accountFetch('/api/creator-clear', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+ const data = await response.json().catch(() => null);
+ if (!response.ok || !Array.isArray(data?.cleared_ids)) throw Error(data?.error || '清除失败（' + response.status + '）');
+ return data.cleared_ids;
 }
 
 function creator(root, body) {
@@ -385,6 +410,25 @@ function creator(root, body) {
  for (const id of ['genCloudStatus', 'genLocalStatus', 'genApiStatus']) if ($(id)) statusWatch.observe($(id), {childList:true, characterData:true, subtree:true});
  refresh();
  feed(root, body, {reuse, engineButton});
+ // Library (2026-11-12): one button clears failed, cancelled and expired records from the list.
+ const libraryHead = root.querySelector('#histOverlay .library-header');
+ if (libraryHead) {
+  const clear = el('button', 'acc-ghost acc-lib-clear', icon('x') + '清除出错记录');
+  clear.type = 'button'; clear.title = '清除失败、已取消和图片已失效的记录';
+  clear.onclick = async () => {
+   if (clear.disabled) return;
+   clear.disabled = true;
+   try {
+    const expired = [...root.querySelectorAll('#histList .history-card[data-expired][data-job]')].map(card => card.dataset.job).slice(0, 60);
+    const cleared = new Set(await clearCreator({scope: 'errors', ...(expired.length ? {ids: expired} : {})}));
+    root.querySelectorAll('#histList .history-card[data-job]').forEach(card => { if (cleared.has(card.dataset.job)) card.remove(); });
+    toast(cleared.size ? '已清除 ' + cleared.size + ' 条记录' : '没有可清除的出错记录');
+    dispatchEvent(new CustomEvent('jt:creator-cleared'));
+   } catch (error) { toast(error.message, true); }
+   clear.disabled = false;
+  };
+  libraryHead.insertBefore(clear, libraryHead.querySelector('.close'));
+ }
 
  function engineButton(engine) { return $(engine === 'api' ? 'genApiBtn' : engine === 'local' ? 'genLocalBtn' : 'genCloudBtn'); }
  // Reuse a past batch's parameters through the same controls a person would use.
@@ -430,7 +474,13 @@ function mirrorHole(root, holeBox) {
   const W = frame.canvas.width, H = frame.canvas.height;
   if (!W || !H) return;
   // The hole's shadow takes about a third of the banner window's height.
-  const sh = Math.max(8, frame.r * H * 6), sw = sh * w / h;
+  // 2026-11-12: the scene's hole can sit near the window edge. A sample reaching past the frame came
+  // back with a blank strip (the hole looked cut off): sample a smaller area that stays inside, or
+  // keep the drawn hole when too little of it is in view.
+  const fullH = Math.max(8, frame.r * H * 6), fullW = fullH * w / h, cx = frame.u * W, cy = frame.v * H;
+  const fit = Math.min(1, cx / (fullW / 2), (W - cx) / (fullW / 2), cy / (fullH / 2), (H - cy) / (fullH / 2));
+  if (!(fit >= .55)) { holeBox.classList.remove('live'); return; }
+  const sh = fullH * fit, sw = fullW * fit;
   try { ctx.drawImage(frame.canvas, frame.u * W - sw / 2, frame.v * H - sh / 2, sw, sh, 0, 0, w, h); holeBox.classList.add('live'); } catch {}
  };
  addEventListener('jt:scene-frame', draw);
@@ -452,13 +502,22 @@ function feed(root, body, {reuse, engineButton}) {
  mirrorHole(root, box.querySelector('.acc-hole'));
  const viewer = el('div', 'acc-viewer');
  viewer.hidden = true;
- viewer.innerHTML = `<img alt=""><div class="acc-viewer-bar"><a class="acc-shot-btn" download title="下载原文件">${icon('download')}<span>下载</span></a><button type="button" class="acc-shot-btn" data-close>${icon('x')}<span>关闭</span></button></div>`;
+ viewer.innerHTML = `<img alt=""><div class="acc-viewer-bar"><a class="acc-shot-btn" download title="下载原文件">${icon('download')}<span>下载</span></a><button type="button" class="acc-shot-btn" data-fullscreen>${icon('expand')}<span>全屏</span></button><button type="button" class="acc-shot-btn" data-close>${icon('x')}<span>关闭</span></button></div>`;
  body.append(viewer);
- const closeViewer = () => { viewer.hidden = true; viewer.querySelector('img').removeAttribute('src'); };
- viewer.addEventListener('click', event => { if (!event.target.closest('a')) closeViewer(); });
+ const closeViewer = () => { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); viewer.hidden = true; viewer.querySelector('img').removeAttribute('src'); };
+ viewer.addEventListener('click', event => {
+  if (event.target.closest('[data-fullscreen]')) { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); else viewer.requestFullscreen?.().catch(() => {}); return; }
+  if (!event.target.closest('a')) closeViewer();
+ });
+ // 2026-11-12: the banner stays at the top as a slim bar once the stream scrolls.
+ const hero = box.querySelector('.acc-feed-hero');
+ box.addEventListener('scroll', () => hero.classList.toggle('compact', box.scrollTop > 24), {passive: true});
  addEventListener('keydown', event => { if (event.key === 'Escape' && !viewer.hidden) closeViewer(); });
 
  let jobs = [], source = remember('jt-feed-src') || 'all', timer = 0, loading = false, again = false;
+ // Pictures that failed to load (expired files), and the shown records that can be cleared.
+ const broken = new Set();
+ let stale = [];
  // Prompts the person sent from this page, matched to the job that appears next on that channel.
  const promptKey = 'jt-feed-prompts';
  let prompts = {}; try { prompts = JSON.parse(sessionStorage.getItem(promptKey) || '{}') || {}; } catch { prompts = {}; }
@@ -493,6 +552,7 @@ function feed(root, body, {reuse, engineButton}) {
  function shot(job, image, index) {
   const ratio = job.width && job.height ? `aspect-ratio:${job.width}/${job.height}` : '';
   const full = image.url || image.preview_url, src = image.preview_url || image.url;
+  if (broken.has(src)) return `<figure class="acc-shot expired" style="${ratio}"><div class="acc-prog">${icon('image')}<span>图片已失效</span><small>原文件已过期或被清理</small></div></figure>`;
   return `<figure class="acc-shot" data-open="${esc(src)}" data-full="${esc(full)}" tabindex="0"><img class="acc-art" loading="lazy" decoding="async" alt="${esc(image.stage_label || '结果 ' + (index + 1))}" src="${esc(src)}">`
    + `<div class="acc-shot-bar"><a class="acc-shot-btn icon" href="${esc(full)}" download title="下载原文件" aria-label="下载原文件">${icon('download')}</a>`
    + (job.id ? `<button type="button" class="acc-shot-btn icon" data-fav="${esc(job.id)}" data-index="${index}" title="收藏" aria-label="收藏">${icon('heart')}</button>`
@@ -503,7 +563,7 @@ function feed(root, body, {reuse, engineButton}) {
  function pendingShot(ratio, pct, note) {
   return `<div class="acc-shot pending" style="${ratio}"><div class="acc-prog"><b>${pct > 0 ? Math.round(pct) + '%' : '排队中'}</b><div class="acc-bar"><i style="width:${Math.max(0, Math.min(100, pct || 0))}%"></i></div>${note ? `<small>${esc(note)}</small>` : ''}</div></div>`;
  }
- function group(job, engine, items, prompt) {
+ function group(job, engine, items, prompt, clearable = false) {
   const dims = job.width && job.height ? job.width + '×' + job.height : '';
   const variant = job.style_variant === 'style_only' ? ' · 仅画风' : '';
   return `<section class="acc-group" data-job="${esc(job.id || '')}"><div class="acc-group-head"><time>${esc(clock(createdMs(job)) || '刚刚')}</time>`
@@ -511,6 +571,7 @@ function feed(root, body, {reuse, engineButton}) {
    + `<span class="acc-tag">${icon(ENGINE_ICON[engine])}${ENGINE_NAME[engine]}</span><span class="acc-grow"></span>`
    + (job.id ? `<button type="button" class="acc-ghost" data-reuse="${esc(job.id)}">${icon('refresh')}复用参数</button>` : '')
    + (prompt && job.id ? `<button type="button" class="acc-ghost" data-copy="${esc(job.id)}">${icon('copy')}复制提示词</button>` : '')
+   + (clearable && job.id ? `<button type="button" class="acc-ghost acc-ghost-bad" data-dismiss="${esc(job.id)}" title="从结果流和作品库里清除这条记录">${icon('x')}清除</button>` : '')
    + `</div>${prompt ? `<p class="acc-group-prompt">${esc(prompt)}</p>` : ''}<div class="acc-grid">${items}</div></section>`;
  }
  function render() {
@@ -523,6 +584,7 @@ function feed(root, body, {reuse, engineButton}) {
   try { sessionStorage.setItem(promptKey, JSON.stringify(prompts)); } catch {}
   const sorted = [...jobs].sort((a, b) => createdMs(b) - createdMs(a));
   const parts = [];
+  stale = [];
   // A channel that is busy before its job shows up in history gets a placeholder batch.
   for (const engine of ['cloud', 'local', 'api']) {
    if (!state[engine] || sorted.some(job => backendOf(job) === engine && !FINISHED.has(String(job.status)))) continue;
@@ -537,27 +599,50 @@ function feed(root, body, {reuse, engineButton}) {
    const engine = backendOf(job);
    if (source !== 'all' && source !== engine) continue;
    const status = String(job.status || ''), ratio = job.width && job.height ? `aspect-ratio:${job.width}/${job.height}` : '';
-   let items;
+   let items, clearable = false;
    if (status === 'error' || status === 'failed') {
+    clearable = true;
     items = `<div class="acc-shot failed" style="${ratio}"><span class="acc-tag acc-tag-bad acc-shot-tl">${icon('alert')}失败</span><div class="acc-prog"><span>${esc(styleName(job.style_id))}</span><small>${esc(job.error || '生成失败')}</small><button type="button" class="acc-ghost" data-retry="${esc(job.id)}">${icon('refresh')}重试</button></div></div>`;
    } else if (!FINISHED.has(status)) {
     items = Array.from({length: Number(job.batch) || 1}, () => pendingShot(ratio, Number(job.progress_pct) || 0, state[engine] ? statusText(engine) : '')).join('');
    } else {
     const images = (job.images || []).filter(image => image && (image.url || image.preview_url));
     if (!images.length) continue;
+    clearable = images.every(image => broken.has(image.preview_url || image.url));
     items = images.map((image, i) => shot(job, image, i)).join('');
    }
-   parts.push(group(job, engine, items, prompts[job.id] || job.prompt_excerpt || ''));
+   if (clearable && job.id) stale.push(String(job.id));
+   parts.push(group(job, engine, items, prompts[job.id] || job.prompt_excerpt || '', clearable));
   }
+  if (stale.length) parts.unshift(`<div class="acc-feed-tools">${icon('alert')}<span>有 ${stale.length} 条出错或图片已失效的记录</span><span class="acc-grow"></span><button type="button" class="acc-ghost acc-ghost-bad" data-dismiss-all>${icon('x')}全部清除</button></div>`);
   html(groupsBox, parts.join('') || `<div class="acc-emptybox">${icon('image')}<h3>${source === 'all' ? '还没有作品' : '这个通道还没有作品'}</h3><p>${source === 'all' ? '在下方输入台选好画风和人物后生成，结果会出现在这里。' : `在下方输入台选择「${ENGINE_NAME[source]}」通道后生成，结果会出现在这里。`}</p></div>`);
   const running = sorted.filter(job => !FINISHED.has(String(job.status))).length || Object.values(state).filter(Boolean).length;
   const tag = document.getElementById('shellRun');
   if (tag) { text(tag.querySelector('span') || tag, running ? running + ' 个任务生成中' : ''); tag.hidden = !running; }
   schedule();
  }
+ async function dismiss(ids, button) {
+  if (!ids.length || button.dataset.state === 'saving') return;
+  button.dataset.state = 'saving';
+  try {
+   const cleared = await clearCreator({ids: ids.slice(0, 60)});
+   jobs = jobs.filter(job => !cleared.includes(String(job.id)));
+   render();
+   toast(cleared.length ? '已清除 ' + cleared.length + ' 条记录' : '这条记录还在核对结果，暂时不能清除', !cleared.length);
+   if (cleared.length) load();
+  } catch (error) { toast(error.message, true); }
+  delete button.dataset.state;
+ }
+ box.addEventListener('error', event => {
+  const img = event.target, src = img.matches?.('img.acc-art') && img.getAttribute('src');
+  if (src && !broken.has(src)) { broken.add(src); render(); }
+ }, true);
+ addEventListener('jt:creator-cleared', () => load());
  box.addEventListener('click', event => {
-  const target = event.target.closest('[data-open],[data-reuse],[data-copy],[data-retry],[data-fav],[data-send]');
+  const target = event.target.closest('[data-open],[data-reuse],[data-copy],[data-retry],[data-fav],[data-send],[data-dismiss],[data-dismiss-all]');
   if (!target || event.target.closest('a[download]')) return;
+  if (target.dataset.dismiss) return void dismiss([target.dataset.dismiss], target);
+  if (target.dataset.dismissAll !== undefined) return void dismiss(stale, target);
   const find = id => jobs.find(job => String(job.id) === id);
   // Full prompt: what this page sent, else the server's owner-only copy.
   const fullPrompt = async job => prompts[job.id] || (job.prompt_truncated === false ? job.prompt_excerpt || '' : await fetchPrompt(job.id).catch(() => job.prompt_excerpt || ''));
@@ -633,6 +718,9 @@ function workflowPage(root, body, key) {
  body.append(library);
  let filter = '全部';
  let drawnSchemes = '';
+ // 2026-11-12: the administrator's showcase picture and display name per scheme (/api/showcase).
+ let showcase = {};
+ const artOf = (id, fallback) => showcase[id]?.image ? `<img src="${safe(showcase[id].image)}" alt="" loading="lazy" decoding="async">` : icon(fallback);
  const schemeKey = list => list.map(item => item.id + (item.active ? '*' : '')).join('|');
  const drawLibrary = () => {
   const list = schemes(), groups = ['全部', ...new Set(list.map(item => item.group))];
@@ -642,7 +730,7 @@ function workflowPage(root, body, key) {
   }<div class="wb-grid">${list.map((item, index) => {
    if (filter !== '全部' && item.group !== filter) return '';
    const [title, model] = split(item.name);
-   return `<button type="button" class="wb-card" data-index="${index}" data-pick="${safe(item.id)}" aria-pressed="${item.active}"><span class="wb-art" style="--h:${(index * 47 + 18) % 360}">${icon(WB_ICON[item.group] || 'layers')}</span><b>${safe(title)}</b><span class="wb-tags"><i>${safe(item.group)}</i>${model ? `<i>${safe(model)}</i>` : ''}</span></button>`;
+   return `<button type="button" class="wb-card" data-index="${index}" data-pick="${safe(item.id)}" aria-pressed="${item.active}"><span class="wb-art" style="--h:${(index * 47 + 18) % 360}">${artOf(item.id, WB_ICON[item.group] || 'layers')}</span><b>${safe(showcase[item.id]?.name || title)}</b><span class="wb-tags"><i>${safe(item.group)}</i>${model ? `<i>${safe(model)}</i>` : ''}</span></button>`;
   }).join('')}</div></div>`);
  };
  const closeLibrary = () => { if (!library.hidden) { library.hidden = true; schemeCard.focus(); } };
@@ -670,9 +758,11 @@ function workflowPage(root, body, key) {
  if (rail) { new MutationObserver(() => { nameTasks(); badgeCount(); }).observe(rail, {subtree:true, childList:true, characterData:true}); nameTasks(); badgeCount(); }
  function refresh() {
   const name = (select ? select.selectedOptions[0]?.textContent : root.querySelector('#wfSwitch button.active')?.textContent) || '';
-  text(flowChip.querySelector('.acc-flow'), (name || '选择方案').trim());
   const current = schemes().find(item => item.active), [title, model] = split(name || '选择方案');
-  text(schemeCard.querySelector('b'), title);
+  const shown = showcase[current?.id]?.name || '';
+  text(flowChip.querySelector('.acc-flow'), shown || (name || '选择方案').trim());
+  text(schemeCard.querySelector('b'), shown || title);
+  html(schemeCard.querySelector('.wb-art'), artOf(current?.id, 'layers'));
   text(schemeCard.querySelector('small'), [model, current?.group].filter(Boolean).join(' · ') || '点击选择');
   // 2026-11-11: the library opened before the workflow list arrived stayed empty; redraw it when the list changes.
   if (!library.hidden && schemeKey(schemes()) !== drawnSchemes) drawLibrary();
@@ -681,11 +771,16 @@ function workflowPage(root, body, key) {
  root.addEventListener('click', () => requestAnimationFrame(refresh));
  new MutationObserver(refresh).observe(pane, {subtree:true, childList:true, attributes:true, attributeFilter:['class','disabled']});
  refresh();
+ const loadShowcase = () => accountFetch('/api/showcase').then(response => response.ok ? response.json() : null)
+  .then(data => { if (!data?.items) return; showcase = data.items; if (!library.hidden) drawLibrary(); refresh(); }).catch(() => {});
+ loadShowcase();
+ addEventListener('jt:showcase-changed', loadShowcase);
 }
 
 addEventListener('jt:page-mounted', event => {
  const {root} = event.detail, body = root.querySelector?.('.jt-page-body');
  if (!body || body.classList.contains('acc')) return;
+ zoomable(root);
  if (root.getElementById('genCloudBtn')) creator(root, body);
  else if (root.getElementById('workflowSelect')) workflowPage(root, body, 'edit');
  else if (root.getElementById('wfSwitch')) workflowPage(root, body, 'video');

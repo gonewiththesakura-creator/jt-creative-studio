@@ -567,3 +567,41 @@
 @media (min-width:761px){.acc .library-scroll .history-view .history-back{width:auto;align-self:flex-start}}
 /* Empty library: one quiet centred line instead of body-sized text in the corner (2026-11-11). */
 .acc #favList:not(:has(*)),.acc :is(#histList,#favList)>:is(p.note,.job.empty){grid-column:1/-1;padding:72px 16px;border:0;background:none;text-align:center;font-size:13px;color:#857c70}
+
+/* 2026-11-12 batch: sticky banner, clearing failed or expired records, showcase cards, button rows, task rail. */
+.acc :is(.gallery-main img,#favList img,.favorite-media img){cursor:zoom-in}
+.acc-viewer:fullscreen{padding:0;background:#000}
+.acc-viewer:fullscreen img{max-width:100vw;max-height:100vh;border-radius:0;box-shadow:none}
+.acc-viewer:fullscreen .acc-viewer-bar{opacity:.4;transition:opacity .2s}
+.acc-viewer:fullscreen .acc-viewer-bar:hover{opacity:1}
+.acc-shot.expired{aspect-ratio:3/4;cursor:default;border-style:dashed;background:#14110e}
+.acc-shot.expired:hover{transform:none;box-shadow:none;border-color:var(--line)}
+.acc-shot.expired .acc-ic{width:26px;height:26px;color:var(--text-3)}
+.acc-ghost-bad:hover{background:rgba(255,125,110,.14);color:#ffb3a8}
+.acc-ghost[data-state=saving],.acc-ghost:disabled{opacity:.55;pointer-events:none}
+.acc-feed-tools{display:flex;align-items:center;gap:8px;min-height:40px;margin-bottom:20px;padding:4px 8px 4px 14px;border:1px solid rgba(255,125,110,.22);border-radius:12px;background:rgba(255,125,110,.06);color:var(--text-2);font-size:13px}
+.acc-feed-tools>.acc-ic{width:15px;height:15px;color:#ffb3a8}
+.acc .library-header .acc-lib-clear{margin-left:auto;margin-right:8px;border:1px solid rgba(255,236,214,.12)}
+.acc .library-header .acc-lib-clear+.close{margin-left:0}
+.wb-art{position:relative;overflow:hidden}
+.wb-art img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+/* One height and one baseline for the save / download pair under a result. */
+.acc .gallery-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.acc .gallery-actions>*{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;box-sizing:border-box;width:auto;height:36px;min-height:36px;margin:0;padding:0 16px;border-radius:999px;font-size:13px;line-height:1;white-space:nowrap;text-decoration:none}
+@media (min-width:761px){
+ .acc-feed-hero{position:sticky;top:0;z-index:3;box-sizing:border-box;height:168px;transition:height .25s,margin-bottom .25s,padding .25s,border-radius .25s}
+ .acc-feed-hero.compact{height:58px;margin-bottom:136px;padding:0 24px;border-radius:16px;background:rgba(16,14,12,.92);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px)}
+ .acc-feed-hero.compact :is(.acc-eyebrow,p:last-child){display:none}
+ .acc-feed-hero.compact h2{margin:0;font-size:17px;letter-spacing:.08em}
+ /* The whole hole sits inside the banner instead of being cut by its edge. */
+ .acc-hole{right:34px;width:148px;transition:width .25s,right .25s}
+ .acc-hole .core{box-shadow:0 0 0 1.5px rgba(255,200,140,.85),0 0 16px 3px rgba(255,140,60,.55),0 0 40px 8px rgba(255,120,40,.18)}
+ .acc-feed-hero.compact .acc-hole{right:22px;width:46px}
+ .acc-feed-hero.compact .acc-hole .core{box-shadow:0 0 0 1px rgba(255,200,140,.85),0 0 8px 1px rgba(255,140,60,.55)}
+ /* Creator library image view: the picture uses the height of the window. */
+ .acc .history-view .gallery-image-viewport{height:max(320px,calc(100dvh - 300px))}
+}
+@media(min-width:1100px){
+ /* The task rail is a rounded card beside the canvas frame. */
+ .acc-wb :is(.task-panel,#taskPanel){inset:16px 16px 16px auto;width:296px;border:1px solid rgba(255,236,214,.08);border-radius:24px}
+}

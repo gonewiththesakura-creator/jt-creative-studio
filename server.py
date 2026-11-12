@@ -1331,8 +1331,8 @@ def owned_history_sources(session_id):
     """Jobs the caller owns and still sees in a history list. Caller holds _lock_jobs."""
     return [src for src in _jobs.values()
             if session_owns_record(session_id, src)
-            and not (src.get('style_id') in ('video', 'realism') and src.get('history_cleared')
-                     and video_ui_terminal(src))]
+            and not ((src.get('style_id') in ('video', 'realism') or src.get('workflow') == 'anima02')
+                     and src.get('history_cleared') and video_ui_terminal(src))]
 
 
 def favorite_in_scope(item, scope):
@@ -3721,6 +3721,128 @@ def clear_video_ui(session_id, scope, page='video'):
         return {'ok': True, 'scope': scope, 'cleared_ids': [job['id'] for job in matching]}
 
 
+def clear_creator_ui(session_id, scope=None, ids=None):
+    """2026-11-12: hide the caller's failed / cancelled creator records, or the listed finished ones
+    (records whose pictures have expired). Display only: the job, its outputs and favourites stay."""
+    if scope not in (None, 'errors'):
+        raise ValueError('未知的清除范围')
+    ids = [] if ids is None else ids
+    if (not isinstance(ids, list) or len(ids) > 60
+            or any(not isinstance(item, str) or not re.fullmatch(r'[0-9a-f]{12}', item) for item in ids)):
+        raise ValueError('任务编号不正确')
+    if scope is None and not ids:
+        raise ValueError('没有要清除的记录')
+    wanted = set(ids)
+    with _lock_jobs:
+        matching = [job for job in _jobs.values()
+                    if job.get('workflow') == 'anima02'
+                    and session_owns_record(session_id, job) and video_ui_terminal(job)
+                    and (job['id'] in wanted or (scope == 'errors' and job.get('status') in ('error', 'cancelled')))]
+        before = {job['id']: dict(job) for job in matching if not job.get('history_cleared')}
+        for job in matching:
+            job['history_cleared'] = True
+        try:
+            if before:
+                save_jobs()
+        except Exception:
+            for job_id, previous in before.items():
+                _jobs[job_id].clear(); _jobs[job_id].update(previous)
+            raise
+        return {'ok': True, 'scope': scope, 'cleared_ids': sorted(job['id'] for job in matching)}
+
+
+# 2026-11-12: showcase pictures and display names for the scheme cards, managed by the administrator.
+SHOWCASE_DIR = DATA_DIR / 'showcase'
+SHOWCASE_MAX_IMAGE_BYTES = 2 * 1024 * 1024
+SHOWCASE_TYPES = {'png': 'image/png', 'jpg': 'image/jpeg', 'webp': 'image/webp'}
+_lock_showcase = threading.Lock()
+
+
+def _showcase_read():
+    try:
+        data = json.loads((SHOWCASE_DIR / 'showcase.json').read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return {}
+    return {key: value for key, value in data.items() if isinstance(value, dict)} if isinstance(data, dict) else {}
+
+
+def _showcase_write(items):
+    SHOWCASE_DIR.mkdir(parents=True, exist_ok=True)
+    target = SHOWCASE_DIR / 'showcase.json'
+    temporary = target.with_name('showcase.json.tmp')
+    temporary.write_text(json.dumps(items, ensure_ascii=False, indent=1), encoding='utf-8')
+    os.replace(temporary, target)
+    keep = {item.get('image') for item in items.values()}
+    for path in SHOWCASE_DIR.iterdir():
+        if re.fullmatch(r'[0-9a-f]{32}\.(?:png|jpg|webp)', path.name) and path.name not in keep:
+            try: path.unlink()
+            except OSError: pass
+
+
+def _showcase_image_kind(raw):
+    if raw[:8] == b'\x89PNG\r\n\x1a\n': return 'png'
+    if raw[:3] == b'\xff\xd8\xff': return 'jpg'
+    if raw[:4] == b'RIFF' and raw[8:12] == b'WEBP': return 'webp'
+    return None
+
+
+def public_showcase():
+    with _lock_showcase:
+        items = _showcase_read()
+    return {key: {'name': str(value.get('name') or ''),
+                  'image': '/api/showcase-image/' + value['image'] if value.get('image') else ''}
+            for key, value in items.items() if value.get('name') or value.get('image')}
+
+
+def showcase_admin(actor, body, action='showcase'):
+    """Administrator view and edits. body None = list; otherwise save one card or delete it."""
+    if body is None:
+        return {'items': public_showcase()}
+    workflow_id = body.get('workflow_id')
+    if not isinstance(workflow_id, str) or not re.fullmatch(r'[A-Za-z0-9_.-]{1,80}', workflow_id):
+        raise ValueError('功能编号不正确')
+    with _lock_showcase:
+        items = _showcase_read()
+        if action == 'showcase/delete':
+            items.pop(workflow_id, None)
+        else:
+            if workflow_id not in WORKFLOWS:
+                raise ValueError('没有这个功能')
+            entry = dict(items.get(workflow_id) or {})
+            if 'name' in body:
+                name = body['name']
+                if not isinstance(name, str) or len(name.strip()) > 40 or re.search(r'[\x00-\x1f\x7f]', name):
+                    raise ValueError('名字最多 40 个字')
+                entry['name'] = name.strip()
+            if body.get('remove_image') is True:
+                entry.pop('image', None)
+            if body.get('image') is not None:
+                image = body['image']
+                match = isinstance(image, str) and re.fullmatch(r'data:image/(?:png|jpeg|webp);base64,([A-Za-z0-9+/=]+)', image)
+                if not match:
+                    raise ValueError('图片格式不支持，请用 PNG、JPG 或 WebP')
+                try:
+                    raw = base64.b64decode(match.group(1), validate=True)
+                except ValueError:
+                    raise ValueError('图片数据不完整') from None
+                kind = _showcase_image_kind(raw)
+                if not kind:
+                    raise ValueError('图片格式不支持，请用 PNG、JPG 或 WebP')
+                if len(raw) > SHOWCASE_MAX_IMAGE_BYTES:
+                    raise ValueError('图片超过 2MB')
+                filename = hashlib.sha256(raw).hexdigest()[:32] + '.' + kind
+                SHOWCASE_DIR.mkdir(parents=True, exist_ok=True)
+                (SHOWCASE_DIR / filename).write_bytes(raw)
+                entry['image'] = filename
+            entry['updated'] = int(time.time())
+            if entry.get('name') or entry.get('image'):
+                items[workflow_id] = entry
+            else:
+                items.pop(workflow_id, None)
+        _showcase_write(items)
+    return {'items': public_showcase()}
+
+
 def video_queue_snapshot(session_id, page='video'):
     with _lock_jobs:
         waiting = _video_waiting()
@@ -4151,6 +4273,7 @@ def membership_reservations(actor, body=None):
 
 
 _membership.reservations_callback = membership_reservations
+_membership.showcase_callback = showcase_admin
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -4754,6 +4877,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 body = {"id": jid, "prompt": str(src.get("prompt") or ""), "prompt_mode": src.get("prompt_mode")}
             self._send(200, json.dumps(body, ensure_ascii=False).encode(),
                        headers={"Cache-Control": "private, no-store", "Vary": "Cookie"})
+        elif path == "/api/showcase":
+            if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
+            self._send(200, json.dumps({"items": public_showcase()}, ensure_ascii=False).encode())
+        elif path.startswith("/api/showcase-image/"):
+            if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
+            name = path.split("/api/showcase-image/", 1)[1]
+            if not re.fullmatch(r'[0-9a-f]{32}\.(?:png|jpg|webp)', name) or not (SHOWCASE_DIR / name).is_file():
+                return self._send(404, b'{"error":"not found"}')
+            self._send(200, (SHOWCASE_DIR / name).read_bytes(), SHOWCASE_TYPES[name.rsplit('.', 1)[1]],
+                       headers={"X-Content-Type-Options": "nosniff"})
         elif path == "/api/library-counts":
             # Sidebar badges: how many history records and favourites the page's own lists hold.
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
@@ -5450,6 +5583,26 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._send(200, b'{"ok":true}')
             except (ValueError, TypeError, OSError):
                 return self._send(400, b'{"error":"invalid thumbnail"}')
+        if path == '/api/creator-clear':
+            if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
+            session_id = self._require_session()
+            if not session_id: return
+            origin = self.headers.get('Origin')
+            if (self.headers.get('Sec-Fetch-Site') == 'cross-site'
+                    or (origin and (urllib.parse.urlparse(origin).scheme not in ('http', 'https')
+                                    or urllib.parse.urlparse(origin).netloc.lower()
+                                    != str(self.headers.get('Host') or '').lower()))):
+                return self._send(403, b'{"error":"same-origin request required"}')
+            try:
+                body = self._read_json(8192)
+                if not isinstance(body, dict) or set(body) - {'scope', 'ids'}: raise ValueError('请求字段不正确')
+                result = clear_creator_ui(session_id, body.get('scope'), body.get('ids'))
+            except (ValueError, TypeError, OverflowError) as error:
+                return self._send(400, json.dumps({'error': str(error)}, ensure_ascii=False).encode())
+            except Exception:
+                return self._send(503, json.dumps({'error': '清除未保存，请稍后重试'}, ensure_ascii=False).encode())
+            return self._send(200, json.dumps(result, ensure_ascii=False).encode(),
+                              headers={'Cache-Control': 'no-store'})
         if path in ('/api/video-clear', '/api/image-edit-clear'):
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
             session_id = self._require_session()

@@ -29,6 +29,11 @@ def test_details_hover_scroll_history_and_pending_favorite(browser):
         page.locator('#histOpen').first.click();expect(page.locator('#histList .job')).to_have_count(20)
         page.get_by_role('button',name='加载更早记录').click();expect(page.locator('#histList .job')).to_have_count(21)
         page.locator('#histList .job').last.get_by_role('button',name='播放结果').click()
-        expect(page.locator('#histOverlay')).not_to_have_class('library-overlay open')
-        expect(page.locator('#galleryMain video')).to_have_count(1)
+        # 2026-11-12: the result plays in the shell lightbox above the library, which stays open
+        # (it used to close the library and jump back to the workspace).
+        expect(page.locator('#jtLightbox .lb-stage video')).to_have_count(1)
+        expect(page.locator('#histOverlay')).to_have_class('library-overlay open')
+        page.keyboard.press('Escape')
+        expect(page.locator('#jtLightbox')).to_be_hidden()
+        expect(page.locator('#histOverlay')).to_have_class('library-overlay open')
     finally:page.close()

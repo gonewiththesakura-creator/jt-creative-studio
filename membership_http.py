@@ -14,6 +14,7 @@ from membership_store import MembershipError, MembershipStore
 
 class MembershipGateway:
     COOKIE = "__Host-jt_account"
+    showcase_callback = None  # set by server.py: showcase cards for the scheme library
     STATE_COOKIE = "__Host-jt_login"
     # Flush private media from legacy releases once per browser session and
     # whenever accounts change, not on every account-panel refresh.
@@ -187,9 +188,9 @@ class MembershipGateway:
             return True
 
     @staticmethod
-    def body(handler):
+    def body(handler, limit=32 * 1024):
         try:
-            body = handler._read_json(32 * 1024)
+            body = handler._read_json(limit)
         except Exception:
             raise MembershipError("invalid_json", "请求数据格式不正确") from None
         if not isinstance(body, dict):
@@ -275,7 +276,8 @@ class MembershipGateway:
 
     def admin(self, handler, path, write, actor):
         action = path.removeprefix("/api/admin/membership/")
-        body = self.body(handler) if write else {}
+        # 2026-11-12: a showcase card carries one picture (at most 2 MB before base64).
+        body = self.body(handler, 3 * 1024 * 1024 if action == 'showcase' else 32 * 1024) if write else {}
         schemas = {
             'plans': {'plan_id', 'name', 'duration_days', 'image_units', 'video_units', 'max_concurrent', 'max_video_queued', 'features', 'backends', 'active', 'price_display'},
             'codes': {'plan_id', 'count', 'note'}, 'codes/revoke': {'code_id'},
@@ -283,6 +285,7 @@ class MembershipGateway:
             'users/rotate-code': {'user_id', 'note'},
             'users/disable': {'user_id', 'disabled'},
             'reservations/settle': {'job_id', 'success', 'note'},
+            'showcase': {'workflow_id', 'name', 'image', 'remove_image'}, 'showcase/delete': {'workflow_id'},
         }
         if write and set(body) - schemas.get(action, set()):
             raise MembershipError('invalid_input', '请求字段不正确')
@@ -325,6 +328,11 @@ class MembershipGateway:
             if not isinstance(body.get('job_id'), str) or not re.fullmatch(r'[0-9a-f]{12}', body['job_id']):
                 raise MembershipError('invalid_input', '任务编号不正确')
             result = self.reservations_callback(actor, body)
+        elif action in ('showcase', 'showcase/delete') and (write or action == 'showcase') and self.showcase_callback:
+            try:
+                result = self.showcase_callback(actor, body if write else None, action)
+            except ValueError as error:
+                raise MembershipError('invalid_input', str(error)) from None
         else:
             raise MembershipError("not_found", "接口不存在", 404)
         self.reply(handler, 200, result)

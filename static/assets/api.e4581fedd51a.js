@@ -22,7 +22,7 @@ export async function accountFetch(input,options={}){
  }
  // The sidebar's library badges follow submissions, favourites and cleared history.
  if(url.origin===location.origin&&response.ok&&!['GET','HEAD','OPTIONS'].includes(method)&&
-    /^\/api\/(?:[a-z-]*generate|favorites(?:\/.*)?|video-clear|image-edit-clear)$/.test(url.pathname)){
+    /^\/api\/(?:[a-z-]*generate|favorites(?:\/.*)?|video-clear|image-edit-clear|creator-clear)$/.test(url.pathname)){
   window.dispatchEvent(new CustomEvent('jt:library-maybe-changed'));
  }
  return response;

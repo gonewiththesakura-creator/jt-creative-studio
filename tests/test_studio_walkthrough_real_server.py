@@ -296,3 +296,203 @@ def test_video_page_upload_queue_and_cancel_through_real_server(browser, site, m
         assert [p for p in page.problems if 'WebGL' not in p] == []
     finally:
         context.close()
+
+
+# 2026-11-12: the owner's second batch after logging in on the live site.
+def lightbox_state(page):
+    return page.evaluate("""() => { const box = document.getElementById('jtLightbox'); return !box || box.hidden ? null :
+        {media: box.querySelector('.lb-stage > *')?.tagName, fav: !box.querySelector('[data-lb=fav]').hidden,
+         href: box.querySelector('[data-lb=download]').getAttribute('href')}; }""")
+
+
+def test_library_plays_results_in_a_lightbox_above_the_library(browser, site):
+    """视频「播放结果」和图片编辑「查看结果」在作品库上层弹窗，点空白或 Esc 关闭，不再跳回创作页。"""
+    context, page = sign_in(browser, site, site.member_code)
+    try:
+        nav = lambda name: page.locator('body > .app-shell > .topbar .topnav-link', has_text=name).click()
+        nav('视频')
+        expect(page.locator('body')).to_have_attribute('data-page', '/video')
+        page.locator('#param_prompt').fill('一只猫走过雨后的街道')
+        page.locator('#genBtn').click()
+        expect(page.locator('#taskPanel')).to_contain_text('排队 · 第 1 位')
+        with site.panel._lock_jobs:
+            job = next(iter(site.panel._jobs.values()))
+            job.update(status='done', elapsed=1.0, video_queued=False,
+                       images=[{'url': '/static/favicon.png', 'file': 'result.mp4', 'file_type': 'mp4'}])
+            site.panel._jobs['e' * 12] = dict(job, id='e' * 12, style_id='realism', workflow='member-workflow', wf_name='换装',
+                                              membership_reserved=False, created=job['created'] - 5,
+                                              images=[{'url': '/static/favicon.png', 'file': 'result.png', 'file_type': 'png'}])
+        page.locator('#histOpen').first.click()
+        play = page.locator('#histList').get_by_role('button', name='播放结果')
+        expect(play).to_be_enabled()
+        play.click()
+        box = page.locator('#jtLightbox')
+        expect(box).to_be_visible()
+        assert lightbox_state(page) == {'media': 'VIDEO', 'fav': True, 'href': site.gateway.origin + '/static/favicon.png'}
+        assert open_overlays(page) == ['/video#histOverlay'], 'the library stays open underneath'
+        expect(page.locator('#mediaGallery')).to_be_hidden()
+        shot(page, '40-video-lightbox')
+        page.mouse.click(20, 450)  # the backdrop
+        expect(box).to_be_hidden()
+        assert open_overlays(page) == ['/video#histOverlay']
+        play.click()
+        expect(box).to_be_visible()
+        page.keyboard.press('Escape')
+        expect(box).to_be_hidden()
+        assert open_overlays(page) == ['/video#histOverlay'], 'Escape closes the player, not the library'
+
+        nav('图片编辑')
+        expect(page.locator('body')).to_have_attribute('data-page', '/realism')
+        page.locator('#histOpen').first.click()
+        page.locator('#histList').get_by_role('button', name='查看结果').click()
+        expect(box).to_be_visible()
+        assert lightbox_state(page)['media'] == 'IMG'
+        assert open_overlays(page) == ['/realism#histOverlay']
+        shot(page, '41-edit-lightbox')
+        box.get_by_role('button', name='关闭').click()
+        expect(box).to_be_hidden()
+
+        # The page's own result area: the save / download pair shares one height and one top edge
+        # (owner's screenshot 7), and the task rail is a rounded card (screenshot 8).
+        page.locator('body > .app-shell > .topbar .topnav-link', has_text='图片编辑').click()
+        assert open_overlays(page) == []
+        expect(page.locator('#galleryMain .gallery-actions').last).to_be_visible(timeout=8000)
+        buttons = page.evaluate("""() => [...window.jtApp.router.pages.get('/realism').shadow.querySelectorAll('#galleryMain .gallery-actions > *')]
+            .map(node => { const r = node.getBoundingClientRect(); return [node.textContent.trim(), Math.round(r.top), Math.round(r.height)]; })""")
+        assert [b[0] for b in buttons] == ['♥ 收藏', '⬇ 下载原文件'] and buttons[0][1:] == buttons[1][1:] and buttons[0][2] == 36, buttons
+        assert page.locator('#taskPanel').last.evaluate('node => getComputedStyle(node).borderTopLeftRadius') == '24px'
+        shot(page, '42-edit-result')
+        assert [p for p in page.problems if 'WebGL' not in p] == []
+    finally:
+        context.close()
+
+
+def test_creator_banner_sticks_pictures_zoom_and_broken_records_clear(browser, finished_site):
+    site = finished_site
+    context, page = sign_in(browser, site, site.member_code)
+    try:
+        submit_one(page, site)
+        expect(page.locator('.acc-shot img').first).to_be_visible(timeout=8000)
+        with site.panel._lock_jobs:
+            source = dict(site.panel._jobs[site.started[0]])
+            for index in range(6):  # enough rows to scroll; two records whose files are gone, one failed
+                copy = dict(source, id='%012x' % (index + 1), created=source['created'] - 100 - index, membership_reserved=False)
+                if index < 2:
+                    copy['images'] = [{'url': '/static/assets/gone-%d.png' % index, 'file': 'gone.png'}]
+                if index == 2:
+                    copy.update(status='error', error='fixture failure', images=[])
+                site.panel._jobs[copy['id']] = copy
+        page.reload()
+        expect(page.locator('#accountGate')).to_be_hidden(timeout=15000)
+
+        # Banner: whole hole inside it; it shrinks and stays on top when the stream scrolls.
+        hero, hole, feed = page.locator('.acc-feed-hero'), page.locator('.acc-hole'), page.locator('.acc-feed')
+        expect(page.locator('.acc-shot.expired')).to_have_count(2, timeout=8000)
+        inside = lambda: page.evaluate("""() => { const root = window.jtApp.router.pages.get('/').shadow,
+            a = root.querySelector('.acc-feed-hero').getBoundingClientRect(), b = root.querySelector('.acc-hole').getBoundingClientRect();
+            return b.left >= a.left && b.right <= a.right && b.top >= a.top && b.bottom <= a.bottom; }""")
+        assert inside(), 'the black hole is not cut by the banner edge'
+        tall, top = hero.bounding_box()['height'], hero.bounding_box()['y']
+        shot(page, '50-creator-banner')
+        feed.evaluate('node => node.scrollTo(0, 600)')
+        expect(hero).to_have_class(re.compile(r'\bcompact\b'))
+        page.wait_for_timeout(400)
+        slim = hero.bounding_box()
+        assert slim['height'] < tall / 2 and abs(slim['y'] - top) <= 6, (slim, tall, top)
+        assert inside()
+        assert feed.evaluate('node => node.scrollTop') == 600, 'shrinking the banner does not move the stream'
+        shot(page, '51-creator-banner-compact')
+        feed.evaluate('node => node.scrollTo(0, 0)')
+        expect(hero).not_to_have_class(re.compile(r'\bcompact\b'))
+
+        # Failed and expired records: placeholders, one clear per record, one for all of them.
+        tools = page.locator('.acc-feed-tools')
+        expect(tools).to_contain_text('有 3 条出错或图片已失效的记录')
+        failed = page.locator('.acc-group', has=page.locator('.acc-shot.failed'))
+        failed.get_by_role('button', name='清除').click()
+        expect(tools).to_contain_text('有 2 条')
+        shot(page, '52-creator-expired')
+        tools.get_by_role('button', name='全部清除').click()
+        expect(tools).to_have_count(0)
+        expect(page.locator('.acc-shot.expired')).to_have_count(0)
+        left = page.evaluate("async () => (await (await fetch('/api/jobs?scope=creator&limit=30')).json()).map(job => job.id)")
+        assert sorted(left) == sorted([site.started[0], '%012x' % 4, '%012x' % 5, '%012x' % 6])
+        expect(page.locator('#histCount')).to_have_text('4', timeout=8000)
+
+        # Library: the image view is large, a click opens the lightbox, which can go full screen.
+        page.locator('#histOpen').first.click()
+        page.locator('#histList .history-card').first.get_by_role('button', name='查看图片').click()
+        picture = page.locator('#histList .history-view .gallery-main img')
+        expect(picture).to_be_visible()
+        shot(page, '53-library-view')
+        picture.click()
+        box = page.locator('#jtLightbox')
+        expect(box).to_be_visible()
+        assert lightbox_state(page)['media'] == 'IMG'
+        shot(page, '54-library-lightbox')
+        box.get_by_role('button', name='全屏').click()
+        for _ in range(30):  # the page's CSP rules out wait_for_function
+            if page.evaluate('document.fullscreenElement && document.fullscreenElement.id') == 'jtLightbox':
+                break
+            page.wait_for_timeout(100)
+        assert page.evaluate('document.fullscreenElement && document.fullscreenElement.id') == 'jtLightbox'
+        shot(page, '55-lightbox-fullscreen')
+        box.get_by_role('button', name='关闭').click()
+        expect(box).to_be_hidden()
+        for _ in range(30):
+            if page.evaluate('!document.fullscreenElement'):
+                break
+            page.wait_for_timeout(100)
+        assert page.evaluate('!document.fullscreenElement')
+        expect(picture).to_be_visible()
+        # The library's own clear button removes failed records from the list.
+        with site.panel._lock_jobs:
+            site.panel._jobs['f' * 12] = dict(source, id='f' * 12, status='error', error='x', images=[], membership_reserved=False)
+        page.locator('#histList .history-back').click()
+        page.locator('#histOpen').first.click()
+        page.locator('#histOpen').first.click()
+        expect(page.locator('#histList .history-card[data-status=error]')).to_have_count(1)
+        page.locator('#histOverlay .acc-lib-clear').click()
+        expect(page.locator('#histList .history-card[data-status=error]')).to_have_count(0)
+        assert site.panel._jobs['f' * 12].get('history_cleared') is True
+        assert [p for p in page.problems if 'WebGL' not in p and '404' not in p] == []
+    finally:
+        context.close()
+
+
+def test_admin_showcase_picture_and_name_reach_the_scheme_cards(browser, site, tmp_path, monkeypatch):
+    monkeypatch.setattr(site.panel, 'SHOWCASE_DIR', tmp_path / 'showcase')
+    site.gateway.showcase_callback = site.panel.showcase_admin
+    context, page = sign_in(browser, site, site.admin_code)
+    try:
+        page.locator('#sideAdminOpen').click()
+        page.locator('[data-admin-tab="showcase"]').click()
+        card = page.locator('[data-showcase="member-video"]')
+        expect(card).to_contain_text('原名：member-video')
+        expect(card).to_contain_text('未上传展示图')
+        card.locator('input[type=text]').fill('让照片动起来')
+        card.get_by_role('button', name='保存名字').click()
+        expect(page.locator('#membershipAdminStatus')).to_have_text('名字已保存。')
+        card.locator('input[type=file]').set_input_files(str(Path(__file__).parents[1] / 'static' / 'favicon.png'))
+        expect(card.locator('.admin-showcase-art img')).to_have_attribute('src', re.compile(r'^/api/showcase-image/[0-9a-f]{32}\.(webp|jpg)$'))
+        expect(card.get_by_role('button', name='移除图片')).to_be_visible()
+        assert page.locator('[data-showcase]').count() >= 4
+        shot(page, '60-admin-showcase')
+        page.locator('#membershipAdminClose').click()
+
+        page.locator('body > .app-shell > .topbar .topnav-link', has_text='视频').click()
+        expect(page.locator('body')).to_have_attribute('data-page', '/video')
+        page.locator('.wb-scheme').click()
+        scheme = page.locator('.wb-card[data-pick="member-video"]')
+        expect(scheme.locator('b')).to_have_text('让照片动起来')
+        expect(scheme.locator('.wb-art img')).to_have_attribute('src', re.compile(r'^/api/showcase-image/'))
+        assert scheme.locator('.wb-art img').evaluate('img => img.complete && img.naturalWidth > 0')
+        shot(page, '61-video-schemes')
+        scheme.click()
+        expect(page.locator('.wb-scheme b')).to_have_text('让照片动起来')
+        # Rounded task rail (owner's screenshot 8) and one height for the result buttons.
+        assert page.locator('#taskPanel').evaluate('node => getComputedStyle(node).borderTopLeftRadius') == '24px'
+        shot(page, '62-video-page')
+        assert [p for p in page.problems if 'WebGL' not in p] == []
+    finally:
+        context.close()

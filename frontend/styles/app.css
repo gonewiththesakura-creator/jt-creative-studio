@@ -292,3 +292,38 @@ body.singularity .account-admin-login{margin:0;padding:8px 0;font-size:12px;colo
  body.singularity .account-gate-card>.account-secondary{width:auto;margin:0 auto 0 max(0px,calc((100% - 380px)/2));border-radius:10px}
  body.singularity .account-admin-alt{align-items:flex-start;margin-top:0}
 }
+/* Shell lightbox (2026-11-12): pictures and videos open above the page and its library. */
+#jtLightbox{position:fixed;inset:0;z-index:180;display:grid;grid-template-rows:auto minmax(0,1fr) auto;justify-items:center;gap:12px;padding:18px 72px 20px;background:rgba(6,5,4,.92);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);outline:0;cursor:zoom-out}
+#jtLightbox[hidden]{display:none}
+#jtLightbox .lb-note{margin:0;min-height:18px;color:#a79d90;font:12px/18px var(--mono,ui-monospace,monospace);letter-spacing:.04em;cursor:default}
+#jtLightbox .lb-stage{display:grid;place-items:center;min-width:0;min-height:0;width:100%;height:100%}
+#jtLightbox .lb-stage :is(img,video){display:block;max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;border-radius:12px;box-shadow:0 30px 80px rgba(0,0,0,.6);background:#0b0a09}
+#jtLightbox .lb-stage img{cursor:zoom-in}
+#jtLightbox .lb-stage video{cursor:default;min-width:min(480px,100%)}
+#jtLightbox .lb-bar{display:flex;align-items:center;gap:8px;cursor:default}
+#jtLightbox .lb-btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;height:38px;padding:0 16px;border:1px solid rgba(255,236,214,.16);border-radius:999px;background:rgba(26,22,19,.9);color:#f4eee6;font:500 13px/1 inherit;text-decoration:none;cursor:pointer;transition:border-color .2s,background .2s}
+#jtLightbox .lb-btn:hover{border-color:rgba(255,190,120,.5);background:rgba(40,33,27,.95)}
+#jtLightbox .lb-btn[hidden]{display:none}
+#jtLightbox .lb-btn svg{width:16px;height:16px;flex:none}
+#jtLightbox .lb-btn[data-state=saved]{color:#ffa95c;border-color:rgba(255,169,92,.45)}
+#jtLightbox .lb-btn[data-state=saved] svg{fill:currentColor}
+#jtLightbox .lb-nav{position:absolute;top:50%;width:44px;height:44px;margin-top:-22px;border:1px solid rgba(255,236,214,.16);border-radius:50%;background:rgba(26,22,19,.9);color:#f4eee6;font-size:22px;line-height:1;cursor:pointer}
+#jtLightbox .lb-nav[hidden]{display:none}
+#jtLightbox .lb-prev{left:16px}
+#jtLightbox .lb-next{right:16px}
+#jtLightbox:fullscreen{padding:0;gap:0;background:#000}
+#jtLightbox:fullscreen .lb-note{display:none}
+#jtLightbox:fullscreen .lb-stage :is(img,video){border-radius:0;box-shadow:none}
+#jtLightbox:fullscreen .lb-stage img{cursor:zoom-out}
+#jtLightbox:fullscreen .lb-bar{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);opacity:.35;transition:opacity .2s}
+#jtLightbox:fullscreen .lb-bar:hover{opacity:1}
+/* Showcase management tab in the administrator console (2026-11-12). */
+.admin-showcase-group{margin:18px 0 10px;font-size:13px;font-weight:500;color:var(--text-2,#b9afa2)}
+.admin-showcase-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px}
+.admin-showcase-card{display:flex;flex-direction:column;gap:10px;padding:12px}
+.admin-showcase-art{position:relative;display:grid;place-items:center;aspect-ratio:16/10;border-radius:10px;overflow:hidden;background:radial-gradient(120% 90% at 50% 0,rgba(255,236,214,.07),transparent 60%),#15120f;color:#857c70;font-size:12px}
+.admin-showcase-art img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.admin-showcase-card small{color:#857c70;font-size:12px;line-height:1.4;overflow-wrap:anywhere}
+.admin-showcase-card input[type=text]{width:100%;min-height:36px;box-sizing:border-box}
+.admin-showcase-actions{display:flex;flex-wrap:wrap;gap:6px}
+.admin-showcase-actions button{flex:1 1 auto;min-height:32px;padding:0 10px;font-size:12px;white-space:nowrap}

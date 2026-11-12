@@ -241,6 +241,9 @@ def test_packaged_creator_results_fit_full_image_and_preserve_gallery_loading(tm
 
         stream=host.locator('.acc-feed .acc-group[data-job="test"]')
         expect(stream.locator('.acc-shot img')).to_have_count(4)
+        # 2026-11-12: the banner now stays on top of the stream as a slim bar. This test scrolls each
+        # picture to the very top and samples its pixels, so the bar is taken out of the way here.
+        host.locator('.acc-feed-hero').evaluate("el=>{el.style.display='none'}")
         for width,height in [(1320,806),(1920,1080),(320,760)]:
             page.set_viewport_size({'width':width,'height':height})
             for index in range(4):

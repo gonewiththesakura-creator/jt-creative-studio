@@ -1,5 +1,5 @@
-import {createPageScope} from "/static/assets/page-scope.fe707b65c828.js";
-import {accountFetch} from "/static/assets/api.a6519138b399.js";
+import {createPageScope} from "/static/assets/page-scope.1f365ea92111.js";
+import {accountFetch} from "/static/assets/api.e4581fedd51a.js";
 export function createRouter(manifest){
  const pages=new Map(),preloads=new Map(),root=document.getElementById('pageRoot');
  let version=0,active=null;
