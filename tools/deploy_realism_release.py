@@ -123,7 +123,7 @@ MIN_SCRIPT_CONTRACTS = 55
 MIN_PYTEST_FILES = 99
 # 2026-11-11 (Studio v2): three pytest files added, none removed: test_admin_code_login_real_server,
 # test_membership_concurrency_release, test_studio_walkthrough_real_server.
-RELEASE_TEST_INVENTORY_SHA256 = "b9111c9ac076a420c65909b4708c22705386d45d27b72369571bbb11e40f7c96"
+RELEASE_TEST_INVENTORY_SHA256 = "e45f71ef063c0e98552dbd2d06c7f1738130506884b7afcee1fbe483ea3d92e0"
 DREAMAPI_CONTRACT_SHA256 = "d2e692e229a0525590fbbc5ffc4f466faebe70675278d263a44bfd0dffc6f0fa"
 HISTORICAL_DREAMAPI_CONTRACT_SHA256 = "665d283bd420f76f031d9530f1d757f022d6cc16a5c9e9bc315e4966da797959"
 # 2026-10-22: owner-authorized single canary for the accretion release (job a190e498799f, commit ec0c01c).
@@ -2424,14 +2424,22 @@ def reviewed_av1_video_redo_patch(tested_commit, current_head):
         return False
 
 
-REVIEWED_STUDIO_V2_RUNTIME_SHA256 = "d66b6a74b15ad6d56fbaedacfd260c7ebad61dd6031afdbab03e73e17e926ff6"
-REVIEWED_STUDIO_V2_FRONTEND_SHA256 = "722798460d17ae4f56fd97c483f20ee45ae6058fffa8410cc6dc2683494e33ec"
+REVIEWED_STUDIO_V2_RUNTIME_SHA256 = "56d8007b8afb8d09b04b2bfb9b7f7edef0e7bb13dcc2a9491d523ad4074ce9dd"
+REVIEWED_STUDIO_V2_FRONTEND_SHA256 = "d67099393bc34fcacd3b8a4128d85bc0fa88b5ce0298f431590f418c40f5a7c7"
 REVIEWED_STUDIO_V2_CHANGED_RUNTIME_FILES = ("server.py", "static/index.html", "static/promptgen.html", "static/video.html",
                                            "static/realism.html")
 
 
 def reviewed_studio_v2_patch(tested_commit, current_head):
-    """Pin the Studio v2 branch at 8e79a90be97c891dde12485447715df6c471e059 (owner-approved 2026-11-12).
+    """Pin the Studio v2 branch at 646f203a77f3cc03e3cce190f0bbb0ef71fec714 (owner-approved 2026-11-12).
+
+    2026-11-12 (owner: 改登记并发布): runtime and frontend re-pinned from 8e79a90 to 646f203, which adds:
+    the shell lightbox for library results and pictures, the sticky creator banner, display-only
+    clearing of failed or expired creator records (/api/creator-clear), and the administrator's
+    showcase cards (/api/admin/membership/showcase, /api/showcase, /api/showcase-image). Generation,
+    provider submission and quota code are untouched. membership_http.py changes too; it is outside
+    the native runtime payload. A new test file changes the test inventory digest. Offline review
+    of 646f203: 55 script contracts and 1567 pytest tests pass. The earlier pin no longer passes.
 
     2026-11-12 (owner: 改登记并发布): frontend re-pinned from c9e6631 to 8e79a90, a stylesheet-only
     change (作品库 above 收藏, grid icon). The runtime payload is byte-identical to c9e6631.
