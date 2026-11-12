@@ -270,7 +270,12 @@ def test_packaged_creator_results_fit_full_image_and_preserve_gallery_loading(tm
         # 2026-11-10 (owner decision, stage 3): galleries load only once on screen, so the hidden result panel
         # fetches nothing; the stream loads 4 and opening history loads its own 1 view + 4 thumbs. 12 -> 9.
         # 2026-11-11: the creator library lists picture cards, one small thumbnail per record (4 here). 9 -> 13.
-        assert len([url for method,url in requests if '/api/rh-preview/' in url])==13
+        # 2026-11-12: how often the same preview is fetched again (enlarging, the library card) depends on the
+        # browser's memory cache: 13 when this file runs alone, 10 in two full runs on a busy machine. What must
+        # hold is that only the four view-size and four thumbnail-size previews are ever requested, 13 at most.
+        previews=[url.split('/api/rh-preview/')[1] for method,url in requests if '/api/rh-preview/' in url]
+        assert set(previews)=={f'test/{index}?size={size}' for index in range(4) for size in ('view','thumb')}, previews
+        assert 8<=len(previews)<=13, previews
         assert not [url for method,url in requests if '/api/result-media/' in url]
         history.get_by_role('button',name='查看结果 3',exact=True).click()
         expect(history.locator('.gallery-result-image')).to_be_visible()

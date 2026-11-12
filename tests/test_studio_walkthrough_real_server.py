@@ -367,20 +367,29 @@ def test_library_plays_results_in_a_lightbox_above_the_library(browser, site):
         context.close()
 
 
-def test_creator_banner_sticks_pictures_zoom_and_broken_records_clear(browser, finished_site):
+def test_creator_banner_sticks_pictures_zoom_and_broken_records_clear(browser, finished_site, tmp_path, monkeypatch):
     site = finished_site
     context, page = sign_in(browser, site, site.member_code)
     try:
         submit_one(page, site)
         expect(page.locator('.acc-shot img').first).to_be_visible(timeout=8000)
+        from io import BytesIO
+        from PIL import Image
+        import base64
+        raw = BytesIO(); Image.new('RGB', (1600, 4000), (200, 120, 60)).save(raw, 'PNG')
+        monkeypatch.setattr(site.panel, 'SHOWCASE_DIR', tmp_path / 'showcase')
+        workflow = next(iter(site.panel.WORKFLOWS))
+        tall_url = site.panel.showcase_admin(None, {'workflow_id': workflow, 'image': 'data:image/png;base64,' + base64.b64encode(raw.getvalue()).decode()})['items'][workflow]['image']
         with site.panel._lock_jobs:
             source = dict(site.panel._jobs[site.started[0]])
             for index in range(6):  # enough rows to scroll; two records whose files are gone, one failed
                 copy = dict(source, id='%012x' % (index + 1), created=source['created'] - 100 - index, membership_reserved=False)
                 if index < 2:
                     copy['images'] = [{'url': '/static/assets/gone-%d.png' % index, 'file': 'gone.png'}]
-                if index == 2:
-                    copy.update(status='error', error='fixture failure', images=[])
+                if index == 2:  # a failure whose provider outcome was never confirmed is clearable too
+                    copy.update(status='error', error='comfyui timeout after 1800s', provider_status='RUNNING', images=[])
+                if index == 3:  # a tall original, far larger than the window
+                    copy['images'] = [{'url': tall_url, 'file': 'tall.png'}]
                 site.panel._jobs[copy['id']] = copy
         page.reload()
         expect(page.locator('#accountGate')).to_be_hidden(timeout=15000)
@@ -445,6 +454,23 @@ def test_creator_banner_sticks_pictures_zoom_and_broken_records_clear(browser, f
             page.wait_for_timeout(100)
         assert page.evaluate('!document.fullscreenElement')
         expect(picture).to_be_visible()
+        # 2026-11-12 (owner's screenshot): a picture larger than the window shows whole, not half of it.
+        page.locator('#histList .history-back').click()
+        page.locator('#histList .history-card', has=page.locator('img[src="%s"]' % tall_url)).get_by_role('button', name='查看图片').click()
+        page.locator('#histList .history-view .gallery-main img').click()
+        expect(box).to_be_visible()
+        fits = lambda: page.evaluate("""() => { const img = document.querySelector('#jtLightbox .lb-stage img'), r = img.getBoundingClientRect(),
+            bar = document.querySelector('#jtLightbox .lb-bar').getBoundingClientRect();
+            return img.naturalHeight === 4000 && r.top >= 0 && r.left >= 0 && r.right <= innerWidth && r.bottom <= bar.top
+                && Math.abs(r.width / r.height - 0.4) < 0.01; }""")
+        for _ in range(50):  # the original replaces the preview once it has loaded
+            if fits():
+                break
+            page.wait_for_timeout(100)
+        assert fits(), 'the whole picture is inside the window, above the buttons'
+        shot(page, '56-lightbox-tall')
+        page.keyboard.press('Escape')
+        expect(box).to_be_hidden()
         # The library's own clear button removes failed records from the list.
         with site.panel._lock_jobs:
             site.panel._jobs['f' * 12] = dict(source, id='f' * 12, status='error', error='x', images=[], membership_reserved=False)

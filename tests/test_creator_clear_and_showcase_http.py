@@ -53,6 +53,25 @@ def test_creator_clear_hides_failed_and_listed_records_of_the_caller_only(member
     assert json_request(env, 'GET', '/api/job/' + 'a' * 12, user='alice')[0] == 200
 
 
+def test_creator_clear_takes_unconfirmed_failures_and_a_recovered_job_shows_again(membership_env):
+    """2026-11-12 (owner): a failure whose provider outcome was never confirmed could not be cleared."""
+    env = membership_env
+    creator_job(env, 'a' * 12, status='error', error='comfyui timeout after 1800s', provider_status='RUNNING',
+                queue_hold=True)
+    creator_job(env, 'b' * 12, status='recovering')
+    assert not env.panel.video_ui_terminal(env.panel._jobs['a' * 12])
+    status, body, _ = json_request(env, 'POST', '/api/creator-clear', {'scope': 'errors', 'ids': ['b' * 12]}, user='alice')
+    assert (status, body['cleared_ids']) == (200, ['a' * 12])
+    assert creator_ids(env) == ['b' * 12]
+    # A later provider check finds the picture after all: the record is back in the library.
+    env.panel._jobs['a' * 12].update(status='done', queue_hold=False, provider_status='SUCCESS',
+                                     images=[{'url': '/static/favicon.png', 'file': 'a.png'}])
+    assert creator_ids(env) == ['a' * 12, 'b' * 12]
+    # Cleared again as a finished record, it stays hidden.
+    assert json_request(env, 'POST', '/api/creator-clear', {'ids': ['a' * 12]}, user='alice')[1]['cleared_ids'] == ['a' * 12]
+    assert creator_ids(env) == ['b' * 12]
+
+
 @pytest.mark.parametrize('payload', [{}, {'scope': 'history'}, {'ids': 'x'}, {'ids': ['nope']}, {'ids': ['a' * 12] * 61},
                                      {'scope': 'errors', 'extra': 1}])
 def test_creator_clear_rejects_bad_requests(membership_env, payload):

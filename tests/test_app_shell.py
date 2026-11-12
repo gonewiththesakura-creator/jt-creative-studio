@@ -40,7 +40,7 @@ def test_packaging_preserves_business_functions_and_backend_contracts():
                          'owned_history_sources','favorite_in_scope',
                          # 2026-11-12: creator record clearing and the administrator's showcase cards; covered in
                          # test_creator_clear_and_showcase_http and the real-server walkthrough.
-                         'clear_creator_ui','_showcase_read','_showcase_write','_showcase_image_kind',
+                         'clear_creator_ui','creator_record_cleared','_showcase_read','_showcase_write','_showcase_image_kind',
                          'public_showcase','showcase_admin'}
         excluded_names={'SHOWCASE_DIR','SHOWCASE_MAX_IMAGE_BYTES','SHOWCASE_TYPES','_lock_showcase','LIBRARY_SCOPES','VIDEO_QUEUE_LIMIT','VIDEO_QUEUE_SESSION_LIMIT','REJECTED_VIDEO_CODECS',
                         '_UNSUPPORTED_VIDEO_MESSAGES','_MP4_CONTAINER_BOXES','_MP4_MAX_BOXES',

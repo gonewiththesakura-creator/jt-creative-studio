@@ -644,7 +644,7 @@ function feed(root, body, {reuse, engineButton}) {
    const cleared = await clearCreator({ids: ids.slice(0, 60)});
    jobs = jobs.filter(job => !cleared.includes(String(job.id)));
    render();
-   toast(cleared.length ? '已清除 ' + cleared.length + ' 条记录' : '这条记录还在核对结果，暂时不能清除', !cleared.length);
+   toast(cleared.length ? '已清除 ' + cleared.length + ' 条记录' : '这条记录还在生成中，结束后才能清除', !cleared.length);
    if (cleared.length) load();
   } catch (error) { toast(error.message, true); }
   delete button.dataset.state;

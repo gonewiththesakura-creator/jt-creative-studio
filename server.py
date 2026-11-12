@@ -1331,8 +1331,18 @@ def owned_history_sources(session_id):
     """Jobs the caller owns and still sees in a history list. Caller holds _lock_jobs."""
     return [src for src in _jobs.values()
             if session_owns_record(session_id, src)
-            and not ((src.get('style_id') in ('video', 'realism') or src.get('workflow') == 'anima02')
-                     and src.get('history_cleared') and video_ui_terminal(src))]
+            and not (src.get('style_id') in ('video', 'realism') and src.get('history_cleared')
+                     and video_ui_terminal(src))
+            and not creator_record_cleared(src)]
+
+
+def creator_record_cleared(job):
+    """A cleared creator record stays hidden while it is in the state it was cleared in. One cleared as
+    failed that a later provider check turns into a finished job shows again (2026-11-12)."""
+    if job.get('workflow') != 'anima02' or not job.get('history_cleared'):
+        return False
+    cleared_as = job.get('history_cleared_as')
+    return job.get('status') == cleared_as if cleared_as else video_ui_terminal(job)
 
 
 def favorite_in_scope(item, scope):
@@ -3736,11 +3746,13 @@ def clear_creator_ui(session_id, scope=None, ids=None):
     with _lock_jobs:
         matching = [job for job in _jobs.values()
                     if job.get('workflow') == 'anima02'
-                    and session_owns_record(session_id, job) and video_ui_terminal(job)
+                    # 2026-11-12 (owner): clearing only hides the record, so a failure whose provider
+                    # outcome was never confirmed can be cleared too; only unfinished work stays.
+                    and session_owns_record(session_id, job) and job.get('status') in ('done', 'error', 'cancelled')
                     and (job['id'] in wanted or (scope == 'errors' and job.get('status') in ('error', 'cancelled')))]
-        before = {job['id']: dict(job) for job in matching if not job.get('history_cleared')}
+        before = {job['id']: dict(job) for job in matching if not creator_record_cleared(job)}
         for job in matching:
-            job['history_cleared'] = True
+            job.update(history_cleared=True, history_cleared_as=job.get('status'))
         try:
             if before:
                 save_jobs()
