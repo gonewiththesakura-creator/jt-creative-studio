@@ -1350,7 +1350,8 @@ def test_av1_upload_exception_rejects_other_commits_and_payloads():
 # Re-pinned 2026-11-11 (owner: 加登记并发布): navigation, creator library, sidebar badges.
 # 2026-11-12 (owner: 改登记并发布): stylesheet-only sidebar order and icon on top of c9e6631.
 # 2026-11-12 (owner: 改登记并发布): second batch (lightbox, sticky banner, creator clear, showcase) on top of 8e79a90.
-STUDIO_V2_HEAD = '646f203a77f3cc03e3cce190f0bbb0ef71fec714'
+# 2026-11-12 (owner: 改登记并发布): creator style cards join showcase management on top of 646f203.
+STUDIO_V2_HEAD = '39465e56e1e7c62091b6d0d32e98a4fdf2cebfb9'
 
 
 def test_studio_v2_exception_accepts_only_the_reviewed_commit():
@@ -1363,6 +1364,7 @@ def test_studio_v2_exception_accepts_only_the_reviewed_commit():
     assert not module.reviewed_studio_v2_patch(tested, 'be20376e1f6cf0e57f3e85f35aa2d556d0748df4')  # the first pin
     assert not module.reviewed_studio_v2_patch(tested, 'c9e6631d6cc22f3e5efe597c9c16e23db0842b11')  # the second pin
     assert not module.reviewed_studio_v2_patch(tested, '8e79a90be97c891dde12485447715df6c471e059')  # the third pin
+    assert not module.reviewed_studio_v2_patch(tested, '646f203a77f3cc03e3cce190f0bbb0ef71fec714')  # the fourth pin
     assert not module.reviewed_studio_v2_patch(tested, 'a826f3a47367d5617726b1a7c20b2002898bf1de')
 
 

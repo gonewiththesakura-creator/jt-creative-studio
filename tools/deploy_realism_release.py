@@ -2424,14 +2424,19 @@ def reviewed_av1_video_redo_patch(tested_commit, current_head):
         return False
 
 
-REVIEWED_STUDIO_V2_RUNTIME_SHA256 = "56d8007b8afb8d09b04b2bfb9b7f7edef0e7bb13dcc2a9491d523ad4074ce9dd"
-REVIEWED_STUDIO_V2_FRONTEND_SHA256 = "d67099393bc34fcacd3b8a4128d85bc0fa88b5ce0298f431590f418c40f5a7c7"
+REVIEWED_STUDIO_V2_RUNTIME_SHA256 = "92599e4cc4c283b843594c1b12774b85bff51789c457a0bafbc2269b09394e4b"
+REVIEWED_STUDIO_V2_FRONTEND_SHA256 = "20155dd5c38ed2b76cf0176228b4edf5de895e94d4fcc826e71f957a2d49cd28"
 REVIEWED_STUDIO_V2_CHANGED_RUNTIME_FILES = ("server.py", "static/index.html", "static/promptgen.html", "static/video.html",
                                            "static/realism.html")
 
 
 def reviewed_studio_v2_patch(tested_commit, current_head):
-    """Pin the Studio v2 branch at 646f203a77f3cc03e3cce190f0bbb0ef71fec714 (owner-approved 2026-11-12).
+    """Pin the Studio v2 branch at 39465e56e1e7c62091b6d0d32e98a4fdf2cebfb9 (owner-approved 2026-11-12).
+
+    2026-11-12 (owner: 改登记并发布): runtime and frontend re-pinned from 646f203 to 39465e5, which
+    lets the showcase store address creator style cards as style.<style id> (server.py validation,
+    administrator tab, creator style sheet). The test inventory is unchanged. Offline review of
+    39465e5: 55 script contracts and 1567 pytest tests pass. The earlier pin no longer passes.
 
     2026-11-12 (owner: 改登记并发布): runtime and frontend re-pinned from 8e79a90 to 646f203, which adds:
     the shell lightbox for library results and pictures, the sticky creator banner, display-only
