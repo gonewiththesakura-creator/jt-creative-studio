@@ -493,10 +493,14 @@ function mirrorHole(root, holeBox) {
   // 2026-11-12: the scene's hole can sit near the window edge. A sample reaching past the frame came
   // back with a blank strip (the hole looked cut off): sample a smaller area that stays inside, or
   // keep the drawn hole when too little of it is in view.
-  const fullH = Math.max(8, frame.r * H * 6), fullW = fullH * w / h, cx = frame.u * W, cy = frame.v * H;
-  const fit = Math.min(1, cx / (fullW / 2), (W - cx) / (fullW / 2), cy / (fullH / 2), (H - cy) / (fullH / 2));
-  if (!(fit >= .55)) { holeBox.classList.remove('live'); return; }
-  const sh = fullH * fit, sw = fullW * fit;
+  // 2026-11-12 (owner): always the real hole. The window ideally spans six shadow radii; with a
+  // large hole (wide screens, a higher scene zoom) it narrows to what the frame holds, down to
+  // three radii, which still shows the whole shadow and its ring. Only a hole whose centre has
+  // left the frame falls back to the drawn one.
+  const radius = Math.max(4, frame.r * H), cx = frame.u * W, cy = frame.v * H;
+  const room = Math.min(cx, W - cx, cy, H - cy);
+  if (!(room > 0)) { holeBox.classList.remove('live'); return; }
+  const sh = 2 * Math.min(3 * radius, Math.max(1.5 * radius, room)), sw = sh * w / h;
   try { ctx.drawImage(frame.canvas, frame.u * W - sw / 2, frame.v * H - sh / 2, sw, sh, 0, 0, w, h); holeBox.classList.add('live'); } catch {}
  };
  addEventListener('jt:scene-frame', draw);
@@ -512,7 +516,7 @@ const settled = () => { dispatchEvent(new CustomEvent('jt:quota-maybe-changed'))
 function feed(root, body, {reuse, engineButton}) {
  const $ = id => root.getElementById(id);
  const box = el('div', 'acc-feed');
- box.innerHTML = `<section class="acc-feed-hero"><div><p class="acc-eyebrow">SINGULARITY · 文生图</p><h2>向内坠落，向外成像。</h2><p>选好画风和人物，写下一个画面。它先坠入视界，再从光环里升起。</p></div><div class="acc-hole" aria-hidden="true"><i class="disk"></i><i class="lens"></i><i class="core"></i><canvas class="acc-hole-live"></canvas></div></section><div class="acc-groups" aria-live="polite"></div>`;
+ box.innerHTML = `<section class="acc-feed-hero"><div><p class="acc-eyebrow">SINGULARITY · 文生图</p><h2>向内坠落，向外成像。</h2></div><div class="acc-hole" aria-hidden="true"><i class="disk"></i><i class="lens"></i><i class="core"></i><canvas class="acc-hole-live"></canvas></div></section><div class="acc-groups" aria-live="polite"></div>`;
  root.querySelector('.preview-stage').append(box);
  const groupsBox = box.querySelector('.acc-groups');
  mirrorHole(root, box.querySelector('.acc-hole'));
