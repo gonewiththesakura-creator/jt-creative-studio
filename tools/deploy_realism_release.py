@@ -2425,13 +2425,17 @@ def reviewed_av1_video_redo_patch(tested_commit, current_head):
 
 
 REVIEWED_STUDIO_V2_RUNTIME_SHA256 = "b58ee254688012f63ceb0606cdf162a3fde7d555a58290da06dc141e1543fe6d"
-REVIEWED_STUDIO_V2_FRONTEND_SHA256 = "9d4243ada867e6ae3c4ad82aa70e2769aa512e35c13151fb47b06d611ca9afb6"
+REVIEWED_STUDIO_V2_FRONTEND_SHA256 = "0fefa59697d9d1f4db46cb201a2819fc38b1af95f5c47e1c12fa6bd74ec60cf0"
 REVIEWED_STUDIO_V2_CHANGED_RUNTIME_FILES = ("server.py", "static/index.html", "static/promptgen.html", "static/video.html",
                                            "static/realism.html")
 
 
 def reviewed_studio_v2_patch(tested_commit, current_head):
-    """Pin the Studio v2 branch at 6f64127e88d9f2ce52075d2a670b212cdecfda92 (owner-approved 2026-11-12).
+    """Pin the Studio v2 branch at dd8fd00f8ef4f855836d24db8fc7417ce53249ba (owner-approved 2026-11-12).
+
+    2026-11-12 (owner: 改登记并发布): frontend re-pinned from 6f64127 to dd8fd00: the creator banner
+    drops its subtitle and its hole is always mirrored from the live scene. The runtime payload
+    and the test inventory are unchanged; the release gate runs the full suite.
 
     2026-11-12 (owner: 改登记并发布): re-pinned from 39465e5 to 6f64127, two commits: the lightbox
     bounds a picture by the window; /api/creator-clear takes failures whose provider outcome is

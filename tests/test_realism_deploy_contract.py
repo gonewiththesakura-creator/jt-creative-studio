@@ -1352,7 +1352,8 @@ def test_av1_upload_exception_rejects_other_commits_and_payloads():
 # 2026-11-12 (owner: 改登记并发布): second batch (lightbox, sticky banner, creator clear, showcase) on top of 8e79a90.
 # 2026-11-12 (owner: 改登记并发布): creator style cards join showcase management on top of 646f203.
 # 2026-11-12 (owner: 改登记并发布): lightbox fit, clearable unconfirmed failures, administrator refund.
-STUDIO_V2_HEAD = '6f64127e88d9f2ce52075d2a670b212cdecfda92'
+# 2026-11-12 (owner: 改登记并发布): creator banner without subtitle, live hole mirror.
+STUDIO_V2_HEAD = 'dd8fd00f8ef4f855836d24db8fc7417ce53249ba'
 
 
 def test_studio_v2_exception_accepts_only_the_reviewed_commit():
@@ -1367,6 +1368,7 @@ def test_studio_v2_exception_accepts_only_the_reviewed_commit():
     assert not module.reviewed_studio_v2_patch(tested, '8e79a90be97c891dde12485447715df6c471e059')  # the third pin
     assert not module.reviewed_studio_v2_patch(tested, '646f203a77f3cc03e3cce190f0bbb0ef71fec714')  # the fourth pin
     assert not module.reviewed_studio_v2_patch(tested, '39465e56e1e7c62091b6d0d32e98a4fdf2cebfb9')  # the fifth pin
+    assert not module.reviewed_studio_v2_patch(tested, '6f64127e88d9f2ce52075d2a670b212cdecfda92')  # the sixth pin
     assert not module.reviewed_studio_v2_patch(tested, 'a826f3a47367d5617726b1a7c20b2002898bf1de')
 
 
