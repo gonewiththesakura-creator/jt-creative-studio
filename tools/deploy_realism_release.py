@@ -2424,13 +2424,21 @@ def reviewed_av1_video_redo_patch(tested_commit, current_head):
         return False
 
 
-REVIEWED_STUDIO_V2_RUNTIME_SHA256 = "0b8466d21a72e88c9682c2ce19b33773e3ac66718c30ed59545a12b12e6d2c4e"
-REVIEWED_STUDIO_V2_FRONTEND_SHA256 = "1107abf309c1dcbba2f57ee14e72ee3830b404636166b7659e7951fc15271697"
-REVIEWED_STUDIO_V2_CHANGED_RUNTIME_FILES = ("server.py", "static/index.html", "static/promptgen.html", "static/video.html")
+REVIEWED_STUDIO_V2_RUNTIME_SHA256 = "d66b6a74b15ad6d56fbaedacfd260c7ebad61dd6031afdbab03e73e17e926ff6"
+REVIEWED_STUDIO_V2_FRONTEND_SHA256 = "aa1bb40ff1053d1374e682a83bc42c7bf2f4586c2538bcaf4b83efb7a49ae264"
+REVIEWED_STUDIO_V2_CHANGED_RUNTIME_FILES = ("server.py", "static/index.html", "static/promptgen.html", "static/video.html",
+                                           "static/realism.html")
 
 
 def reviewed_studio_v2_patch(tested_commit, current_head):
-    """Pin the Studio v2 branch at be20376e1f6cf0e57f3e85f35aa2d556d0748df4 (owner-approved 2026-11-11).
+    """Pin the Studio v2 branch at c9e6631d6cc22f3e5efe597c9c16e23db0842b11 (owner-approved 2026-11-11).
+
+    Re-pinned the same day (owner: 加登记并发布) from be20376 to c9e6631, which adds: workspace
+    entries that always show the workspace, the creator library (picture cards, paging via
+    limit/before on /api/jobs?scope=creator), the read-only /api/library-counts endpoint for the
+    sidebar badges, and quota refetch after a task settles. The earlier pin no longer passes.
+    Offline review of c9e6631: 55 script contracts and 1553 pytest tests pass.
+
 
     Seven commits on top of the last release a826f3a: the Studio v2 presentation
     layer (stages 1-6, new App Shell and page markup), administrator sign-in by
