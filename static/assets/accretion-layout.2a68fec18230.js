@@ -3,8 +3,8 @@
 // few existing nodes and adds chips that reveal existing sections; business
 // code keeps its own elements, ids and handlers. Values change only through the
 // same input/change events a person would fire, or a click on an existing button.
-import {accountFetch} from "/static/assets/api.39c989b27101.js";
-import {addFavorite, fetchPrompt, sendImageTo, toast} from "/static/assets/media-actions.64dce7fe9a85.js";
+import {accountFetch} from "/static/assets/api.a6519138b399.js";
+import {addFavorite, fetchPrompt, sendImageTo, toast} from "/static/assets/media-actions.830a36055d2e.js";
 
 const PATHS = {
  shuffle:'<path d="M4 7h3.2c4.3 0 5.3 10 9.6 10H20"/><path d="M4 17h3.2c1.6 0 2.7-1.4 3.6-3.2M13.2 10.2C14.1 8.4 15.2 7 16.8 7H20"/><path d="m17.5 4.5 2.5 2.5-2.5 2.5M17.5 14.5l2.5 2.5-2.5 2.5"/>',
@@ -437,6 +437,10 @@ function mirrorHole(root, holeBox) {
  addEventListener('jt:route', () => requestAnimationFrame(draw));
 }
 
+// A task that starts or ends can move quota (reserve, consume, refund) and adds a library record;
+// the sidebar's quota card and badges refetch instead of waiting for the next submission (2026-11-11).
+const settled = () => { dispatchEvent(new CustomEvent('jt:quota-maybe-changed')); dispatchEvent(new CustomEvent('jt:library-maybe-changed')); };
+
 // The creator's result stream: recent batches from /api/jobs?scope=creator (the
 // latest 12 jobs with a prompt excerpt), newest first, filtered by channel.
 function feed(root, body, {reuse, engineButton}) {
@@ -580,7 +584,7 @@ function feed(root, body, {reuse, engineButton}) {
  addEventListener('jt:feed-src', event => { source = event.detail; render(); });
  // Reload when a channel finishes or starts, and when the page shows again.
  let last = JSON.stringify(busy());
- const watch = new MutationObserver(() => { const now = JSON.stringify(busy()); if (now !== last) { last = now; load(); } });
+ const watch = new MutationObserver(() => { const now = JSON.stringify(busy()); if (now !== last) { last = now; load(); settled(); } });
  for (const id of ['genCloudBtn', 'genLocalBtn', 'genApiBtn']) watch.observe($(id), {attributes:true, attributeFilter:['class', 'aria-busy']});
  const results = new MutationObserver(() => load());
  for (const id of ['genCloudResult', 'genLocalResult', 'genApiResult']) if ($(id)) results.observe($(id), {childList:true});
@@ -661,7 +665,8 @@ function workflowPage(root, body, key) {
   if (tile) attr(tile, 'data-wb-title', split(name)[0] || '任务');
  });
  // The count reads as one badge: the fixed "（最多 N 个并发）" tail is left out of the badge text.
- const badgeCount = () => { const count = rail?.querySelector('#taskCount'); if (!count) return; const short = count.textContent.replace(/\s*[（(].*$/, '').trim(); attr(count, 'data-wb', short); attr(count, 'data-live', String(/[1-9]/.test(short.replace(/\/\s*\d+/, '')))); };
+ let lastCount = ''; // numbers only: the first fill while the page loads is not a change
+ const badgeCount = () => { const count = rail?.querySelector('#taskCount'); if (!count) return; const short = count.textContent.replace(/\s*[（(].*$/, '').trim(); const tally = (short.match(/\d+/g) || []).join('/'); if (lastCount && tally && tally !== lastCount) settled(); if (tally) lastCount = tally; attr(count, 'data-wb', short); attr(count, 'data-live', String(/[1-9]/.test(short.replace(/\/\s*\d+/, '')))); };
  if (rail) { new MutationObserver(() => { nameTasks(); badgeCount(); }).observe(rail, {subtree:true, childList:true, characterData:true}); nameTasks(); badgeCount(); }
  function refresh() {
   const name = (select ? select.selectedOptions[0]?.textContent : root.querySelector('#wfSwitch button.active')?.textContent) || '';

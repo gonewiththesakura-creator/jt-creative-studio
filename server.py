@@ -1324,6 +1324,27 @@ def scoped_history_jobs(jobs, scope=None, style=None, limit=12, before=None):
     return ordered[:limit]
 
 
+LIBRARY_SCOPES = ("creator", "realism", "video")
+
+
+def owned_history_sources(session_id):
+    """Jobs the caller owns and still sees in a history list. Caller holds _lock_jobs."""
+    return [src for src in _jobs.values()
+            if session_owns_record(session_id, src)
+            and not (src.get('style_id') in ('video', 'realism') and src.get('history_cleared')
+                     and video_ui_terminal(src))]
+
+
+def favorite_in_scope(item, scope):
+    """Mirror of each page's own favourites filter, so a badge equals the list it opens."""
+    if scope == "video":
+        return item.get("style_id") == "video" or str(item.get("favorite_media_type") or "").startswith("video/")
+    if scope == "realism":
+        snapshot = public_favorite(item).get("selection_snapshot") or {}
+        return item.get("style_id") == "realism" or snapshot.get("source_page") in ("realism", "realcomic")
+    return scope == "creator"
+
+
 def normalize_realism_snapshot(w, trusted_media, trusted_params, snapshot):
     """Persist only server-validated fields in generic workflow history."""
     raw = snapshot if isinstance(snapshot, dict) else {}
@@ -4733,6 +4754,19 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 body = {"id": jid, "prompt": str(src.get("prompt") or ""), "prompt_mode": src.get("prompt_mode")}
             self._send(200, json.dumps(body, ensure_ascii=False).encode(),
                        headers={"Cache-Control": "private, no-store", "Vary": "Cookie"})
+        elif path == "/api/library-counts":
+            # Sidebar badges: how many history records and favourites the page's own lists hold.
+            if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
+            scope = (urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("scope") or [None])[0]
+            if scope not in LIBRARY_SCOPES:
+                return self._send(400, b'{"error":"invalid library scope"}')
+            session_id, _ = self._upload_session(create=False)
+            with _lock_jobs:
+                body = {"history": len(scoped_history_jobs(owned_history_sources(session_id), scope, limit=None)),
+                        "favorites": sum(1 for item in _favorites.values()
+                                         if session_owns_record(session_id, item, "owner_session_hash")
+                                         and favorite_in_scope(item, scope))}
+            self._send(200, json.dumps(body).encode())
         elif path == "/api/jobs":
             if not self._auth(): return self._send(401, b'{"error":"unauthorized"}')
             with _lock_jobs:
@@ -4744,12 +4778,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 scope = (query.get("scope") or [None])[0]
                 style = (query.get("style") or [None])[0]
                 session_id, _ = self._upload_session(create=False)
-                owned_sources = [src for src in _jobs.values()
-                                 if session_owns_record(session_id, src)
-                                 and not (src.get('style_id') in ('video', 'realism') and src.get('history_cleared')
-                                          and video_ui_terminal(src))]
+                owned_sources = owned_history_sources(session_id)
                 limit, before = 12, None
-                if scope in ('video', 'realism'):
+                # 2026-11-11: the creator's library pages through its history like the other two.
+                if scope in ('video', 'realism') or (scope == 'creator' and (query.get('limit') or query.get('before'))):
                     try:
                         limit = max(1, min(30, int((query.get('limit') or ['12'])[0])))
                         if query.get('before'):

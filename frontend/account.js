@@ -119,8 +119,9 @@ export async function initializeAccount(){
  window.addEventListener('jt:auth-expired',()=>gate('登录已过期，请重新登录后继续。',{login:true}));
  window.addEventListener('jt:admin-verification-required',()=>adminUI?.setVerification(true));
  // Quota and running counts change on submit/cancel; refetch quietly once the burst settles.
- let quotaTimer=0;
- window.addEventListener('jt:quota-maybe-changed',()=>{if(!ready)return;clearTimeout(quotaTimer);quotaTimer=setTimeout(()=>refresh({gateOnError:false}),700)});
+ let quotaTimer=0,quotaLate=0;
+ // The server settles a cancelled or failed task on its next two-second pass, so look once more after it (2026-11-11).
+ window.addEventListener('jt:quota-maybe-changed',()=>{if(!ready)return;clearTimeout(quotaTimer);clearTimeout(quotaLate);quotaTimer=setTimeout(()=>refresh({gateOnError:false}),700);quotaLate=setTimeout(()=>refresh({gateOnError:false}),4500)});
  // Recheck when returning to a background tab, including after another tab logs out.
  document.addEventListener('visibilitychange',()=>{if(!document.hidden&&ready)refresh()});
  window.addEventListener('pageshow',event=>{if(event.persisted)refresh()});

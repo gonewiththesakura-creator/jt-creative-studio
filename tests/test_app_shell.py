@@ -34,8 +34,11 @@ def test_packaging_preserves_business_functions_and_backend_contracts():
                          # AV1 upload rejection has dedicated tests in test_video_codec_rejection.
                          'validate_workflow_upload','validate_workflow_upload_file','_mp4_sample_fourccs',
                          '_detect_rejected_video_codec','_check_video_codec_bytes','_check_video_codec_file',
-                         'UnsupportedVideoCodec'}
-        excluded_names={'VIDEO_QUEUE_LIMIT','VIDEO_QUEUE_SESSION_LIMIT','REJECTED_VIDEO_CODECS',
+                         'UnsupportedVideoCodec',
+                         # 2026-11-11: sidebar library badges (/api/library-counts); covered through the real
+                         # server in test_studio_walkthrough_real_server.
+                         'owned_history_sources','favorite_in_scope'}
+        excluded_names={'LIBRARY_SCOPES','VIDEO_QUEUE_LIMIT','VIDEO_QUEUE_SESSION_LIMIT','REJECTED_VIDEO_CODECS',
                         '_UNSUPPORTED_VIDEO_MESSAGES','_MP4_CONTAINER_BOXES','_MP4_MAX_BOXES',
                         '_MP4_MAX_DEPTH','_MKV_SCAN_BYTES'}
         tree.body=[n for n in tree.body if not (

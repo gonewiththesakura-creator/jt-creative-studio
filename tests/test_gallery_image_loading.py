@@ -266,14 +266,15 @@ def test_packaged_creator_results_fit_full_image_and_preserve_gallery_loading(tm
         # + 1 per enlarge (3 viewports); history reuses them. Previously 6. Originals are never fetched.
         # 2026-11-10 (owner decision, stage 3): galleries load only once on screen, so the hidden result panel
         # fetches nothing; the stream loads 4 and opening history loads its own 1 view + 4 thumbs. 12 -> 9.
-        assert len([url for method,url in requests if '/api/rh-preview/' in url])==9
+        # 2026-11-11: the creator library lists picture cards, one small thumbnail per record (4 here). 9 -> 13.
+        assert len([url for method,url in requests if '/api/rh-preview/' in url])==13
         assert not [url for method,url in requests if '/api/result-media/' in url]
         history.get_by_role('button',name='查看结果 3',exact=True).click()
         expect(history.locator('.gallery-result-image')).to_be_visible()
         history.get_by_role('button',name='查看结果 1',exact=True).click()
         expect(history.locator('.gallery-result-image')).to_be_visible()
         # +1: history's 查看结果 3 is the gallery loader's first load of that view (the old test had loaded it from the main viewer).
-        assert len([url for method,url in requests if '/api/rh-preview/' in url])==10
+        assert len([url for method,url in requests if '/api/rh-preview/' in url])==14
         page.screenshot(path=str(tmp_path/'packaged-gallery-desktop.png'))
         page.set_viewport_size({'width':320,'height':760})
         assert_uncropped(history,'history-mobile')

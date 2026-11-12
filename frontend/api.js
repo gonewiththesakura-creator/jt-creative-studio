@@ -20,6 +20,11 @@ export async function accountFetch(input,options={}){
     /^\/api\/(?:[a-z-]*generate|video-queue|image-edit-queue)$/.test(url.pathname)){
   window.dispatchEvent(new CustomEvent('jt:quota-maybe-changed'));
  }
+ // The sidebar's library badges follow submissions, favourites and cleared history.
+ if(url.origin===location.origin&&response.ok&&!['GET','HEAD','OPTIONS'].includes(method)&&
+    /^\/api\/(?:[a-z-]*generate|favorites(?:\/.*)?|video-clear|image-edit-clear)$/.test(url.pathname)){
+  window.dispatchEvent(new CustomEvent('jt:library-maybe-changed'));
+ }
  return response;
 }
 export async function cachedFetch(input,options={}){

@@ -11,7 +11,9 @@ ROUTES="['/','/realism','/video']"
 # Owner decision 2026-10-20: the standalone /promptgen page may grow to 452,000 LF bytes (was 450,000).
 # About 80% of it is embedded base64 preview thumbnails; at 450,798 bytes it carries the same-account
 # re-login fix and the 图片编辑 nav label. Users reach "/" through the App Shell, budgeted separately below.
-CREATOR_BUDGET=452_000
+# 2026-11-11: the creator library (owner request: finish the Studio v2 gaps) shows picture cards, pages through
+# older records and opens a batch in place; the page measures 454,054 bytes. Budget 452,000 -> 455,000.
+CREATOR_BUDGET=455_000
 # What "/" actually downloads for the creator route (module, markup, css), gzip as served. 29,728 on 2026-10-20.
 # 2026-10-22: the accretion command dock (frontend/styles/accretion.css) replaces the two-column layout in shell
 # pages; with legacy-only theme rules dropped and comments stripped the route measures 33,532. Budget 32,000 -> 34,000.
@@ -19,7 +21,9 @@ CREATOR_BUDGET=452_000
 # panel, full-page history/favourites, live banner hole) measures 36,550 (35,905 at e72f987). Budget 34,000 -> 37,000.
 # 2026-11-11: stages 4-6 (three-column workbench, account/admin surfaces, form tiles, library tiles) add shared
 # stylesheet rules that the creator route also downloads; it measures 39,981. Budget 37,000 -> 40,500.
-SHELL_CREATOR_GZIP_BUDGET=40_500
+# 2026-11-11 (later): creator library cards/paging, sidebar library badges and the lit library entry measure
+# 40,791. Budget 40,500 -> 41,500.
+SHELL_CREATOR_GZIP_BUDGET=41_500
 MANIFEST=json.loads((ROOT/"static"/"app-manifest.json").read_text(encoding="utf8"))
 SHELL_CREATOR_GZIP=sum(len(gzip.compress((ROOT/path.lstrip('/')).read_bytes().replace(b'\r\n',b'\n'),6,mtime=0))
                        for path in MANIFEST['pages']['/'].values() if path.startswith('/static/'))

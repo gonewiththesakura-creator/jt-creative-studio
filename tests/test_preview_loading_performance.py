@@ -14,7 +14,8 @@ full=[p for p in ASSETS.glob('*.webp') if not p.name.endswith('.thumb.webp')]
 thumb=[p for p in ASSETS.glob('*.thumb.webp')]
 # Owner decision 2026-10-20: 452,000 LF bytes (was 450,000); see test_navigation_performance_contract.py,
 # which also budgets the App Shell creator route that "/" actually serves.
-CREATOR_BUDGET=452_000
+# 2026-11-11: creator library picture cards and paging; 454,054 bytes. Same budget as the navigation contract: 455,000.
+CREATOR_BUDGET=455_000
 checks={
  'one lightweight asset per full preview':len(full)==14 and len(thumb)==14,
  'lightweight assets materially smaller':bool(thumb) and sum(p.stat().st_size for p in thumb)<=sum(p.stat().st_size for p in full)*0.45,

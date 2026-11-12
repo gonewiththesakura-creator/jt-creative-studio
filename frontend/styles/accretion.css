@@ -554,4 +554,16 @@
  .acc .library-scroll .history-card .history-summary .note{font-size:12px;color:#857c70}
  .acc .library-scroll .history-card .history-summary .dl{width:100%;min-height:30px;margin-top:8px;border-radius:8px;font-size:12px}
  .acc .library-scroll .history-card .history-details{margin:0;padding:0 12px 10px;font-size:12px;color:#857c70}
+ /* Creator library (2026-11-11): batch size on the tile, and its image view takes the list's place. */
+ .acc .library-scroll .history-card .history-thumbnail{position:relative}
+ .acc .library-scroll .history-card[data-status=error] .history-thumbnail{color:#e2836f}
+ .acc .history-count{position:absolute;right:8px;bottom:8px;padding:3px 7px;border-radius:99px;background:rgba(10,9,8,.72);color:#f4eee6;font:500 11px/1 var(--mono,monospace)}
+ .acc .library-scroll .history-more{justify-self:center;min-width:180px;min-height:34px;margin-top:6px;border-radius:10px;font-size:12px}
+ .acc .history-view{gap:10px}
+ .acc .history-view>div{min-height:calc(100dvh - 150px)}
+ .acc .history-view .history-back{min-height:32px;padding:0 12px;border-radius:10px;font-size:12px}
+ .acc .library-scroll .history-view .media-gallery{padding:0;background:none}
 }
+@media (min-width:761px){.acc .library-scroll .history-view .history-back{width:auto;align-self:flex-start}}
+/* Empty library: one quiet centred line instead of body-sized text in the corner (2026-11-11). */
+.acc #favList:not(:has(*)),.acc :is(#histList,#favList)>:is(p.note,.job.empty){grid-column:1/-1;padding:72px 16px;border:0;background:none;text-align:center;font-size:13px;color:#857c70}
