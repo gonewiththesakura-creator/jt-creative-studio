@@ -2424,14 +2424,21 @@ def reviewed_av1_video_redo_patch(tested_commit, current_head):
         return False
 
 
-REVIEWED_STUDIO_V2_RUNTIME_SHA256 = "92599e4cc4c283b843594c1b12774b85bff51789c457a0bafbc2269b09394e4b"
-REVIEWED_STUDIO_V2_FRONTEND_SHA256 = "20155dd5c38ed2b76cf0176228b4edf5de895e94d4fcc826e71f957a2d49cd28"
+REVIEWED_STUDIO_V2_RUNTIME_SHA256 = "b58ee254688012f63ceb0606cdf162a3fde7d555a58290da06dc141e1543fe6d"
+REVIEWED_STUDIO_V2_FRONTEND_SHA256 = "9d4243ada867e6ae3c4ad82aa70e2769aa512e35c13151fb47b06d611ca9afb6"
 REVIEWED_STUDIO_V2_CHANGED_RUNTIME_FILES = ("server.py", "static/index.html", "static/promptgen.html", "static/video.html",
                                            "static/realism.html")
 
 
 def reviewed_studio_v2_patch(tested_commit, current_head):
-    """Pin the Studio v2 branch at 39465e56e1e7c62091b6d0d32e98a4fdf2cebfb9 (owner-approved 2026-11-12).
+    """Pin the Studio v2 branch at 6f64127e88d9f2ce52075d2a670b212cdecfda92 (owner-approved 2026-11-12).
+
+    2026-11-12 (owner: 改登记并发布): re-pinned from 39465e5 to 6f64127, two commits: the lightbox
+    bounds a picture by the window; /api/creator-clear takes failures whose provider outcome is
+    unconfirmed (display only, a recovered job shows again); and the membership gateway refunds the
+    administrator's own unconfirmed failures while members' quota stays held for review
+    (membership_http.py, outside the native runtime payload). The test inventory is unchanged.
+    Offline review of 6f64127: 55 script contracts and 1570 pytest tests pass.
 
     2026-11-12 (owner: 改登记并发布): runtime and frontend re-pinned from 646f203 to 39465e5, which
     lets the showcase store address creator style cards as style.<style id> (server.py validation,
