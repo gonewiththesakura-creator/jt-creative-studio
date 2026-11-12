@@ -92,6 +92,10 @@ body.singularity>.app-shell>.topbar .topbar-tools>.topbar-action.active::before{
 body.singularity:is([data-library=hist],[data-library=fav])>.app-shell>.topbar .topnav-link.active{background:none;box-shadow:none;color:var(--text)}
 .side-count{margin-left:auto;padding:4px 7px;border-radius:99px;background:rgba(255,236,214,.07);color:var(--text-2);font:500 11px/1 var(--mono);font-style:normal}
 .side-count[hidden]{display:none}
+/* 作品库 sits above 收藏 and reads as a grid of works, as in the prototype (2026-11-12). */
+body.singularity>.app-shell>.topbar #favOpen{order:1}
+body.singularity>.app-shell>.topbar .scene-menu-anchor{order:2}
+body.singularity #histOpen{--icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='4' y='4' width='6.5' height='6.5' rx='1.6'/%3E%3Crect x='13.5' y='4' width='6.5' height='6.5' rx='1.6'/%3E%3Crect x='4' y='13.5' width='6.5' height='6.5' rx='1.6'/%3E%3Crect x='13.5' y='13.5' width='6.5' height='6.5' rx='1.6'/%3E%3C/svg%3E")}
 .topbar-action.active .side-count{background:var(--amber-soft);color:var(--amber)}
 body.singularity>.app-shell>.topbar .scene-menu-anchor{flex-direction:column}
 body.singularity>.app-shell>.topbar .scene-menu-toggle::after{margin-left:auto}
