@@ -494,7 +494,7 @@ def test_admin_showcase_picture_and_name_reach_the_scheme_cards(browser, site, t
         page.locator('#sideAdminOpen').click()
         page.locator('[data-admin-tab="showcase"]').click()
         card = page.locator('[data-showcase="member-video"]')
-        expect(card).to_contain_text('原名：member-video')
+        expect(card).to_contain_text('原名：member-video', timeout=15000)  # the tab loads three lists first
         expect(card).to_contain_text('未上传展示图')
         card.locator('input[type=text]').fill('让照片动起来')
         card.get_by_role('button', name='保存名字').click()

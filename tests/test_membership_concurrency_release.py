@@ -122,3 +122,36 @@ def test_existing_database_gains_release_column(tmp_path):
     MembershipStore(path)
     with sqlite3.connect(path) as db:
         assert "slot_released_at" in {row[1] for row in db.execute("PRAGMA table_info(reservations)")}
+
+
+def test_unconfirmed_failure_freezes_a_members_quota_but_refunds_the_administrators_own(env):
+    """2026-11-12 (owner): 结果未确认的失败任务，额度先冻结，管理员自己的除外（直接退回）。"""
+    store, gateway = env.store, env.gateway
+    plan = store.list_plans(False)[0]
+    store.redeem(env.admin["id"], store.issue_codes(env.admin["id"], plan["id"])[0]["code"])
+    unconfirmed = dict(status="error", error="comfyui timeout after 1800s", submit_started=time.time(), comfy_prompt_id="p")
+
+    member_job = image_job("job-member")
+    assert gateway.reserve(member_job, env.alice["owner_key"]) is None
+    member_job.update(unconfirmed)
+    gateway.settle(member_job)
+    assert store.get_reservation("job-member")["state"] == "running"  # frozen for review
+    assert store.get_entitlement(env.alice["id"])["image_available"] == 19
+    assert [row["job_id"] for row in store.list_unsettled_reservations()] == ["job-member"]
+
+    admin_job = image_job("job-admin")
+    assert gateway.reserve(admin_job, env.admin["owner_key"]) is None
+    assert store.get_entitlement(env.admin["id"])["image_available"] == 19
+    admin_job.update(unconfirmed)
+    gateway.settle(admin_job)
+    gateway.settle(admin_job)  # idempotent
+    assert store.get_reservation("job-admin")["state"] == "refunded"
+    assert store.get_entitlement(env.admin["id"])["image_available"] == 20
+    assert [row["job_id"] for row in store.list_unsettled_reservations()] == ["job-member"]
+
+    # The administrator's job still waiting on the provider is not touched.
+    pending = image_job("job-admin-2")
+    assert gateway.reserve(pending, env.admin["owner_key"]) is None
+    pending.update(unconfirmed, api_pending_until=time.time() + 600)
+    gateway.settle(pending)
+    assert store.get_reservation("job-admin-2")["state"] == "running"

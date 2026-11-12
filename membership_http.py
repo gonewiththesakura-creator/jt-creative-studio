@@ -381,7 +381,17 @@ class MembershipGateway:
                 # (unclassified error, service restart). Quota stays held for review, but
                 # the plan's concurrency slot is freed; otherwise each such job blocked the
                 # user with "并发已满" until an administrator settled it by hand.
-                self.release_slot(job["id"])
+                # 2026-11-12 (owner): members' quota stays frozen for review; the administrator's
+                # own job is refunded at once, since they would only be reviewing themselves.
+                try:
+                    owner = self.store.get_user(job["owner_user_id"]) if job.get("owner_user_id") else None
+                except MembershipError:
+                    owner = None
+                if owner and owner.get("is_admin"):
+                    self.store.settle_job(job["id"], False)
+                    self._settled_jobs.add(job['id'])
+                else:
+                    self.release_slot(job["id"])
 
     def release_slot(self, job_id):
         if job_id in self._released_slots:
