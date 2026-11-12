@@ -2425,13 +2425,16 @@ def reviewed_av1_video_redo_patch(tested_commit, current_head):
 
 
 REVIEWED_STUDIO_V2_RUNTIME_SHA256 = "d66b6a74b15ad6d56fbaedacfd260c7ebad61dd6031afdbab03e73e17e926ff6"
-REVIEWED_STUDIO_V2_FRONTEND_SHA256 = "aa1bb40ff1053d1374e682a83bc42c7bf2f4586c2538bcaf4b83efb7a49ae264"
+REVIEWED_STUDIO_V2_FRONTEND_SHA256 = "722798460d17ae4f56fd97c483f20ee45ae6058fffa8410cc6dc2683494e33ec"
 REVIEWED_STUDIO_V2_CHANGED_RUNTIME_FILES = ("server.py", "static/index.html", "static/promptgen.html", "static/video.html",
                                            "static/realism.html")
 
 
 def reviewed_studio_v2_patch(tested_commit, current_head):
-    """Pin the Studio v2 branch at c9e6631d6cc22f3e5efe597c9c16e23db0842b11 (owner-approved 2026-11-11).
+    """Pin the Studio v2 branch at 8e79a90be97c891dde12485447715df6c471e059 (owner-approved 2026-11-12).
+
+    2026-11-12 (owner: 改登记并发布): frontend re-pinned from c9e6631 to 8e79a90, a stylesheet-only
+    change (作品库 above 收藏, grid icon). The runtime payload is byte-identical to c9e6631.
 
     Re-pinned the same day (owner: 加登记并发布) from be20376 to c9e6631, which adds: workspace
     entries that always show the workspace, the creator library (picture cards, paging via

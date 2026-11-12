@@ -1348,7 +1348,8 @@ def test_av1_upload_exception_rejects_other_commits_and_payloads():
 # 2026-11-11: owner-approved offline pin for the Studio v2 branch (UI stages 1-6, admin code
 # login, concurrency-slot release). Only the pinned commit's bytes pass.
 # Re-pinned 2026-11-11 (owner: 加登记并发布): navigation, creator library, sidebar badges.
-STUDIO_V2_HEAD = 'c9e6631d6cc22f3e5efe597c9c16e23db0842b11'
+# 2026-11-12 (owner: 改登记并发布): stylesheet-only sidebar order and icon on top of c9e6631.
+STUDIO_V2_HEAD = '8e79a90be97c891dde12485447715df6c471e059'
 
 
 def test_studio_v2_exception_accepts_only_the_reviewed_commit():
@@ -1358,7 +1359,8 @@ def test_studio_v2_exception_accepts_only_the_reviewed_commit():
     assert not module.reviewed_studio_v2_patch('unreviewed-canary', STUDIO_V2_HEAD)
     # An earlier branch commit carries a different frontend; the last release lacks the whole branch.
     assert not module.reviewed_studio_v2_patch(tested, '63c009fba868b1da8db39e253d28fe3476a6599b')
-    assert not module.reviewed_studio_v2_patch(tested, 'be20376e1f6cf0e57f3e85f35aa2d556d0748df4')  # the earlier pin
+    assert not module.reviewed_studio_v2_patch(tested, 'be20376e1f6cf0e57f3e85f35aa2d556d0748df4')  # the first pin
+    assert not module.reviewed_studio_v2_patch(tested, 'c9e6631d6cc22f3e5efe597c9c16e23db0842b11')  # the second pin
     assert not module.reviewed_studio_v2_patch(tested, 'a826f3a47367d5617726b1a7c20b2002898bf1de')
 
 
